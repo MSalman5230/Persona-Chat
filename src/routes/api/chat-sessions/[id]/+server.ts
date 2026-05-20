@@ -3,7 +3,8 @@ import type { RequestHandler } from './$types';
 
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import { hydrateChatMessageDisplay } from '$lib/server/chat/service';
-import { getChatSession, listChatMessages } from '$lib/server/repositories/chat';
+import { chatSessionSettingsPatchSchema } from '$lib/server/chat/settings';
+import { getChatSession, listChatMessages, updateChatSession } from '$lib/server/repositories/chat';
 
 export const GET: RequestHandler = async ({ params }) => {
 	const session = await getChatSession(params.id);
@@ -24,5 +25,21 @@ export const GET: RequestHandler = async ({ params }) => {
 				createdAt: message.createdAt
 			};
 		})
+	});
+};
+
+export const PATCH: RequestHandler = async ({ params, request }) => {
+	const session = await getChatSession(params.id);
+	if (!session) error(404, 'Chat session not found');
+
+	const body = chatSessionSettingsPatchSchema.parse(await request.json());
+	await updateChatSession(session.id, body);
+
+	return json({
+		session: {
+			...session,
+			...body,
+			updatedAt: new Date()
+		}
 	});
 };

@@ -6,6 +6,7 @@ import {
 	jsonb,
 	pgEnum,
 	pgTable,
+	real,
 	serial,
 	text,
 	timestamp,
@@ -102,6 +103,8 @@ export const chatSessions = pgTable(
 		providerId: text('provider_id'),
 		modelId: text('model_id'),
 		thinkingLevel: text('thinking_level').notNull().default('medium'),
+		systemPrompt: text('system_prompt').notNull().default(''),
+		temperature: real('temperature'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},

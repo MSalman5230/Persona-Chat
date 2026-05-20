@@ -7,13 +7,16 @@ import {
 	prepareChatTurn,
 	type ThoughtTimingsByAssistant
 } from '$lib/server/chat/service';
+import { systemPromptSchema, temperatureSchema } from '$lib/server/chat/settings';
 
 const chatRequestSchema = z.object({
 	sessionId: z.string().uuid().optional().nullable(),
 	message: z.string().min(1),
 	providerConnectionId: z.string().uuid().optional().nullable(),
 	modelId: z.string().min(1).optional().nullable(),
-	thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional().nullable()
+	thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).optional().nullable(),
+	systemPrompt: systemPromptSchema.optional(),
+	temperature: temperatureSchema.optional()
 });
 
 function encodeSse(event: string, data: unknown): Uint8Array {
@@ -91,6 +94,8 @@ export const POST: RequestHandler = async ({ request }) => {
 					title: turn.chatSession.title,
 					providerId: runtime.provider.providerId,
 					modelId: runtime.model.id,
+					systemPrompt: turn.chatSession.systemPrompt,
+					temperature: turn.chatSession.temperature,
 					tools: runtime.allowedToolNames
 				});
 

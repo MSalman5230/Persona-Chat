@@ -220,25 +220,33 @@ export async function prepareChatTurn(input: {
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
+	systemPrompt?: string;
+	temperature?: number | null;
 }) {
 	const existing = input.sessionId ? await getChatSession(input.sessionId) : undefined;
 	const historyRows = existing ? await listChatMessages(existing.id) : [];
 	const history = historyRows.map((row) => row.piMessage as unknown as AgentMessage);
+	const systemPrompt = input.systemPrompt ?? existing?.systemPrompt ?? '';
+	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
 	const runtime = await createServerAgentSession({
 		providerConnectionId: input.providerConnectionId ?? existing?.providerConnectionId,
 		modelId: input.modelId ?? existing?.modelId,
 		thinkingLevel: input.thinkingLevel ?? existing?.thinkingLevel,
+		systemPrompt,
+		temperature,
 		history
 	});
 
-	const chatSession =
+	let chatSession =
 		existing ??
 		(await createChatSession({
 			title: titleFromPrompt(input.message),
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
-			thinkingLevel: runtime.thinkingLevel
+			thinkingLevel: runtime.thinkingLevel,
+			systemPrompt,
+			temperature
 		}));
 
 	if (existing) {
@@ -246,8 +254,19 @@ export async function prepareChatTurn(input: {
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
-			thinkingLevel: runtime.thinkingLevel
+			thinkingLevel: runtime.thinkingLevel,
+			systemPrompt,
+			temperature
 		});
+		chatSession = {
+			...existing,
+			providerConnectionId: runtime.provider.id,
+			providerId: runtime.provider.providerId,
+			modelId: runtime.model.id,
+			thinkingLevel: runtime.thinkingLevel,
+			systemPrompt,
+			temperature
+		};
 	}
 
 	return {

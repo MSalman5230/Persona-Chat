@@ -36,12 +36,22 @@
 	type ProviderOption = typeof data.providers[number];
 	type ModelOption = { id: string; name: string };
 
+	const DEFAULT_MANUAL_TEMPERATURE = 0.7;
+
 	let message = $state('');
 	let sidebarOpen = $state(false);
+	let settingsOpen = $state(false);
 	let isStreaming = $state(false);
 	let activeSessionId = $state<string | null>(null);
 	let selectedProviderIdOverride = $state<string | null>(null);
 	let selectedModelOverride = $state<string | null>(null);
+	let systemPrompt = $state('');
+	let temperatureAuto = $state(true);
+	let temperatureValue = $state(DEFAULT_MANUAL_TEMPERATURE);
+	let lastSavedSystemPrompt = $state('');
+	let lastSavedTemperature = $state<number | null>(null);
+	let settingsSaveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let settingsErrorText = $state('');
 	let errorText = $state('');
 	let messages = $state<UiMessage[]>([]);
 	let now = $state(Date.now());
@@ -68,6 +78,11 @@
 	const hasActiveTool = $derived(
 		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
 	);
+	const currentTemperature = $derived(temperatureAuto ? null : clampTemperature(temperatureValue));
+	const settingsDirty = $derived(
+		activeSessionId !== null &&
+			(systemPrompt !== lastSavedSystemPrompt || currentTemperature !== lastSavedTemperature)
+	);
 
 	onMount(() => {
 		const interval = window.setInterval(() => {
@@ -79,6 +94,33 @@
 
 	function isRecord(value: unknown): value is Record<string, unknown> {
 		return !!value && typeof value === 'object' && !Array.isArray(value);
+	}
+
+	function clampTemperature(value: number): number {
+		if (!Number.isFinite(value)) return DEFAULT_MANUAL_TEMPERATURE;
+		return Math.min(2, Math.max(0, Math.round(value * 10) / 10));
+	}
+
+	function temperatureFromServer(value: unknown): number | null {
+		return typeof value === 'number' && Number.isFinite(value) ? clampTemperature(value) : null;
+	}
+
+	function resetSessionSettings(settings?: { systemPrompt?: string; temperature?: number | null }) {
+		const nextSystemPrompt = settings?.systemPrompt ?? '';
+		const nextTemperature = settings?.temperature ?? null;
+
+		systemPrompt = nextSystemPrompt;
+		temperatureAuto = nextTemperature === null;
+		temperatureValue = nextTemperature ?? DEFAULT_MANUAL_TEMPERATURE;
+		lastSavedSystemPrompt = nextSystemPrompt;
+		lastSavedTemperature = nextTemperature;
+		settingsSaveStatus = 'idle';
+		settingsErrorText = '';
+	}
+
+	function markSettingsChanged() {
+		if (settingsSaveStatus === 'saved' || settingsSaveStatus === 'error') settingsSaveStatus = 'idle';
+		settingsErrorText = '';
 	}
 
 	function roleFromServer(role: unknown): UiMessage['role'] {
@@ -333,11 +375,18 @@
 		(event.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
 	}
 
+	function openSettingsSidebar() {
+		sidebarOpen = false;
+		settingsOpen = true;
+	}
+
 	function newChat() {
 		activeSessionId = null;
 		messages = [];
 		errorText = '';
 		sidebarOpen = false;
+		settingsOpen = false;
+		resetSessionSettings();
 		tick().then(() => focusChatInput?.());
 	}
 
@@ -345,14 +394,82 @@
 		const response = await fetch(`/api/chat-sessions/${id}`);
 		if (!response.ok) return;
 		const payload = (await response.json()) as {
-			session: { id: string; providerConnectionId: string | null; modelId: string | null };
+			session: {
+				id: string;
+				providerConnectionId: string | null;
+				modelId: string | null;
+				systemPrompt: string;
+				temperature: number | null;
+			};
 			messages: Array<Record<string, unknown>>;
 		};
 		activeSessionId = payload.session.id;
 		selectedProviderIdOverride = payload.session.providerConnectionId ?? selectedProviderId;
 		selectedModelOverride = payload.session.modelId ?? selectedModel;
+		resetSessionSettings({
+			systemPrompt: payload.session.systemPrompt,
+			temperature: temperatureFromServer(payload.session.temperature)
+		});
 		messages = payload.messages.map((item) => uiMessageFromServer(item));
 		sidebarOpen = false;
+	}
+
+	function updateSystemPrompt() {
+		markSettingsChanged();
+	}
+
+	function updateTemperatureAuto(event: Event) {
+		temperatureAuto = (event.currentTarget as HTMLInputElement).checked;
+		markSettingsChanged();
+	}
+
+	function updateTemperatureValue(event: Event) {
+		temperatureValue = clampTemperature((event.currentTarget as HTMLInputElement).valueAsNumber);
+		markSettingsChanged();
+	}
+
+	function updateSavedSessionSettings(payload: {
+		systemPrompt?: string;
+		temperature?: number | null;
+	}) {
+		const savedSystemPrompt = payload.systemPrompt ?? systemPrompt;
+		const savedTemperature =
+			payload.temperature !== undefined ? temperatureFromServer(payload.temperature) : currentTemperature;
+
+		systemPrompt = savedSystemPrompt;
+		temperatureAuto = savedTemperature === null;
+		temperatureValue = savedTemperature ?? temperatureValue;
+		lastSavedSystemPrompt = savedSystemPrompt;
+		lastSavedTemperature = savedTemperature;
+	}
+
+	async function saveSessionSettings() {
+		if (!activeSessionId || !settingsDirty || settingsSaveStatus === 'saving') return;
+
+		settingsSaveStatus = 'saving';
+		settingsErrorText = '';
+
+		try {
+			const response = await fetch(`/api/chat-sessions/${activeSessionId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					systemPrompt,
+					temperature: currentTemperature
+				})
+			});
+
+			if (!response.ok) throw new Error('Settings save failed');
+
+			const payload = (await response.json()) as {
+				session: { systemPrompt?: string; temperature?: number | null };
+			};
+			updateSavedSessionSettings(payload.session);
+			settingsSaveStatus = 'saved';
+		} catch (error) {
+			settingsSaveStatus = 'error';
+			settingsErrorText = error instanceof Error ? error.message : 'Settings save failed';
+		}
 	}
 
 	function selectProvider(event: Event) {
@@ -423,7 +540,9 @@
 					sessionId: activeSessionId,
 					message: prompt,
 					providerConnectionId: selectedProviderId || null,
-					modelId: selectedModel || null
+					modelId: selectedModel || null,
+					systemPrompt,
+					temperature: currentTemperature
 				})
 			});
 
@@ -442,6 +561,10 @@
 					const payload = JSON.parse(dataText) as Record<string, unknown>;
 					if (eventName === 'session' && typeof payload.id === 'string') {
 						activeSessionId = payload.id;
+						updateSavedSessionSettings({
+							systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : systemPrompt,
+							temperature: temperatureFromServer(payload.temperature)
+						});
 					}
 					if (eventName === 'error') {
 						errorText = String(payload.message ?? 'Chat request failed');
@@ -491,14 +614,26 @@
 			<span class="material-symbols-outlined" aria-hidden="true">menu</span>
 		</button>
 		<h1 class="font-headline-md text-headline-md text-primary">Persona</h1>
-		<button
-			type="button"
-			class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
-			aria-label="New chat"
-			onclick={newChat}
-		>
-			<span class="material-symbols-outlined" aria-hidden="true">add</span>
-		</button>
+		<div class="flex items-center gap-1">
+			<button
+				type="button"
+				class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
+				aria-label="Session settings"
+				title="Session settings"
+				onclick={openSettingsSidebar}
+			>
+				<span class="material-symbols-outlined" aria-hidden="true">tune</span>
+			</button>
+			<button
+				type="button"
+				class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
+				aria-label="New chat"
+				title="New chat"
+				onclick={newChat}
+			>
+				<span class="material-symbols-outlined" aria-hidden="true">add</span>
+			</button>
+		</div>
 	</header>
 
 	<div class="flex h-[calc(100dvh-4rem)] w-full overflow-hidden md:h-dvh">
@@ -572,7 +707,12 @@
 			onclick={() => (sidebarOpen = false)}
 		></button>
 
-		<main class="relative flex h-full flex-1 flex-col md:ml-sidebar-width">
+		<main
+			class={[
+				'relative flex h-full flex-1 flex-col transition-[margin] duration-300 md:ml-sidebar-width',
+				settingsOpen ? 'md:mr-[320px]' : 'md:mr-0'
+			]}
+		>
 			<header class="sticky top-0 z-30 hidden h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-gutter backdrop-blur-md md:flex">
 				<div class="flex items-center gap-2">
 					<select
@@ -597,13 +737,29 @@
 						{/each}
 					</select>
 				</div>
-				<a
-					href={resolve('/settings')}
-					class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
-					aria-label="Settings"
-				>
-					<span class="material-symbols-outlined" aria-hidden="true">settings</span>
-				</a>
+				<div class="flex items-center gap-1">
+					<button
+						type="button"
+						class={[
+							'rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary',
+							settingsOpen ? 'bg-surface-container-high text-primary' : ''
+						]}
+						aria-label="Session settings"
+						title="Session settings"
+						aria-pressed={settingsOpen}
+						onclick={() => (settingsOpen = !settingsOpen)}
+					>
+						<span class="material-symbols-outlined" aria-hidden="true">tune</span>
+					</button>
+					<a
+						href={resolve('/settings')}
+						class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
+						aria-label="Settings"
+						title="Settings"
+					>
+						<span class="material-symbols-outlined" aria-hidden="true">settings</span>
+					</a>
+				</div>
 			</header>
 
 			<section class="custom-scrollbar flex flex-1 flex-col overflow-y-auto px-4 pb-48 pt-8 md:pb-44">
@@ -710,7 +866,12 @@
 				</div>
 			</section>
 
-			<div class="fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-12 md:left-sidebar-width md:pb-6">
+			<div
+				class={[
+					'fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-12 transition-[right] duration-300 md:left-sidebar-width md:pb-6',
+					settingsOpen ? 'md:right-[320px]' : 'md:right-0'
+				]}
+			>
 				<div class="mx-auto max-w-container-max-width">
 					<form
 						class="glass-effect rounded-2xl border border-border-subtle bg-surface-container-low p-2 pl-4 shadow-[0_24px_80px_rgba(0,0,0,0.32)] transition-all duration-300 focus-within:border-outline"
@@ -742,6 +903,132 @@
 				</div>
 			</div>
 		</main>
+
+		<button
+			type="button"
+			class={['fixed inset-0 z-40 bg-black/60 md:hidden', settingsOpen ? 'block' : 'hidden']}
+			aria-label="Close session settings"
+			aria-hidden={!settingsOpen}
+			onclick={() => (settingsOpen = false)}
+		></button>
+
+		<aside
+			class={[
+				'fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[320px] flex-col border-l border-border-subtle bg-surface-container-low transition-transform duration-300 ease-in-out',
+				settingsOpen ? 'translate-x-0' : 'translate-x-full'
+			]}
+			aria-label="Session settings"
+		>
+			<div class="flex h-16 items-center justify-between border-b border-border-subtle px-gutter">
+				<div class="flex items-center gap-2">
+					<span class="material-symbols-outlined text-text-muted" aria-hidden="true">tune</span>
+					<h2 class="font-body-sm text-body-sm font-semibold text-primary">Session Settings</h2>
+				</div>
+				<button
+					type="button"
+					class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
+					aria-label="Close session settings"
+					title="Close session settings"
+					onclick={() => (settingsOpen = false)}
+				>
+					<span class="material-symbols-outlined" aria-hidden="true">close</span>
+				</button>
+			</div>
+
+			<form class="custom-scrollbar flex flex-1 flex-col overflow-y-auto" onsubmit={(event) => { event.preventDefault(); void saveSessionSettings(); }}>
+				<div class="flex-1 space-y-6 px-gutter py-5">
+					<label class="block space-y-2">
+						<span class="font-label-md text-label-md uppercase text-text-muted">System Prompt</span>
+						<textarea
+							bind:value={systemPrompt}
+							class="custom-scrollbar min-h-44 w-full resize-none rounded-lg border border-border-subtle bg-surface-container px-3 py-2.5 font-body-sm text-body-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-outline"
+							placeholder="Empty"
+							aria-label="System prompt"
+							oninput={updateSystemPrompt}
+						></textarea>
+					</label>
+
+					<div class="space-y-4">
+						<div class="flex items-center justify-between gap-4">
+							<label for="temperature-auto" class="font-label-md text-label-md uppercase text-text-muted">
+								Temperature
+							</label>
+							<label class="flex cursor-pointer items-center gap-2 font-body-sm text-body-sm text-text-primary">
+								<input
+									id="temperature-auto"
+									type="checkbox"
+									class="sr-only"
+									checked={temperatureAuto}
+									onchange={updateTemperatureAuto}
+								/>
+								<span>Auto</span>
+								<span
+									class={[
+										'relative h-6 w-11 rounded-full transition-colors',
+										temperatureAuto ? 'bg-primary' : 'bg-surface-container-high'
+									]}
+								>
+									<span
+										class={[
+											'absolute left-1 top-1 h-4 w-4 rounded-full transition-transform',
+											temperatureAuto ? 'translate-x-5 bg-background' : 'bg-text-muted'
+										]}
+									></span>
+								</span>
+							</label>
+						</div>
+
+						<div class="grid grid-cols-[1fr_4.75rem] items-center gap-3">
+							<input
+								type="range"
+								min="0"
+								max="2"
+								step="0.1"
+								value={temperatureValue}
+								disabled={temperatureAuto}
+								class="h-2 w-full accent-primary disabled:opacity-35"
+								aria-label="Temperature"
+								oninput={updateTemperatureValue}
+							/>
+							<input
+								type="number"
+								min="0"
+								max="2"
+								step="0.1"
+								value={temperatureValue.toFixed(1)}
+								disabled={temperatureAuto}
+								class="h-10 rounded-lg border border-border-subtle bg-surface-container px-2 text-center font-body-sm text-body-sm text-text-primary outline-none transition-colors focus:border-outline disabled:opacity-35"
+								aria-label="Temperature value"
+								oninput={updateTemperatureValue}
+							/>
+						</div>
+					</div>
+
+					{#if settingsErrorText}
+						<div class="rounded-lg border border-error-container bg-error-container/25 px-3 py-2 font-body-sm text-body-sm text-error">
+							{settingsErrorText}
+						</div>
+					{/if}
+				</div>
+
+				<div class="border-t border-border-subtle px-gutter py-4">
+					<button
+						type="submit"
+						class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 font-body-sm text-body-sm font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-35"
+						disabled={!activeSessionId || !settingsDirty || settingsSaveStatus === 'saving'}
+					>
+						<span class="material-symbols-outlined !text-[18px]" aria-hidden="true">save</span>
+						<span>
+							{settingsSaveStatus === 'saving'
+								? 'Saving'
+								: settingsSaveStatus === 'saved'
+									? 'Saved'
+									: 'Save'}
+						</span>
+					</button>
+				</div>
+			</form>
+		</aside>
 	</div>
 </div>
 

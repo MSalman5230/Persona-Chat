@@ -21,6 +21,8 @@ export async function createChatSession(input: {
 	providerId: string | null;
 	modelId: string | null;
 	thinkingLevel: string;
+	systemPrompt: string;
+	temperature: number | null;
 }): Promise<ChatSessionRow> {
 	const [row] = await db
 		.insert(chatSessions)
@@ -29,7 +31,9 @@ export async function createChatSession(input: {
 			providerConnectionId: input.providerConnectionId,
 			providerId: input.providerId,
 			modelId: input.modelId,
-			thinkingLevel: input.thinkingLevel
+			thinkingLevel: input.thinkingLevel,
+			systemPrompt: input.systemPrompt,
+			temperature: input.temperature
 		})
 		.returning();
 	return row;
@@ -43,6 +47,8 @@ export async function updateChatSession(
 		providerId: string | null;
 		modelId: string | null;
 		thinkingLevel: string;
+		systemPrompt: string;
+		temperature: number | null;
 	}>
 ): Promise<void> {
 	await db
