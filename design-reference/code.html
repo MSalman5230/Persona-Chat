@@ -1,0 +1,343 @@
+<!DOCTYPE html><html class="dark" lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Persona Chat - Modern Intelligence</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #0d0d0d;
+            font-family: 'Geist', sans-serif;
+            color: #ececec;
+        }
+        .glass-effect {
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #262626;
+            border-radius: 10px;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "error": "#ffb4ab",
+                      "background": "#131313",
+                      "primary-fixed-dim": "#c6c6c7",
+                      "tertiary-container": "#e4e2e1",
+                      "on-secondary-fixed": "#1c1b1b",
+                      "on-tertiary": "#303030",
+                      "on-tertiary-container": "#656464",
+                      "primary-container": "#e2e2e2",
+                      "tertiary-fixed-dim": "#c8c6c6",
+                      "surface-container-low": "#1c1b1b",
+                      "on-secondary-fixed-variant": "#474746",
+                      "primary": "#ffffff",
+                      "surface-dim": "#131313",
+                      "outline-variant": "#444748",
+                      "text-primary": "#ececec",
+                      "surface-tint": "#c6c6c7",
+                      "on-primary": "#2f3131",
+                      "secondary-container": "#474746",
+                      "on-secondary-container": "#b7b4b4",
+                      "on-primary-fixed-variant": "#454747",
+                      "tertiary-fixed": "#e4e2e1",
+                      "on-tertiary-fixed": "#1b1c1c",
+                      "on-tertiary-fixed-variant": "#474747",
+                      "inverse-surface": "#e5e2e1",
+                      "on-surface": "#e5e2e1",
+                      "surface-variant": "#353534",
+                      "surface-container-high": "#2a2a2a",
+                      "surface-container": "#201f1f",
+                      "on-background": "#e5e2e1",
+                      "outline": "#8e9192",
+                      "primary-fixed": "#e2e2e2",
+                      "surface-container-lowest": "#0e0e0e",
+                      "on-primary-fixed": "#1a1c1c",
+                      "inverse-primary": "#5d5f5f",
+                      "on-primary-container": "#636565",
+                      "tertiary": "#ffffff",
+                      "secondary-fixed-dim": "#c8c6c5",
+                      "inverse-on-surface": "#313030",
+                      "error-container": "#93000a",
+                      "on-error": "#690005",
+                      "on-error-container": "#ffdad6",
+                      "secondary": "#c8c6c5",
+                      "border-subtle": "#262626",
+                      "secondary-fixed": "#e5e2e1",
+                      "on-surface-variant": "#c4c7c8",
+                      "surface-bright": "#3a3939",
+                      "on-secondary": "#313030",
+                      "surface-container-highest": "#353534",
+                      "accent-blue": "#0000EE",
+                      "surface": "#131313",
+                      "text-muted": "#8E8EA0"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "sidebar-width": "260px",
+                      "gutter": "1.5rem",
+                      "stack-md": "1rem",
+                      "stack-sm": "0.5rem",
+                      "stack-lg": "2rem",
+                      "container-max-width": "800px"
+              },
+              "fontFamily": {
+                      "label-md": ["Geist"],
+                      "body-sm": ["Geist"],
+                      "headline-md": ["Geist"],
+                      "body-md": ["Geist"],
+                      "body-lg": ["Geist"],
+                      "headline-lg": ["Geist"],
+                      "code": ["jetbrainsMono"]
+              },
+              "fontSize": {
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "body-lg": ["18px", {"lineHeight": "28px", "fontWeight": "400"}],
+                      "headline-lg": ["30px", {"lineHeight": "36px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                      "code": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+              }
+            },
+          },
+        }
+      </script>
+</head>
+<body class="bg-background text-text-primary selection:bg-primary-container selection:text-on-primary-container overflow-hidden">
+<!-- Mobile Top Bar -->
+<header class="md:hidden flex justify-between items-center h-16 px-4 w-full sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border-subtle">
+<button class="p-2 text-text-muted" id="mobile-menu-open">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md font-semibold text-primary">Persona Chat</h1>
+<button class="p-2 text-text-muted">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</header>
+<div class="flex h-screen w-full overflow-hidden">
+<!-- SideNavBar (Desktop & Mobile Drawer) -->
+<aside class="fixed left-0 top-0 h-full w-sidebar-width bg-surface-container-low border-r border-border-subtle z-50 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col py-4" id="sidebar">
+<!-- Header Identity -->
+<div class="px-gutter mb-8">
+<div class="flex items-center gap-3 mb-1">
+<div class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-background !text-[20px]" data-icon="neurology" style="font-variation-settings: &quot;FILL&quot; 1;">neurology</span>
+</div>
+<h2 class="font-headline-md text-headline-md font-bold text-primary">Persona</h2>
+</div>
+<p class="font-body-sm text-body-sm text-text-muted">Modern Intelligence</p>
+</div>
+<!-- Main Navigation -->
+<nav class="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar">
+<!-- Active Tab: New Chat (Current Page Intent) -->
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-surface-container text-primary border-l-2 border-primary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+<span class="font-body-sm text-body-sm">New Chat</span>
+</a>
+
+
+
+<div class="pt-6 pb-2 px-4">
+<p class="text-[10px] font-bold tracking-widest text-text-muted/50 uppercase">Recent Chats</p>
+</div>
+<div class="space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-text-muted hover:bg-surface-container-high transition-colors duration-200 truncate" href="#">
+<span class="font-body-sm text-body-sm truncate">Project Deep Dive 2024</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 rounded-lg text-text-muted hover:bg-surface-container-high transition-colors duration-200 truncate" href="#">
+<span class="font-body-sm text-body-sm truncate">Python script debugging</span>
+</a>
+</div>
+</nav>
+<!-- CTA -->
+
+<!-- Footer Tabs -->
+<div class="px-3 border-t border-border-subtle pt-4 space-y-1">
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-text-muted hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-body-sm text-body-sm">Settings</span>
+</a><a class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-text-muted hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="account_circle">account_circle</span>
+<span class="font-body-sm text-body-sm">Profile</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-text-muted hover:bg-surface-container-high transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="logout">logout</span>
+<span class="font-body-sm text-body-sm">Sign Out</span>
+</a>
+</div>
+</aside>
+<!-- Overlay for Mobile Sidebar -->
+<div class="fixed inset-0 bg-black/60 z-40 hidden md:hidden" id="sidebar-overlay"></div>
+<!-- Main Content Area -->
+<main class="flex-1 flex flex-col h-full relative md:ml-sidebar-width">
+<!-- Desktop Top Bar -->
+<header class="hidden md:flex justify-between items-center h-16 px-gutter w-full sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border-subtle">
+<div class="flex items-center gap-2">
+
+<button class="flex items-center gap-1.5 bg-surface-container-high hover:bg-surface-variant transition-colors px-2.5 py-1 rounded text-text-primary font-medium text-[13px] border border-border-subtle">
+  <span class="">GPT-4.0</span>
+  <span class="material-symbols-outlined !text-[16px]" data-icon="keyboard_arrow_down">keyboard_arrow_down</span>
+</button>
+</div>
+<div class="flex items-center gap-4">
+
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Hero/Landing Section -->
+<div class="flex-1 flex flex-col items-center justify-center px-4 max-w-container-max-width mx-auto w-full pb-32">
+<div class="mb-12 text-center animate-in fade-in slide-in-from-bottom-4 duration-700">
+<div class="w-16 h-16 rounded-2xl bg-surface-container-high border border-border-subtle mx-auto mb-6 flex items-center justify-center shadow-xl">
+<span class="material-symbols-outlined !text-[32px] text-primary" data-icon="neurology">neurology</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-primary mb-2">How can I help you today?</h2>
+<p class="font-body-md text-body-md text-text-muted max-w-md mx-auto">
+                        Ask me anything—from coding complex scripts to drafting the perfect email or brainstorming your next big idea.
+                    </p>
+</div>
+<!-- Suggestion Cards (Asymmetric Bento-like grid) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+<button class="group p-4 bg-surface-container-low border border-border-subtle rounded-xl hover:bg-surface-container-high hover:border-outline-variant transition-all duration-300 text-left flex flex-col justify-between h-32 relative overflow-hidden">
+<div class="relative z-10">
+<h3 class="font-body-md text-body-md font-semibold text-primary mb-1">Help me write...</h3>
+<p class="font-body-sm text-body-sm text-text-muted">Draft a professional LinkedIn post about AI trends.</p>
+</div>
+<div class="flex justify-end relative z-10">
+<span class="material-symbols-outlined text-text-muted group-hover:text-primary transition-colors !text-[20px]" data-icon="edit_note">edit_note</span>
+</div>
+</button>
+<button class="group p-4 bg-surface-container-low border border-border-subtle rounded-xl hover:bg-surface-container-high hover:border-outline-variant transition-all duration-300 text-left flex flex-col justify-between h-32 relative overflow-hidden">
+<div class="relative z-10">
+<h3 class="font-body-md text-body-md font-semibold text-primary mb-1">Brainstorm ideas...</h3>
+<p class="font-body-sm text-body-sm text-text-muted">Generate 10 catchy names for my new tech startup.</p>
+</div>
+<div class="flex justify-end relative z-10">
+<span class="material-symbols-outlined text-text-muted group-hover:text-primary transition-colors !text-[20px]" data-icon="lightbulb">lightbulb</span>
+</div>
+</button>
+<button class="group p-4 bg-surface-container-low border border-border-subtle rounded-xl hover:bg-surface-container-high hover:border-outline-variant transition-all duration-300 text-left flex flex-col justify-between h-32 relative overflow-hidden">
+<div class="relative z-10">
+<h3 class="font-body-md text-body-md font-semibold text-primary mb-1">Summarize text...</h3>
+<p class="font-body-sm text-body-sm text-text-muted">Give me the key takeaways from this lengthy article.</p>
+</div>
+<div class="flex justify-end relative z-10">
+<span class="material-symbols-outlined text-text-muted group-hover:text-primary transition-colors !text-[20px]" data-icon="summarize">summarize</span>
+</div>
+</button>
+<button class="group p-4 bg-surface-container-low border border-border-subtle rounded-xl hover:bg-surface-container-high hover:border-outline-variant transition-all duration-300 text-left flex flex-col justify-between h-32 relative overflow-hidden">
+<div class="relative z-10">
+<h3 class="font-body-md text-body-md font-semibold text-primary mb-1">Code solution...</h3>
+<p class="font-body-sm text-body-sm text-text-muted">Write a Python script to automate my spreadsheet data.</p>
+</div>
+<div class="flex justify-end relative z-10">
+<span class="material-symbols-outlined text-text-muted group-hover:text-primary transition-colors !text-[20px]" data-icon="terminal">terminal</span>
+</div>
+</button>
+</div>
+</div>
+<!-- Bottom Message Bar Container -->
+<div class="fixed bottom-0 left-0 right-0 md:left-sidebar-width bg-gradient-to-t from-background via-background/95 to-transparent pt-12 pb-6 px-4 z-30">
+<div class="max-w-container-max-width mx-auto relative group">
+<!-- Chat Input -->
+<div class="bg-surface-container-low border border-border-subtle rounded-2xl p-2 pl-4 focus-within:border-outline transition-all duration-300 shadow-2xl glass-effect">
+<div class="flex items-end gap-2">
+<button class="p-2 text-text-muted hover:text-primary transition-colors rounded-lg">
+<span class="material-symbols-outlined !text-[22px]" data-icon="attach_file">attach_file</span>
+</button>
+<textarea class="flex-1 bg-transparent border-none focus:ring-0 text-text-primary font-body-md py-2.5 resize-none max-h-48 custom-scrollbar" id="chat-input" placeholder="Message Persona..." rows="1"></textarea>
+<button class="p-2.5 bg-primary text-background rounded-xl hover:opacity-90 transition-all active:scale-95 disabled:opacity-30 disabled:scale-100" disabled="" id="send-button">
+<span class="material-symbols-outlined !text-[22px] font-bold" data-icon="arrow_upward">arrow_upward</span>
+</button>
+</div>
+</div>
+<div class="mt-3 text-center">
+<p class="text-[10px] font-medium text-text-muted/60 tracking-wide uppercase">
+                            Persona can make mistakes. Check important info.
+                        </p>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- Background Decorative Elements -->
+<div class="fixed top-0 right-0 -z-10 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px] pointer-events-none"></div>
+<div class="fixed bottom-0 left-0 -z-10 w-[300px] h-[300px] bg-primary/3 rounded-full blur-[100px] pointer-events-none md:ml-sidebar-width"></div>
+<script>
+        // DOM Elements
+        const chatInput = document.getElementById('chat-input');
+        const sendButton = document.getElementById('send-button');
+        const mobileMenuOpen = document.getElementById('mobile-menu-open');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+        // Auto-expand textarea
+        chatInput.addEventListener('input', () => {
+            chatInput.style.height = 'auto';
+            chatInput.style.height = (chatInput.scrollHeight) + 'px';
+            
+            // Toggle send button state
+            if (chatInput.value.trim() !== "") {
+                sendButton.disabled = false;
+            } else {
+                sendButton.disabled = true;
+            }
+        });
+
+        // Mobile Sidebar Logic
+        mobileMenuOpen.addEventListener('click', () => {
+            sidebar.classList.remove('-translate-x-full');
+            sidebarOverlay.classList.remove('hidden');
+        });
+
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.add('-translate-x-full');
+            sidebarOverlay.classList.add('hidden');
+        });
+
+        // Placeholder Interaction for Suggestion Cards
+        document.querySelectorAll('.grid button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const text = btn.querySelector('p').innerText;
+                chatInput.value = text;
+                chatInput.style.height = 'auto';
+                chatInput.style.height = (chatInput.scrollHeight) + 'px';
+                sendButton.disabled = false;
+                chatInput.focus();
+            });
+        });
+
+        // Micro-interactions for buttons
+        const primaryButtons = document.querySelectorAll('.bg-primary');
+        primaryButtons.forEach(btn => {
+            btn.addEventListener('mousedown', () => btn.classList.add('scale-95'));
+            btn.addEventListener('mouseup', () => btn.classList.remove('scale-95'));
+            btn.addEventListener('mouseleave', () => btn.classList.remove('scale-95'));
+        });
+    </script>
+
+
+</body></html>
