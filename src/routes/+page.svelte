@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { renderAssistantMarkdown } from '$lib/markdown';
 	import type { Attachment } from 'svelte/attachments';
 	import { onMount, tick } from 'svelte';
 
@@ -186,6 +187,12 @@
 			if (focusChatInput === focus) focusChatInput = undefined;
 		};
 	};
+
+	function assistantMarkdown(text: string): Attachment<HTMLElement> {
+		return (node) => {
+			node.innerHTML = renderAssistantMarkdown(text);
+		};
+	}
 
 	function handleMessageInput(event: Event) {
 		resizeTextarea(event.currentTarget as HTMLTextAreaElement);
@@ -492,13 +499,17 @@
 										</div>
 									{/if}
 
-									{#if shouldShowAssistantPlaceholder(item)}
-										<span class="text-text-muted">...</span>
-									{:else if item.text.length > 0}
-										<div class="message-text">{item.text}</div>
-									{/if}
-								</div>
-							</article>
+					{#if shouldShowAssistantPlaceholder(item)}
+						<span class="text-text-muted">...</span>
+					{:else if item.text.length > 0}
+						{#if item.role === 'assistant'}
+							<div class="message-text markdown-content" {@attach assistantMarkdown(item.text)}></div>
+						{:else}
+							<div class="message-text">{item.text}</div>
+						{/if}
+					{/if}
+				</div>
+			</article>
 						{/each}
 					{/if}
 
@@ -563,6 +574,123 @@
 
 	.message-text {
 		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+
+	.message-text.markdown-content {
+		white-space: normal;
+	}
+
+	.markdown-content {
+		display: flex;
+		flex-direction: column;
+		gap: 0.625rem;
+	}
+
+	.markdown-content :global(p),
+	.markdown-content :global(ul),
+	.markdown-content :global(ol),
+	.markdown-content :global(blockquote),
+	.markdown-content :global(pre),
+	.markdown-content :global(table) {
+		margin: 0;
+	}
+
+	.markdown-content :global(h1),
+	.markdown-content :global(h2),
+	.markdown-content :global(h3),
+	.markdown-content :global(h4),
+	.markdown-content :global(h5),
+	.markdown-content :global(h6) {
+		margin: 0;
+		color: var(--color-primary);
+		font-size: 16px;
+		font-weight: 600;
+		line-height: 24px;
+	}
+
+	.markdown-content :global(ul),
+	.markdown-content :global(ol) {
+		padding-left: 1.25rem;
+	}
+
+	.markdown-content :global(li + li) {
+		margin-top: 0.375rem;
+	}
+
+	.markdown-content :global(a) {
+		color: var(--color-primary);
+		text-decoration: underline;
+		text-decoration-color: var(--color-outline);
+		text-underline-offset: 0.2em;
+	}
+
+	.markdown-content :global(a:hover),
+	.markdown-content :global(a:focus-visible) {
+		text-decoration-color: currentColor;
+	}
+
+	.markdown-content :global(code) {
+		border-radius: 0.25rem;
+		background: var(--color-surface-container-high);
+		color: var(--color-on-surface);
+		font-family: var(--font-code);
+		font-size: 0.875em;
+		padding: 0.0625rem 0.25rem;
+	}
+
+	.markdown-content :global(pre) {
+		max-width: 100%;
+		overflow-x: auto;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: 0.5rem;
+		background: var(--color-surface-container);
+		padding: 0.75rem;
+	}
+
+	.markdown-content :global(pre code) {
+		display: block;
+		background: transparent;
+		padding: 0;
+		white-space: pre;
+	}
+
+	.markdown-content :global(blockquote) {
+		border-left: 2px solid var(--color-outline-variant);
+		color: var(--color-on-surface-variant);
+		padding-left: 0.75rem;
+	}
+
+	.markdown-content :global(hr) {
+		width: 100%;
+		border: 0;
+		border-top: 1px solid var(--color-border-subtle);
+	}
+
+	.markdown-content :global(table) {
+		display: block;
+		max-width: 100%;
+		overflow-x: auto;
+		border-collapse: collapse;
+	}
+
+	.markdown-content :global(th),
+	.markdown-content :global(td) {
+		border: 1px solid var(--color-border-subtle);
+		padding: 0.375rem 0.5rem;
+		text-align: left;
+	}
+
+	.markdown-content :global(th) {
+		background: var(--color-surface-container);
+		color: var(--color-primary);
+		font-weight: 600;
+	}
+
+	.markdown-content :global(img) {
+		max-width: 100%;
+		height: auto;
+		border-radius: 0.5rem;
 	}
 
 	.message-block.user {
