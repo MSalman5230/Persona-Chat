@@ -18,7 +18,8 @@ describe('chat service display helpers', () => {
 		expect(display).toEqual({
 			role: 'assistant',
 			text: 'Hello there.',
-			thoughts: []
+			thoughts: [],
+			tools: []
 		});
 	});
 
@@ -39,6 +40,7 @@ describe('chat service display helpers', () => {
 				status: 'thought'
 			}
 		]);
+		expect(display.tools).toEqual([]);
 	});
 
 	it('keeps thinking and tool calls out of contentText', () => {
@@ -54,6 +56,14 @@ describe('chat service display helpers', () => {
 		expect(row.contentText).toBe('Visible answer.');
 		expect(row.contentText).not.toContain('thinking');
 		expect(row.contentText).not.toContain('toolCall');
+		expect(row.display.tools).toEqual([
+			{
+				contentIndex: 1,
+				id: 'call-1',
+				name: 'search',
+				status: 'pending'
+			}
+		]);
 	});
 
 	it('attaches stored timing metadata to the matching thought', () => {
@@ -100,7 +110,8 @@ describe('chat service display helpers', () => {
 					text: 'Old thought.',
 					status: 'thought'
 				}
-			]
+			],
+			tools: []
 		});
 	});
 
@@ -142,7 +153,8 @@ describe('chat service display helpers', () => {
 							status: 'thought',
 							redacted: true
 						}
-					]
+					],
+					tools: []
 				}
 			},
 			assistantMessageEvent: {

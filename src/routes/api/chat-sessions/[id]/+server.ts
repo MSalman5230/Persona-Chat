@@ -12,16 +12,15 @@ export const GET: RequestHandler = async ({ params }) => {
 	return json({
 		session,
 		messages: messages.map((message) => {
-			const display = hydrateChatMessageDisplay(
-				message.piMessage as unknown as PersistedAgentMessage,
-				message.display
-			);
+			const piMessage = message.piMessage as unknown as PersistedAgentMessage;
+			const display = hydrateChatMessageDisplay(piMessage, message.display);
 
 			return {
 				id: message.id,
 				role: message.role,
 				text: display.text,
 				display,
+				...(typeof piMessage.toolName === 'string' ? { toolName: piMessage.toolName } : {}),
 				createdAt: message.createdAt
 			};
 		})

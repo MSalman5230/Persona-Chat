@@ -12,6 +12,8 @@ type AgentMessage = PersistedAgentMessage;
 
 type AgentContentBlock = {
 	type: string;
+	id?: string;
+	name?: string;
 	text?: string;
 	thinking?: string;
 	redacted?: boolean;
@@ -26,10 +28,18 @@ export type ChatThoughtDisplay = {
 	redacted?: boolean;
 };
 
+export type ChatToolDisplay = {
+	contentIndex: number;
+	id: string;
+	name: string;
+	status: 'pending' | 'running' | 'completed' | 'failed';
+};
+
 export type ChatMessageDisplay = {
 	role: string;
 	text: string;
 	thoughts: ChatThoughtDisplay[];
+	tools: ChatToolDisplay[];
 };
 
 export type ThoughtTiming = {
@@ -95,11 +105,25 @@ function storedThoughtsByIndex(storedDisplay: unknown): Map<number, Record<strin
 	return result;
 }
 
+function storedToolsByIndex(storedDisplay: unknown): Map<number, Record<string, unknown>> {
+	const tools = isRecord(storedDisplay) ? storedDisplay.tools : undefined;
+	const result = new Map<number, Record<string, unknown>>();
+	if (!Array.isArray(tools)) return result;
+
+	for (const tool of tools) {
+		if (!isRecord(tool) || typeof tool.contentIndex !== 'number') continue;
+		result.set(tool.contentIndex, tool);
+	}
+
+	return result;
+}
+
 export function buildChatMessageDisplay(
 	message: AgentMessage,
 	thoughtTimings?: ThoughtTimingsByContentIndex
 ): ChatMessageDisplay {
-	const thoughts = contentBlocks(message)
+	const blocks = contentBlocks(message);
+	const thoughts = blocks
 		.map((block, contentIndex): ChatThoughtDisplay | undefined => {
 			if (block.type !== 'thinking') return undefined;
 			const timing = thoughtTimings?.get(contentIndex);
@@ -115,11 +139,26 @@ export function buildChatMessageDisplay(
 			};
 		})
 		.filter((thought): thought is ChatThoughtDisplay => thought !== undefined);
+	const tools = blocks
+		.map((block, contentIndex): ChatToolDisplay | undefined => {
+			if (block.type !== 'toolCall' || typeof block.id !== 'string' || typeof block.name !== 'string') {
+				return undefined;
+			}
+
+			return {
+				contentIndex,
+				id: block.id,
+				name: block.name,
+				status: 'pending'
+			};
+		})
+		.filter((tool): tool is ChatToolDisplay => tool !== undefined);
 
 	return {
 		role: message.role,
 		text: messageText(message),
-		thoughts
+		thoughts,
+		tools
 	};
 }
 
@@ -129,6 +168,7 @@ export function hydrateChatMessageDisplay(
 ): ChatMessageDisplay {
 	const display = buildChatMessageDisplay(message);
 	const storedThoughts = storedThoughtsByIndex(storedDisplay);
+	const storedTools = storedToolsByIndex(storedDisplay);
 
 	return {
 		...display,
@@ -140,6 +180,15 @@ export function hydrateChatMessageDisplay(
 				...thought,
 				status: 'thought',
 				...(durationMs !== undefined ? { durationMs } : {})
+			};
+		}),
+		tools: display.tools.map((tool) => {
+			const storedTool = storedTools.get(tool.contentIndex);
+			const status = storedTool?.status === 'failed' ? 'failed' : 'completed';
+
+			return {
+				...tool,
+				status
 			};
 		})
 	};
@@ -251,12 +300,14 @@ export function normalizeAgentEvent(
 				? {
 						role: message.role,
 						text: display.text,
-						display
+						display,
+						...(typeof message.toolName === 'string' ? { toolName: message.toolName } : {})
 					}
 				: undefined,
 		assistantMessageEvent: normalizeAssistantMessageEvent(record.assistantMessageEvent),
 		toolName: record.toolName ?? record.name,
 		toolCallId: record.toolCallId,
+		isError: record.isError,
 		error: record.error,
 		willRetry: record.willRetry
 	};

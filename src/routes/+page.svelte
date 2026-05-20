@@ -14,10 +14,21 @@
 		startedAt?: number;
 	};
 
+	type UiTool = {
+		contentIndex: number;
+		id: string;
+		name: string;
+		status: 'pending' | 'running' | 'completed' | 'failed';
+		startedAt?: number;
+		durationMs?: number;
+	};
+
 	type UiMessage = {
 		role: 'user' | 'assistant' | 'tool' | 'system';
 		text: string;
 		thoughts: UiThought[];
+		tools: UiTool[];
+		toolName?: string;
 	};
 
 	let { data } = $props();
@@ -44,10 +55,13 @@
 	const hasActiveThought = $derived(
 		messages.some((item) => item.thoughts.some((thought) => thought.status === 'thinking'))
 	);
+	const hasActiveTool = $derived(
+		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
+	);
 
 	onMount(() => {
 		const interval = window.setInterval(() => {
-			if (hasActiveThought) now = Date.now();
+			if (hasActiveThought || hasActiveTool) now = Date.now();
 		}, 250);
 
 		return () => window.clearInterval(interval);
@@ -106,6 +120,50 @@
 		});
 	}
 
+	function normalizeServerTools(tools: unknown, existingTools: UiTool[] = []): UiTool[] {
+		if (!Array.isArray(tools)) return [];
+
+		const previousByKey = new Map(
+			existingTools.map((tool) => [tool.id || String(tool.contentIndex), tool])
+		);
+
+		return tools.flatMap((tool): UiTool[] => {
+			if (!isRecord(tool) || typeof tool.contentIndex !== 'number') return [];
+			if (typeof tool.id !== 'string' || typeof tool.name !== 'string') return [];
+
+			const previous = previousByKey.get(tool.id) ?? previousByKey.get(String(tool.contentIndex));
+			const incomingStatus =
+				tool.status === 'running' ||
+				tool.status === 'completed' ||
+				tool.status === 'failed' ||
+				tool.status === 'pending'
+					? tool.status
+					: 'pending';
+			const status =
+				previous?.status === 'running' && incomingStatus === 'pending'
+					? previous.status
+					: previous?.status === 'completed' || previous?.status === 'failed'
+						? previous.status
+						: incomingStatus;
+			const durationMs = durationFromServer(tool.durationMs) ?? previous?.durationMs;
+			const startedAt =
+				status === 'running'
+					? (previous?.startedAt ?? Date.now() - (durationMs ?? 0))
+					: previous?.startedAt;
+
+			return [
+				{
+					contentIndex: tool.contentIndex,
+					id: tool.id,
+					name: tool.name,
+					status,
+					...(startedAt !== undefined ? { startedAt } : {}),
+					...(durationMs !== undefined ? { durationMs } : {})
+				}
+			];
+		});
+	}
+
 	function uiMessageFromServer(payload: Record<string, unknown>, previous?: UiMessage): UiMessage {
 		const display = isRecord(payload.display) ? payload.display : undefined;
 		const text =
@@ -118,7 +176,9 @@
 		return {
 			role: roleFromServer(payload.role),
 			text,
-			thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts)
+			thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts),
+			tools: normalizeServerTools(display?.tools, previous?.tools),
+			...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {})
 		};
 	}
 
@@ -155,10 +215,30 @@
 		return `${minutes}m ${seconds}s`;
 	}
 
+	function toolDurationMs(tool: UiTool): number | undefined {
+		if (tool.status === 'running' && tool.startedAt !== undefined) {
+			return Math.max(0, now - tool.startedAt);
+		}
+
+		return tool.durationMs;
+	}
+
 	function thoughtLabel(thought: UiThought): string {
 		const duration = formatDuration(thoughtDurationMs(thought));
 		if (thought.status === 'thinking') return duration ? `Thinking... ${duration}` : 'Thinking...';
 		return duration ? `Thought for ${duration}` : 'Thought';
+	}
+
+	function formatToolName(name: string): string {
+		return name.replace(/^mcp_/, '').replace(/_/g, ' ');
+	}
+
+	function toolStatusLabel(tool: UiTool): string {
+		const duration = formatDuration(toolDurationMs(tool));
+		if (tool.status === 'running') return duration ? `Using ${formatToolName(tool.name)} ${duration}` : `Using ${formatToolName(tool.name)}`;
+		if (tool.status === 'failed') return `Tool failed: ${formatToolName(tool.name)}`;
+		if (tool.status === 'completed') return `Used ${formatToolName(tool.name)}`;
+		return `Queued ${formatToolName(tool.name)}`;
 	}
 
 	function shouldShowAssistantPlaceholder(item: UiMessage): boolean {
@@ -166,8 +246,44 @@
 			item.role === 'assistant' &&
 			item.text.length === 0 &&
 			item.thoughts.length === 0 &&
+			item.tools.length === 0 &&
 			isStreaming
 		);
+	}
+
+	function mergeToolIntoLastAssistant(payload: Record<string, unknown>) {
+		const lastAssistantIndex = messages.findLastIndex((item) => item.role === 'assistant');
+		if (lastAssistantIndex < 0 || typeof payload.toolName !== 'string') return;
+
+		const current = messages[lastAssistantIndex];
+		const toolCallId = typeof payload.toolCallId === 'string' ? payload.toolCallId : payload.toolName;
+		const existingIndex = current.tools.findIndex((tool) => tool.id === toolCallId);
+		const previous = existingIndex >= 0 ? current.tools[existingIndex] : undefined;
+		const status =
+			payload.type === 'tool_execution_end'
+				? payload.isError === true
+					? 'failed'
+					: 'completed'
+				: 'running';
+		const startedAt = previous?.startedAt ?? Date.now();
+		const durationMs =
+			status === 'running'
+				? previous?.durationMs
+				: Math.max(0, Date.now() - (previous?.startedAt ?? startedAt));
+		const nextTool: UiTool = {
+			contentIndex: previous?.contentIndex ?? current.tools.length,
+			id: toolCallId,
+			name: payload.toolName,
+			status,
+			startedAt,
+			...(durationMs !== undefined ? { durationMs } : {})
+		};
+		const tools =
+			existingIndex >= 0
+				? current.tools.map((tool, index) => (index === existingIndex ? nextTool : tool))
+				: [...current.tools, nextTool];
+
+		messages[lastAssistantIndex] = { ...current, tools };
 	}
 
 	function resizeTextarea(node: HTMLTextAreaElement) {
@@ -249,8 +365,8 @@
 		isStreaming = true;
 		messages = [
 			...messages,
-			{ role: 'user', text: prompt, thoughts: [] },
-			{ role: 'assistant', text: '', thoughts: [] }
+			{ role: 'user', text: prompt, thoughts: [], tools: [] },
+			{ role: 'assistant', text: '', thoughts: [], tools: [] }
 		];
 
 		await tick();
@@ -292,6 +408,14 @@
 						if (eventMessage?.role === 'assistant') {
 							replaceLastAssistantMessage(eventMessage);
 						}
+					}
+					if (
+						eventName === 'event' &&
+						(payload.type === 'tool_execution_start' ||
+							payload.type === 'tool_execution_update' ||
+							payload.type === 'tool_execution_end')
+					) {
+						mergeToolIntoLastAssistant(payload);
 					}
 					if (eventName === 'event' && payload.type === 'message_end') {
 						const eventMessage = isRecord(payload.message) ? payload.message : undefined;
@@ -497,19 +621,37 @@
 												</div>
 											{/each}
 										</div>
-									{/if}
+							{/if}
 
-					{#if shouldShowAssistantPlaceholder(item)}
-						<span class="text-text-muted">...</span>
-					{:else if item.text.length > 0}
-						{#if item.role === 'assistant'}
-							<div class="message-text markdown-content" {@attach assistantMarkdown(item.text)}></div>
-						{:else}
-							<div class="message-text">{item.text}</div>
-						{/if}
-					{/if}
-				</div>
-			</article>
+							{#if item.role === 'assistant' && item.tools.length > 0}
+								<div class="tool-stack" aria-label="Tool activity">
+									{#each item.tools as tool (tool.id)}
+										<div class={['tool-row', tool.status]}>
+											<span class="material-symbols-outlined tool-icon" aria-hidden="true">
+												{tool.status === 'running' ? 'progress_activity' : tool.status === 'failed' ? 'error' : 'check_circle'}
+											</span>
+											<span class="tool-label">{toolStatusLabel(tool)}</span>
+										</div>
+									{/each}
+								</div>
+							{/if}
+
+							{#if shouldShowAssistantPlaceholder(item)}
+								<span class="text-text-muted">...</span>
+							{:else if item.text.length > 0}
+								{#if item.role === 'assistant'}
+									<div class="message-text markdown-content" {@attach assistantMarkdown(item.text)}></div>
+								{:else if item.role === 'tool' && item.toolName}
+									<div class="message-text">
+										<span class="tool-result-label">{formatToolName(item.toolName)}</span>
+										{item.text}
+									</div>
+								{:else}
+									<div class="message-text">{item.text}</div>
+								{/if}
+							{/if}
+						</div>
+					</article>
 						{/each}
 					{/if}
 
@@ -760,6 +902,52 @@
 		line-height: 20px;
 	}
 
+	.tool-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+
+	.tool-row {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		max-width: 100%;
+		border-left: 1px solid var(--color-outline-variant);
+		padding-left: 0.75rem;
+		color: var(--color-text-muted);
+		font-size: 13px;
+		line-height: 20px;
+	}
+
+	.tool-icon {
+		flex: 0 0 auto;
+		font-size: 18px;
+	}
+
+	.tool-row.running .tool-icon {
+		animation: tool-spin 1s linear infinite;
+	}
+
+	.tool-row.failed {
+		color: var(--color-error);
+	}
+
+	.tool-label {
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+
+	.tool-result-label {
+		display: block;
+		margin-bottom: 0.25rem;
+		color: var(--color-text-muted);
+		font-size: 12px;
+		font-weight: 600;
+		line-height: 16px;
+		text-transform: uppercase;
+	}
+
 	.thought-redacted {
 		color: var(--color-text-muted);
 		font-style: italic;
@@ -783,6 +971,12 @@
 
 		50% {
 			opacity: 1;
+		}
+	}
+
+	@keyframes tool-spin {
+		to {
+			transform: rotate(360deg);
 		}
 	}
 </style>
