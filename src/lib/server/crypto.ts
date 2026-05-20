@@ -1,11 +1,12 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { env } from '$env/dynamic/private';
 
 import type { EncryptedJsonPayload } from './db/schema';
 
 const KEY_ENV = 'CREDENTIAL_ENCRYPTION_KEY';
 
 function getRawKey(): string {
-	const key = process.env[KEY_ENV];
+	const key = env[KEY_ENV] ?? process.env[KEY_ENV];
 	if (!key) {
 		throw new Error(`${KEY_ENV} is required before saving or using encrypted credentials`);
 	}

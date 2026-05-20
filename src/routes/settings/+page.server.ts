@@ -2,9 +2,10 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 import { booleanFromForm, listFromLines, recordFromJson, stringFromForm } from '$lib/server/forms';
-import { tryParseJsonObject } from '$lib/server/json';
 import { testMcpServer } from '$lib/server/mcp/adapter';
+import { getSupportedProviders } from '$lib/server/providers/catalog';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
+import { providerPayloadFromForm } from '$lib/server/providers/settings-form';
 import {
 	createMcpServer,
 	deleteMcpServer,
@@ -15,62 +16,30 @@ import {
 import {
 	createProviderConnection,
 	deleteProviderConnection,
+	getProviderConnection,
 	listProviderConnections,
 	updateProviderConnection
 } from '$lib/server/repositories/providers';
 
 export const load: PageServerLoad = async () => {
+	const supportedProviders = getSupportedProviders();
+
 	try {
 		return {
 			providers: await listProviderConnections(),
+			supportedProviders,
 			mcpServers: await listMcpServers(),
 			loadError: null
 		};
 	} catch (error) {
 		return {
 			providers: [],
+			supportedProviders,
 			mcpServers: [],
 			loadError: error instanceof Error ? error.message : 'Database is not ready'
 		};
 	}
 };
-
-function providerPayloadFromForm(form: FormData, update: boolean) {
-	const defaultModel = stringFromForm(form, 'defaultModel');
-	if (!defaultModel) throw new Error('Default model is required');
-
-	const models = listFromLines(stringFromForm(form, 'models'));
-	if (!models.includes(defaultModel)) models.unshift(defaultModel);
-
-	const headersValue = stringFromForm(form, 'headersJson');
-	const apiKey = stringFromForm(form, 'apiKey');
-	const payload = {
-		name: stringFromForm(form, 'name') ?? '',
-		providerId: stringFromForm(form, 'providerId') ?? '',
-		kind: (stringFromForm(form, 'kind') ?? 'built_in') as 'built_in' | 'custom',
-		api: stringFromForm(form, 'api') ?? 'openai',
-		baseUrl: stringFromForm(form, 'baseUrl') ?? null,
-		defaultModel,
-		defaultThinkingLevel: (stringFromForm(form, 'defaultThinkingLevel') ?? 'medium') as
-			| 'off'
-			| 'minimal'
-			| 'low'
-			| 'medium'
-			| 'high'
-			| 'xhigh',
-		authHeader: booleanFromForm(form, 'authHeader', true),
-		models,
-		config: tryParseJsonObject(stringFromForm(form, 'configJson'), 'Provider config'),
-		enabled: booleanFromForm(form, 'enabled', true),
-		isDefault: booleanFromForm(form, 'isDefault', false),
-		...(apiKey ? { apiKey } : {}),
-		...(headersValue ? { headers: recordFromJson(headersValue, 'Headers') } : {})
-	};
-
-	if (!update && !payload.name) throw new Error('Provider name is required');
-	if (!update && !payload.providerId) throw new Error('Provider ID is required');
-	return payload;
-}
 
 function mcpPayloadFromForm(form: FormData, update: boolean) {
 	const envValue = stringFromForm(form, 'envJson');
@@ -93,14 +62,34 @@ function mcpPayloadFromForm(form: FormData, update: boolean) {
 	return payload;
 }
 
+async function saveProviderConnectionFromForm(form: FormData, id: string | undefined) {
+	const supportedProviders = getSupportedProviders();
+
+	if (!id) {
+		return createProviderConnection(
+			providerPayloadFromForm(form, { update: false, supportedProviders })
+		);
+	}
+
+	const current = await getProviderConnection(id);
+	if (!current) throw new Error('Provider connection not found');
+
+	return updateProviderConnection(
+		id,
+		providerPayloadFromForm(form, {
+			update: true,
+			existingKind: current.kind,
+			supportedProviders
+		})
+	);
+}
+
 export const actions: Actions = {
 	saveProvider: async ({ request }) => {
 		try {
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
-			const provider = id
-				? await updateProviderConnection(id, providerPayloadFromForm(form, true))
-				: await createProviderConnection(providerPayloadFromForm(form, false));
+			const provider = await saveProviderConnectionFromForm(form, id);
 			return { ok: true, message: `${provider.name} saved` };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save provider' });

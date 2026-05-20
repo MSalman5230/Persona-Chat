@@ -1,11 +1,22 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { Attachment } from 'svelte/attachments';
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
+
+	type UiThought = {
+		contentIndex: number;
+		text: string;
+		status: 'thinking' | 'thought';
+		durationMs?: number;
+		redacted: boolean;
+		expanded: boolean;
+		startedAt?: number;
+	};
 
 	type UiMessage = {
 		role: 'user' | 'assistant' | 'tool' | 'system';
 		text: string;
+		thoughts: UiThought[];
 	};
 
 	let { data } = $props();
@@ -18,6 +29,7 @@
 	let selectedModelOverride = $state<string | null>(null);
 	let errorText = $state('');
 	let messages = $state<UiMessage[]>([]);
+	let now = $state(Date.now());
 	let focusChatInput: (() => void) | undefined;
 
 	const providerOptions = $derived(data.providers);
@@ -28,6 +40,134 @@
 	);
 	const canSend = $derived(message.trim().length > 0 && !isStreaming);
 	const hasProviders = $derived(providerOptions.length > 0);
+	const hasActiveThought = $derived(
+		messages.some((item) => item.thoughts.some((thought) => thought.status === 'thinking'))
+	);
+
+	onMount(() => {
+		const interval = window.setInterval(() => {
+			if (hasActiveThought) now = Date.now();
+		}, 250);
+
+		return () => window.clearInterval(interval);
+	});
+
+	function isRecord(value: unknown): value is Record<string, unknown> {
+		return !!value && typeof value === 'object' && !Array.isArray(value);
+	}
+
+	function roleFromServer(role: unknown): UiMessage['role'] {
+		if (role === 'assistant') return 'assistant';
+		if (role === 'toolResult' || role === 'tool') return 'tool';
+		if (role === 'system') return 'system';
+		return 'user';
+	}
+
+	function durationFromServer(value: unknown): number | undefined {
+		return typeof value === 'number' && Number.isFinite(value) && value >= 0
+			? Math.round(value)
+			: undefined;
+	}
+
+	function normalizeServerThoughts(thoughts: unknown, existingThoughts: UiThought[] = []): UiThought[] {
+		if (!Array.isArray(thoughts)) return [];
+
+		const previousByIndex = new Map(
+			existingThoughts.map((thought) => [thought.contentIndex, thought])
+		);
+
+		return thoughts.flatMap((thought): UiThought[] => {
+			if (!isRecord(thought) || typeof thought.contentIndex !== 'number') return [];
+
+			const previous = previousByIndex.get(thought.contentIndex);
+			const status = thought.status === 'thinking' ? 'thinking' : 'thought';
+			const durationMs = durationFromServer(thought.durationMs);
+			const wasThinking = previous?.status === 'thinking';
+			const expanded =
+				status === 'thinking' ? true : wasThinking ? false : (previous?.expanded ?? false);
+			const startedAt =
+				status === 'thinking'
+					? (previous?.startedAt ?? Date.now() - (durationMs ?? 0))
+					: undefined;
+			const redacted = thought.redacted === true;
+
+			return [
+				{
+					contentIndex: thought.contentIndex,
+					text: redacted ? '' : typeof thought.text === 'string' ? thought.text : '',
+					status,
+					...(durationMs !== undefined ? { durationMs } : {}),
+					redacted,
+					expanded,
+					...(startedAt !== undefined ? { startedAt } : {})
+				}
+			];
+		});
+	}
+
+	function uiMessageFromServer(payload: Record<string, unknown>, previous?: UiMessage): UiMessage {
+		const display = isRecord(payload.display) ? payload.display : undefined;
+		const text =
+			typeof display?.text === 'string'
+				? display.text
+				: typeof payload.text === 'string'
+					? payload.text
+					: '';
+
+		return {
+			role: roleFromServer(payload.role),
+			text,
+			thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts)
+		};
+	}
+
+	function replaceLastAssistantMessage(payload: Record<string, unknown>) {
+		const index = messages.length - 1;
+		if (index < 0) return;
+		messages[index] = uiMessageFromServer(payload, messages[index]);
+	}
+
+	function toggleThought(messageIndex: number, contentIndex: number) {
+		const thought = messages[messageIndex]?.thoughts.find(
+			(item) => item.contentIndex === contentIndex
+		);
+		if (thought) thought.expanded = !thought.expanded;
+	}
+
+	function thoughtDurationMs(thought: UiThought): number | undefined {
+		if (thought.status === 'thinking' && thought.startedAt !== undefined) {
+			return Math.max(0, now - thought.startedAt);
+		}
+
+		return thought.durationMs;
+	}
+
+	function formatDuration(durationMs: number | undefined): string {
+		if (durationMs === undefined) return '';
+		if (durationMs < 1000) return '<1s';
+
+		const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+		if (totalSeconds < 60) return `${totalSeconds}s`;
+
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = String(totalSeconds % 60).padStart(2, '0');
+		return `${minutes}m ${seconds}s`;
+	}
+
+	function thoughtLabel(thought: UiThought): string {
+		const duration = formatDuration(thoughtDurationMs(thought));
+		if (thought.status === 'thinking') return duration ? `Thinking... ${duration}` : 'Thinking...';
+		return duration ? `Thought for ${duration}` : 'Thought';
+	}
+
+	function shouldShowAssistantPlaceholder(item: UiMessage): boolean {
+		return (
+			item.role === 'assistant' &&
+			item.text.length === 0 &&
+			item.thoughts.length === 0 &&
+			isStreaming
+		);
+	}
 
 	function resizeTextarea(node: HTMLTextAreaElement) {
 		node.style.height = 'auto';
@@ -64,15 +204,12 @@
 		if (!response.ok) return;
 		const payload = (await response.json()) as {
 			session: { id: string; providerConnectionId: string | null; modelId: string | null };
-			messages: Array<{ role: string; text: string }>;
+			messages: Array<Record<string, unknown>>;
 		};
 		activeSessionId = payload.session.id;
 		selectedProviderIdOverride = payload.session.providerConnectionId ?? selectedProviderId;
 		selectedModelOverride = payload.session.modelId ?? selectedModel;
-		messages = payload.messages.map((item) => ({
-			role: item.role === 'assistant' ? 'assistant' : item.role === 'toolResult' ? 'tool' : 'user',
-			text: item.text
-		}));
+		messages = payload.messages.map((item) => uiMessageFromServer(item));
 		sidebarOpen = false;
 	}
 
@@ -103,7 +240,11 @@
 		message = '';
 		errorText = '';
 		isStreaming = true;
-		messages = [...messages, { role: 'user', text: prompt }, { role: 'assistant', text: '' }];
+		messages = [
+			...messages,
+			{ role: 'user', text: prompt, thoughts: [] },
+			{ role: 'assistant', text: '', thoughts: [] }
+		];
 
 		await tick();
 		focusChatInput?.();
@@ -140,21 +281,15 @@
 						errorText = String(payload.message ?? 'Chat request failed');
 					}
 					if (eventName === 'event' && payload.type === 'message_update') {
-						const eventMessage = payload.message as { role?: string; text?: string } | undefined;
+						const eventMessage = isRecord(payload.message) ? payload.message : undefined;
 						if (eventMessage?.role === 'assistant') {
-							messages[messages.length - 1] = {
-								role: 'assistant',
-								text: eventMessage.text ?? ''
-							};
+							replaceLastAssistantMessage(eventMessage);
 						}
 					}
 					if (eventName === 'event' && payload.type === 'message_end') {
-						const eventMessage = payload.message as { role?: string; text?: string } | undefined;
+						const eventMessage = isRecord(payload.message) ? payload.message : undefined;
 						if (eventMessage?.role === 'assistant') {
-							messages[messages.length - 1] = {
-								role: 'assistant',
-								text: eventMessage.text ?? ''
-							};
+							replaceLastAssistantMessage(eventMessage);
 						}
 					}
 				});
@@ -318,10 +453,49 @@
 						{#each messages as item, index (`${index}-${item.role}`)}
 							<article class={['message-row', item.role === 'user' ? 'justify-end' : 'justify-start']}>
 								<div class={['message-block', item.role]}>
-									{#if item.role === 'assistant' && item.text.length === 0 && isStreaming}
+									{#if item.role === 'assistant' && item.thoughts.length > 0}
+										<div class="thought-stack">
+											{#each item.thoughts as thought (thought.contentIndex)}
+												<div class={['thought-block', thought.status]}>
+													<button
+														type="button"
+														class="thought-toggle"
+														aria-expanded={thought.expanded}
+														aria-controls={`thought-${index}-${thought.contentIndex}`}
+														onclick={() => toggleThought(index, thought.contentIndex)}
+													>
+														<span
+															class={['material-symbols-outlined thought-chevron', thought.expanded ? 'expanded' : '']}
+															aria-hidden="true"
+														>
+															expand_more
+														</span>
+														<span>{thoughtLabel(thought)}</span>
+													</button>
+
+													{#if thought.expanded}
+														<div
+															id={`thought-${index}-${thought.contentIndex}`}
+															class="thought-body"
+														>
+															{#if thought.redacted}
+																<span class="thought-redacted">Thought redacted by provider</span>
+															{:else if thought.text.trim()}
+																{thought.text}
+															{:else if thought.status === 'thinking'}
+																<span class="thinking-cursor" aria-hidden="true"></span>
+															{/if}
+														</div>
+													{/if}
+												</div>
+											{/each}
+										</div>
+									{/if}
+
+									{#if shouldShowAssistantPlaceholder(item)}
 										<span class="text-text-muted">...</span>
-									{:else}
-										{item.text}
+									{:else if item.text.length > 0}
+										<div class="message-text">{item.text}</div>
 									{/if}
 								</div>
 							</article>
@@ -378,11 +552,17 @@
 
 	.message-block {
 		max-width: min(100%, 720px);
-		white-space: pre-wrap;
 		border-radius: 0.5rem;
 		padding: 0.875rem 1rem;
 		font-size: 16px;
 		line-height: 24px;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.message-text {
+		white-space: pre-wrap;
 	}
 
 	.message-block.user {
@@ -396,5 +576,85 @@
 		border: 1px solid var(--color-border-subtle);
 		background: var(--color-surface-container-low);
 		color: var(--color-text-primary);
+	}
+
+	.thought-stack {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.thought-block {
+		border-left: 1px solid var(--color-outline-variant);
+		padding-left: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	.thought-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		border: 0;
+		background: transparent;
+		color: var(--color-text-muted);
+		padding: 0;
+		font-size: 13px;
+		line-height: 20px;
+		cursor: pointer;
+		transition: color 150ms ease;
+	}
+
+	.thought-toggle:hover,
+	.thought-toggle:focus-visible {
+		color: var(--color-primary);
+	}
+
+	.thought-toggle:focus-visible {
+		outline: 1px solid var(--color-outline);
+		outline-offset: 3px;
+		border-radius: 0.25rem;
+	}
+
+	.thought-chevron {
+		font-size: 18px;
+		transition: transform 150ms ease;
+	}
+
+	.thought-chevron.expanded {
+		transform: rotate(180deg);
+	}
+
+	.thought-body {
+		margin-top: 0.375rem;
+		white-space: pre-wrap;
+		color: var(--color-on-surface-variant);
+		font-size: 14px;
+		line-height: 20px;
+	}
+
+	.thought-redacted {
+		color: var(--color-text-muted);
+		font-style: italic;
+	}
+
+	.thinking-cursor {
+		display: inline-block;
+		width: 0.5rem;
+		height: 1rem;
+		border-radius: 9999px;
+		background: var(--color-text-muted);
+		animation: thinking-pulse 1s ease-in-out infinite;
+		vertical-align: -0.125rem;
+	}
+
+	@keyframes thinking-pulse {
+		0%,
+		100% {
+			opacity: 0.35;
+		}
+
+		50% {
+			opacity: 1;
+		}
 	}
 </style>

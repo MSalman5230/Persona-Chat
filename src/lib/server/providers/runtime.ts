@@ -31,13 +31,9 @@ function ensureModelIds(row: ProviderConnectionRow): string[] {
 
 function buildAuthStorage(row: ProviderConnectionRow): AuthStorage {
 	const secrets = getProviderSecrets(row);
-	if (!secrets.apiKey) throw new Error(`Provider ${row.name} is missing an API key`);
-	return AuthStorage.inMemory({
-		[row.providerId]: {
-			type: 'api_key',
-			key: secrets.apiKey
-		}
-	});
+	const authStorage = AuthStorage.create();
+	if (secrets.apiKey) authStorage.setRuntimeApiKey(row.providerId, secrets.apiKey);
+	return authStorage;
 }
 
 function registerCustomProvider(row: ProviderConnectionRow, registry: ModelRegistry): void {
@@ -45,10 +41,12 @@ function registerCustomProvider(row: ProviderConnectionRow, registry: ModelRegis
 	if (!row.baseUrl) throw new Error(`Custom provider ${row.name} needs a base URL`);
 
 	const secrets = getProviderSecrets(row);
+	if (!secrets.apiKey) throw new Error(`Custom provider ${row.name} is missing an API key`);
 	registry.registerProvider(row.providerId, {
 		name: row.name,
 		api: row.api as Api,
 		baseUrl: row.baseUrl,
+		apiKey: secrets.apiKey,
 		authHeader: row.authHeader,
 		headers: secrets.headers,
 		models: ensureModelIds(row).map((modelId) => ({

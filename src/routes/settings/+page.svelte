@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import type { PageProps } from './$types';
 
-	let { data, form } = $props();
+	let { data, form }: PageProps = $props();
 
 	type Tab = 'providers' | 'mcp';
 
 	let activeTab = $state<Tab>('providers');
+	let selectedSupportedProviderId = $state<string | null>(null);
+	let selectedDefaultModelOverride = $state<string | null>(null);
 
 	const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 	const providerKinds = [
@@ -17,6 +20,25 @@
 		{ value: 'streamable_http', label: 'Streamable HTTP' },
 		{ value: 'sse', label: 'SSE' }
 	];
+	const selectedProviderId = $derived(selectedSupportedProviderId ?? data.supportedProviders[0]?.id ?? '');
+	const selectedSupportedProvider = $derived(
+		data.supportedProviders.find((provider) => provider.id === selectedProviderId) ??
+			data.supportedProviders[0]
+	);
+	const selectedSupportedModels = $derived(selectedSupportedProvider?.models ?? []);
+	const selectedDefaultModel = $derived(
+		selectedDefaultModelOverride ?? selectedSupportedProvider?.defaultModel ?? ''
+	);
+
+	function selectSupportedProvider(event: Event) {
+		const providerId = (event.currentTarget as HTMLSelectElement).value;
+		selectedSupportedProviderId = providerId;
+		selectedDefaultModelOverride = null;
+	}
+
+	function selectDefaultModel(event: Event) {
+		selectedDefaultModelOverride = (event.currentTarget as HTMLSelectElement).value;
+	}
 </script>
 
 <svelte:head>
@@ -200,39 +222,58 @@
 
 				<form class="h-fit rounded-lg border border-border-subtle bg-surface-container-low p-4" method="POST" action="?/saveProvider">
 					<h2 class="mb-4 font-body-md text-body-md font-semibold text-primary">Add Provider</h2>
-					<div class="grid gap-3">
-						<input class="field" name="name" placeholder="OpenAI" />
-						<input class="field" name="providerId" placeholder="openai" />
-						<select class="field" name="kind">
-							<option value="built_in">Built-in</option>
-							<option value="custom">Custom</option>
-						</select>
-						<input class="field" name="api" value="openai" />
-						<input class="field" name="baseUrl" placeholder="https://api.openai.com/v1" />
-						<input class="field" name="defaultModel" placeholder="gpt-5.2" />
-						<select class="field" name="defaultThinkingLevel">
-							{#each thinkingLevels as level (level)}
-								<option value={level} selected={level === 'medium'}>{level}</option>
-							{/each}
-						</select>
-						<textarea class="field min-h-20" name="models" placeholder="gpt-5.2&#10;gpt-5.2-mini"></textarea>
-						<input class="field" name="apiKey" type="password" autocomplete="off" placeholder="API key" />
-						<textarea class="field min-h-20" name="headersJson" placeholder={`{"X-Header":"value"}`}></textarea>
-						<textarea class="field min-h-20" name="configJson" placeholder={`{}`}></textarea>
-						<label class="toggle">
-							<input type="checkbox" name="enabled" checked />
-							<span>Enabled</span>
-						</label>
-						<label class="toggle">
-							<input type="checkbox" name="isDefault" />
-							<span>Default</span>
-						</label>
-						<label class="toggle">
-							<input type="checkbox" name="authHeader" checked />
-							<span>Auth header</span>
-						</label>
-						<button class="primary-button">Add Provider</button>
-					</div>
+					{#if data.supportedProviders.length > 0}
+						<div class="grid gap-3">
+							<label class="space-y-1">
+								<span class="font-label-md text-label-md uppercase text-text-muted">Provider</span>
+								<select
+									class="field"
+									name="providerId"
+									value={selectedProviderId}
+									onchange={selectSupportedProvider}
+								>
+									{#each data.supportedProviders as provider (provider.id)}
+										<option value={provider.id}>{provider.name}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="space-y-1">
+								<span class="font-label-md text-label-md uppercase text-text-muted">Default Model</span>
+								<select class="field" name="defaultModel" value={selectedDefaultModel} onchange={selectDefaultModel}>
+									{#each selectedSupportedModels as model (model.id)}
+										<option value={model.id}>{model.name}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="space-y-1">
+								<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
+								<select class="field" name="defaultThinkingLevel">
+									{#each thinkingLevels as level (level)}
+										<option value={level} selected={level === 'medium'}>{level}</option>
+									{/each}
+								</select>
+							</label>
+							<label class="space-y-1">
+								<span class="font-label-md text-label-md uppercase text-text-muted">API Key</span>
+								<input class="field" name="apiKey" type="password" autocomplete="off" placeholder="Optional" />
+							</label>
+							<div class="flex flex-wrap gap-4">
+								<label class="toggle">
+									<input type="checkbox" name="enabled" checked />
+									<span>Enabled</span>
+								</label>
+								<label class="toggle">
+									<input type="checkbox" name="isDefault" />
+									<span>Default</span>
+								</label>
+							</div>
+							<button class="primary-button">Add Provider</button>
+						</div>
+					{:else}
+						<div class="rounded-lg border border-border-subtle bg-surface-container p-4 text-text-muted">
+							No supported providers found.
+						</div>
+					{/if}
 				</form>
 			</section>
 		{:else}

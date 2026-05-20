@@ -4,7 +4,8 @@ import { z } from 'zod';
 import {
 	normalizeAgentEvent,
 	persistAgentMessages,
-	prepareChatTurn
+	prepareChatTurn,
+	type ThoughtTimingsByAssistant
 } from '$lib/server/chat/service';
 
 const chatRequestSchema = z.object({
@@ -19,6 +20,54 @@ function encodeSse(event: string, data: unknown): Uint8Array {
 	return new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
+function isAssistantMessage(message: unknown): boolean {
+	return !!message && typeof message === 'object' && (message as { role?: unknown }).role === 'assistant';
+}
+
+function assistantEventInfo(event: unknown): { type?: string; contentIndex?: number } {
+	if (!event || typeof event !== 'object') return {};
+	const record = event as Record<string, unknown>;
+	return {
+		type: typeof record.type === 'string' ? record.type : undefined,
+		contentIndex: typeof record.contentIndex === 'number' ? record.contentIndex : undefined
+	};
+}
+
+function getAssistantTimings(thoughtTimings: ThoughtTimingsByAssistant, assistantIndex: number) {
+	let timings = thoughtTimings.get(assistantIndex);
+	if (!timings) {
+		timings = new Map();
+		thoughtTimings.set(assistantIndex, timings);
+	}
+	return timings;
+}
+
+function trackThinkingEvent(
+	thoughtTimings: ThoughtTimingsByAssistant,
+	assistantIndex: number,
+	assistantMessageEvent: unknown
+) {
+	const { type, contentIndex } = assistantEventInfo(assistantMessageEvent);
+	if (
+		contentIndex === undefined ||
+		(type !== 'thinking_start' && type !== 'thinking_delta' && type !== 'thinking_end')
+	) {
+		return;
+	}
+
+	const now = Date.now();
+	const timings = getAssistantTimings(thoughtTimings, assistantIndex);
+	const timing = timings.get(contentIndex) ?? {};
+	timing.startedAt ??= now;
+
+	if (type === 'thinking_end') {
+		timing.endedAt = now;
+		timing.durationMs = Math.max(0, now - timing.startedAt);
+	}
+
+	timings.set(contentIndex, timing);
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	const body = chatRequestSchema.parse(await request.json());
 
@@ -26,6 +75,8 @@ export const POST: RequestHandler = async ({ request }) => {
 		async start(controller) {
 			let unsubscribe: (() => void) | undefined;
 			let runtime: Awaited<ReturnType<typeof prepareChatTurn>>['runtime'] | undefined;
+			let assistantIndex = -1;
+			const thoughtTimings: ThoughtTimingsByAssistant = new Map();
 
 			const send = (event: string, data: unknown) => {
 				if (!request.signal.aborted) controller.enqueue(encodeSse(event, data));
@@ -44,11 +95,41 @@ export const POST: RequestHandler = async ({ request }) => {
 				});
 
 				unsubscribe = runtime.session.subscribe((event) => {
-					send('event', normalizeAgentEvent(event));
+					const record = event as Record<string, unknown>;
+					const messageIsAssistant = isAssistantMessage(record.message);
+
+					if (record.type === 'message_start' && messageIsAssistant) {
+						assistantIndex += 1;
+					}
+
+					if (
+						(record.type === 'message_update' || record.type === 'message_end') &&
+						messageIsAssistant &&
+						assistantIndex < 0
+					) {
+						assistantIndex = 0;
+					}
+
+					if (record.type === 'message_update' && messageIsAssistant) {
+						trackThinkingEvent(thoughtTimings, assistantIndex, record.assistantMessageEvent);
+					}
+
+					send(
+						'event',
+						normalizeAgentEvent(
+							event,
+							messageIsAssistant ? thoughtTimings.get(assistantIndex) : undefined
+						)
+					);
 				});
 
 				await runtime.session.prompt(body.message, { source: 'rpc' });
-				await persistAgentMessages(turn.chatSession.id, runtime.session.messages as never, turn.historyCount);
+				await persistAgentMessages(
+					turn.chatSession.id,
+					runtime.session.messages as never,
+					turn.historyCount,
+					thoughtTimings
+				);
 
 				send('done', {
 					sessionId: turn.chatSession.id,
