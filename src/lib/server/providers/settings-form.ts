@@ -18,6 +18,29 @@ function thinkingLevelFromForm(form: FormData): ThinkingLevel {
 	return THINKING_LEVELS.includes(value as ThinkingLevel) ? (value as ThinkingLevel) : 'medium';
 }
 
+function uniqueModelIds(values: string[]): string[] {
+	const seen = new Set<string>();
+	const result: string[] = [];
+
+	for (const value of values) {
+		const trimmed = value.trim();
+		if (!trimmed || seen.has(trimmed)) continue;
+		seen.add(trimmed);
+		result.push(trimmed);
+	}
+
+	return result;
+}
+
+function favoriteModelsFromForm(form: FormData, availableModelIds: string[]): string[] {
+	const allowed = new Set(availableModelIds);
+	const requested = form
+		.getAll('favoriteModels')
+		.flatMap((value) => (typeof value === 'string' ? listFromLines(value) : []));
+
+	return uniqueModelIds(requested).filter((modelId) => allowed.has(modelId));
+}
+
 function legacyProviderPayloadFromForm(
 	form: FormData,
 	update: boolean
@@ -25,7 +48,7 @@ function legacyProviderPayloadFromForm(
 	const defaultModel = stringFromForm(form, 'defaultModel');
 	if (!defaultModel) throw new Error('Default model is required');
 
-	const models = listFromLines(stringFromForm(form, 'models'));
+	const models = uniqueModelIds(listFromLines(stringFromForm(form, 'models')));
 	if (!models.includes(defaultModel)) models.unshift(defaultModel);
 
 	const headersValue = stringFromForm(form, 'headersJson');
@@ -40,6 +63,7 @@ function legacyProviderPayloadFromForm(
 		defaultThinkingLevel: thinkingLevelFromForm(form),
 		authHeader: booleanFromForm(form, 'authHeader', !update),
 		models,
+		favoriteModels: favoriteModelsFromForm(form, models),
 		config: tryParseJsonObject(stringFromForm(form, 'configJson'), 'Provider config'),
 		enabled: booleanFromForm(form, 'enabled', !update),
 		isDefault: booleanFromForm(form, 'isDefault', false),
@@ -83,6 +107,7 @@ export function builtInProviderPayloadFromForm(
 	if (!selectedModel) throw new Error(`Model ${provider.id}/${modelId} is not supported`);
 
 	const apiKey = stringFromForm(form, 'apiKey');
+	const modelIds = provider.models.map((model) => model.id);
 	return {
 		name: provider.name,
 		providerId: provider.id,
@@ -92,7 +117,8 @@ export function builtInProviderPayloadFromForm(
 		defaultModel: selectedModel.id,
 		defaultThinkingLevel: thinkingLevelFromForm(form),
 		authHeader: true,
-		models: provider.models.map((model) => model.id),
+		models: modelIds,
+		favoriteModels: favoriteModelsFromForm(form, modelIds),
 		config: {},
 		enabled: booleanFromForm(form, 'enabled', !update),
 		isDefault: booleanFromForm(form, 'isDefault', false),

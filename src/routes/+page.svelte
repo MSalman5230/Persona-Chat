@@ -33,6 +33,9 @@
 
 	let { data } = $props();
 
+	type ProviderOption = typeof data.providers[number];
+	type ModelOption = { id: string; name: string };
+
 	let message = $state('');
 	let sidebarOpen = $state(false);
 	let isStreaming = $state(false);
@@ -46,11 +49,18 @@
 
 	const providerOptions = $derived(data.providers);
 	const selectedProviderId = $derived(selectedProviderIdOverride ?? data.defaultProviderId ?? '');
-	const selectedModel = $derived(selectedModelOverride ?? data.defaultModel ?? '');
 	const selectedProvider = $derived(
 		providerOptions.find((provider) => provider.id === selectedProviderId) ?? providerOptions[0]
 	);
-	const canSend = $derived(message.trim().length > 0 && !isStreaming);
+	const selectedModelOptions = $derived(modelOptionsForProvider(selectedProvider));
+	const selectedModel = $derived.by(() => {
+		if (selectedModelOverride && selectedModelOptions.some((model) => model.id === selectedModelOverride)) {
+			return selectedModelOverride;
+		}
+
+		return selectedModelOptions[0]?.id ?? '';
+	});
+	const canSend = $derived(message.trim().length > 0 && !isStreaming && selectedModel.length > 0);
 	const hasProviders = $derived(providerOptions.length > 0);
 	const hasActiveThought = $derived(
 		messages.some((item) => item.thoughts.some((thought) => thought.status === 'thinking'))
@@ -352,6 +362,30 @@
 			providerOptions.find((provider) => provider.id === id)?.defaultModel ?? selectedModel;
 	}
 
+	function selectModel(event: Event) {
+		selectedModelOverride = (event.currentTarget as HTMLSelectElement).value;
+	}
+
+	function modelOptionsForProvider(provider: ProviderOption | undefined): ModelOption[] {
+		if (!provider) return [];
+
+		const favoriteModels = provider.favoriteModels;
+		const seen: string[] = [];
+		const options: ModelOption[] = [];
+		const addModel = (modelId: string) => {
+			if (!modelId || seen.includes(modelId)) return;
+			seen.push(modelId);
+			options.push({ id: modelId, name: modelId });
+		};
+
+		addModel(provider.defaultModel);
+		for (const modelId of provider.models) {
+			if (favoriteModels.includes(modelId)) addModel(modelId);
+		}
+
+		return options;
+	}
+
 	function consumeSseChunk(buffer: string, onEvent: (event: string, data: string) => void) {
 		const blocks = buffer.split('\n\n');
 		const rest = blocks.pop() ?? '';
@@ -551,13 +585,17 @@
 							<option value={provider.id}>{provider.name}</option>
 						{/each}
 					</select>
-					<input
-						class="w-44 rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant"
+					<select
+						class="w-56 rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant disabled:opacity-50"
 						value={selectedModel}
-						oninput={(event) => (selectedModelOverride = (event.currentTarget as HTMLInputElement).value)}
-						placeholder="model"
+						onchange={selectModel}
 						aria-label="Model"
-					/>
+						disabled={selectedModelOptions.length === 0}
+					>
+						{#each selectedModelOptions as model (model.id)}
+							<option value={model.id}>{model.name}</option>
+						{/each}
+					</select>
 				</div>
 				<a
 					href={resolve('/settings')}

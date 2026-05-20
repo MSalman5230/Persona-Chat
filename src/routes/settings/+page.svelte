@@ -5,6 +5,9 @@
 	let { data, form }: PageProps = $props();
 
 	type Tab = 'providers' | 'mcp';
+	type SavedProvider = PageProps['data']['providers'][number];
+	type SupportedProvider = PageProps['data']['supportedProviders'][number];
+	type ModelOption = { id: string; name: string };
 
 	let activeTab = $state<Tab>('providers');
 	let selectedSupportedProviderId = $state<string | null>(null);
@@ -38,6 +41,29 @@
 
 	function selectDefaultModel(event: Event) {
 		selectedDefaultModelOverride = (event.currentTarget as HTMLSelectElement).value;
+	}
+
+	function supportedProviderFor(providerId: string): SupportedProvider | undefined {
+		return data.supportedProviders.find((provider) => provider.id === providerId);
+	}
+
+	function providerModelOptions(provider: SavedProvider): ModelOption[] {
+		const supportedProvider =
+			provider.kind === 'built_in' ? supportedProviderFor(provider.providerId) : undefined;
+		if (supportedProvider) return supportedProvider.models;
+
+		const modelIds = provider.models.length > 0 ? provider.models : [provider.defaultModel];
+		return modelIds.filter(Boolean).map((modelId) => ({ id: modelId, name: modelId }));
+	}
+
+	function hasModel(options: ModelOption[], modelId: string): boolean {
+		return options.some((model) => model.id === modelId);
+	}
+
+	function defaultModelValue(provider: SavedProvider, options: ModelOption[]): string {
+		return hasModel(options, provider.defaultModel)
+			? provider.defaultModel
+			: (options[0]?.id ?? provider.defaultModel);
 	}
 </script>
 
@@ -108,6 +134,7 @@
 			<section class="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
 				<div class="space-y-3">
 					{#each data.providers as provider (provider.id)}
+						{@const modelOptions = providerModelOptions(provider)}
 						<div class="rounded-lg border border-border-subtle bg-surface-container-low p-4">
 							<div class="flex flex-wrap items-start justify-between gap-3">
 								<div>
@@ -176,7 +203,14 @@
 								</label>
 								<label class="space-y-1">
 									<span class="font-label-md text-label-md uppercase text-text-muted">Default Model</span>
-									<input class="field" name="defaultModel" value={provider.defaultModel} />
+									<select class="field" name="defaultModel" value={defaultModelValue(provider, modelOptions)}>
+										{#if provider.defaultModel && !hasModel(modelOptions, provider.defaultModel)}
+											<option value={provider.defaultModel}>{provider.defaultModel}</option>
+										{/if}
+										{#each modelOptions as model (model.id)}
+											<option value={model.id}>{model.name}</option>
+										{/each}
+									</select>
 								</label>
 								<label class="space-y-1">
 									<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
@@ -186,10 +220,38 @@
 										{/each}
 									</select>
 								</label>
-								<label class="space-y-1 sm:col-span-2">
+								<div class="space-y-2 sm:col-span-2">
 									<span class="font-label-md text-label-md uppercase text-text-muted">Models</span>
-									<textarea class="field min-h-20" name="models" value={provider.models.join('\n')}></textarea>
-								</label>
+									{#if modelOptions.length > 0}
+										<div class="model-list">
+											{#each modelOptions as model (model.id)}
+												<label class="model-favorite">
+													<input
+														class="model-favorite-input"
+														type="checkbox"
+														name="favoriteModels"
+														value={model.id}
+														checked={provider.favoriteModels.includes(model.id)}
+													/>
+													<span class="favorite-toggle" aria-hidden="true">
+														<span class="material-symbols-outlined favorite-icon">star</span>
+													</span>
+													<span class="model-name">{model.name}</span>
+													{#if model.id === provider.defaultModel}
+														<span class="model-badge">Default</span>
+													{/if}
+												</label>
+											{/each}
+										</div>
+									{:else}
+										<div class="rounded-lg border border-border-subtle bg-surface-container p-3 text-text-muted">
+											No models configured.
+										</div>
+									{/if}
+									{#if provider.kind === 'custom'}
+										<textarea class="field min-h-20" name="models" value={provider.models.join('\n')}></textarea>
+									{/if}
+								</div>
 								<label class="space-y-1 sm:col-span-2">
 									<span class="font-label-md text-label-md uppercase text-text-muted">New API Key</span>
 									<input class="field" name="apiKey" type="password" autocomplete="off" placeholder={provider.hasApiKey ? 'Saved' : ''} />
@@ -395,6 +457,102 @@
 		color: var(--color-text-muted);
 		font-size: 14px;
 		line-height: 20px;
+	}
+
+	.model-list {
+		display: grid;
+		max-height: 16rem;
+		gap: 0.375rem;
+		overflow-y: auto;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container);
+		padding: 0.375rem;
+	}
+
+	.model-favorite {
+		position: relative;
+		display: flex;
+		min-width: 0;
+		align-items: center;
+		gap: 0.625rem;
+		border-radius: 0.375rem;
+		padding: 0.375rem 0.5rem;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		transition:
+			background 150ms ease,
+			color 150ms ease;
+	}
+
+	.model-favorite:hover {
+		background: var(--color-surface-container-high);
+		color: var(--color-primary);
+	}
+
+	.model-favorite-input {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.favorite-toggle {
+		display: inline-flex;
+		height: 1.75rem;
+		width: 1.75rem;
+		flex: 0 0 auto;
+		align-items: center;
+		justify-content: center;
+		border-radius: 0.375rem;
+		border: 1px solid var(--color-border-subtle);
+		color: var(--color-text-muted);
+		transition:
+			border-color 150ms ease,
+			color 150ms ease;
+	}
+
+	.favorite-icon {
+		font-size: 20px;
+		font-variation-settings: 'FILL' 0;
+	}
+
+	.model-favorite-input:checked + .favorite-toggle {
+		border-color: var(--color-outline);
+		color: var(--color-primary);
+	}
+
+	.model-favorite-input:checked + .favorite-toggle .favorite-icon {
+		font-variation-settings: 'FILL' 1;
+	}
+
+	.model-favorite-input:focus-visible + .favorite-toggle {
+		outline: 1px solid var(--color-outline);
+		outline-offset: 2px;
+	}
+
+	.model-name {
+		min-width: 0;
+		flex: 1 1 auto;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-family: var(--font-code);
+		font-size: 14px;
+		line-height: 20px;
+		color: var(--color-text-primary);
+	}
+
+	.model-badge {
+		flex: 0 0 auto;
+		border-radius: 0.25rem;
+		border: 1px solid var(--color-outline-variant);
+		padding: 0.125rem 0.375rem;
+		font-size: 11px;
+		line-height: 1;
+		text-transform: uppercase;
+		color: var(--color-text-muted);
 	}
 
 	.primary-button {

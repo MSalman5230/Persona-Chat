@@ -16,6 +16,7 @@ const providerSchema = z.object({
 	defaultThinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('medium'),
 	authHeader: z.boolean().default(true),
 	models: z.array(z.string()).default([]),
+	favoriteModels: z.array(z.string()).default([]),
 	config: z.record(z.string(), z.unknown()).default({}),
 	apiKey: z.string().optional(),
 	headers: z.record(z.string(), z.string()).default({}),

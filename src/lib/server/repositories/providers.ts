@@ -21,6 +21,7 @@ const providerInputSchema = z.object({
 		.default('medium'),
 	authHeader: z.boolean().default(true),
 	models: z.array(z.string().min(1)).default([]),
+	favoriteModels: z.array(z.string().min(1)).default([]),
 	config: z.record(z.string(), z.unknown()).default({}),
 	apiKey: z.string().optional(),
 	headers: z.record(z.string(), z.string()).default({}),
@@ -65,6 +66,31 @@ function buildSecret(input: Pick<ProviderInput, 'apiKey' | 'headers'>): Encrypte
 	if (input.apiKey?.trim()) secret.apiKey = input.apiKey.trim();
 	if (input.headers && Object.keys(input.headers).length > 0) secret.headers = input.headers;
 	return Object.keys(secret).length > 0 ? encryptJson(secret) : null;
+}
+
+function uniqueStrings(values: string[]): string[] {
+	const seen = new Set<string>();
+	const result: string[] = [];
+
+	for (const value of values) {
+		const trimmed = value.trim();
+		if (!trimmed || seen.has(trimmed)) continue;
+		seen.add(trimmed);
+		result.push(trimmed);
+	}
+
+	return result;
+}
+
+function normalizeModels(defaultModel: string, models: string[]): string[] {
+	const normalized = uniqueStrings(models);
+	if (!normalized.includes(defaultModel)) normalized.unshift(defaultModel);
+	return normalized;
+}
+
+function normalizeFavoriteModels(favoriteModels: string[], models: string[]): string[] {
+	const allowed = new Set(models);
+	return uniqueStrings(favoriteModels).filter((modelId) => allowed.has(modelId));
 }
 
 async function ensureSingleDefault(id: string): Promise<void> {
@@ -118,6 +144,8 @@ export async function getDefaultProviderConnection(): Promise<ProviderConnection
 export async function createProviderConnection(input: ProviderInput): Promise<PublicProviderConnection> {
 	const parsed = providerInputSchema.parse(input);
 	const existing = await db.select({ id: providerConnections.id }).from(providerConnections).limit(1);
+	const models = normalizeModels(parsed.defaultModel, parsed.models);
+	const favoriteModels = normalizeFavoriteModels(parsed.favoriteModels, models);
 	const [row] = await db
 		.insert(providerConnections)
 		.values({
@@ -129,7 +157,8 @@ export async function createProviderConnection(input: ProviderInput): Promise<Pu
 			defaultModel: parsed.defaultModel,
 			defaultThinkingLevel: parsed.defaultThinkingLevel,
 			authHeader: parsed.authHeader,
-			models: parsed.models.length > 0 ? parsed.models : [parsed.defaultModel],
+			models,
+			favoriteModels,
 			config: parsed.config,
 			secret: buildSecret(parsed),
 			enabled: parsed.enabled,
@@ -150,6 +179,15 @@ export async function updateProviderConnection(
 
 	const parsed = providerUpdateSchema.parse(input);
 	let nextSecret = current.secret;
+	const nextDefaultModel = parsed.defaultModel ?? current.defaultModel;
+	const nextModels =
+		parsed.models !== undefined || parsed.defaultModel !== undefined
+			? normalizeModels(nextDefaultModel, parsed.models ?? current.models)
+			: undefined;
+	const nextFavoriteModels =
+		parsed.favoriteModels !== undefined || nextModels !== undefined
+			? normalizeFavoriteModels(parsed.favoriteModels ?? current.favoriteModels, nextModels ?? current.models)
+			: undefined;
 	if (parsed.apiKey !== undefined || parsed.headers !== undefined) {
 		const secret = {
 			...decryptProviderSecret(current.secret),
@@ -179,7 +217,8 @@ export async function updateProviderConnection(
 				? { defaultThinkingLevel: parsed.defaultThinkingLevel }
 				: {}),
 			...(parsed.authHeader !== undefined ? { authHeader: parsed.authHeader } : {}),
-			...(parsed.models !== undefined ? { models: parsed.models } : {}),
+			...(nextModels !== undefined ? { models: nextModels } : {}),
+			...(nextFavoriteModels !== undefined ? { favoriteModels: nextFavoriteModels } : {}),
 			...(parsed.config !== undefined ? { config: parsed.config } : {}),
 			...(parsed.enabled !== undefined ? { enabled: parsed.enabled } : {}),
 			...(parsed.isDefault !== undefined ? { isDefault: parsed.isDefault } : {}),

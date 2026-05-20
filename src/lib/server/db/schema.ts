@@ -52,6 +52,7 @@ export const providerConnections = pgTable(
 		defaultThinkingLevel: text('default_thinking_level').notNull().default('medium'),
 		authHeader: boolean('auth_header').notNull().default(true),
 		models: jsonb('models').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+		favoriteModels: jsonb('favorite_models').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
 		config: jsonb('config').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
 		secret: jsonb('secret').$type<EncryptedJsonPayload | null>(),
 		enabled: boolean('enabled').notNull().default(true),
