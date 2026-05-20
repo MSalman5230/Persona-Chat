@@ -314,6 +314,15 @@
 		resizeTextarea(event.currentTarget as HTMLTextAreaElement);
 	}
 
+	function handleMessageKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+
+		event.preventDefault();
+		if (!canSend) return;
+
+		(event.currentTarget as HTMLTextAreaElement).form?.requestSubmit();
+	}
+
 	function newChat() {
 		activeSessionId = null;
 		messages = [];
@@ -678,6 +687,7 @@
 								aria-label="Message Persona"
 								disabled={!hasProviders || isStreaming}
 								oninput={handleMessageInput}
+								onkeydown={handleMessageKeydown}
 								{@attach autosize}
 							></textarea>
 
