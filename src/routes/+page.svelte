@@ -1,56 +1,33 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { Attachment } from 'svelte/attachments';
 	import { tick } from 'svelte';
 
-	type Suggestion = {
-		title: string;
-		prompt: string;
-		icon: string;
+	type UiMessage = {
+		role: 'user' | 'assistant' | 'tool' | 'system';
+		text: string;
 	};
 
-	type MenuItem = {
-		label: string;
-		icon: string;
-	};
-
-	const modelName = 'GPT-4.0';
-
-	const recentChats = ['Project Deep Dive 2024', 'Python script debugging'];
-
-	const suggestions: Suggestion[] = [
-		{
-			title: 'Help me write...',
-			prompt: 'Draft a professional LinkedIn post about AI trends.',
-			icon: 'edit_note'
-		},
-		{
-			title: 'Brainstorm ideas...',
-			prompt: 'Generate 10 catchy names for my new tech startup.',
-			icon: 'lightbulb'
-		},
-		{
-			title: 'Summarize text...',
-			prompt: 'Give me the key takeaways from this lengthy article.',
-			icon: 'summarize'
-		},
-		{
-			title: 'Code solution...',
-			prompt: 'Write a Python script to automate my spreadsheet data.',
-			icon: 'terminal'
-		}
-	];
-
-	const footerItems: MenuItem[] = [
-		{ label: 'Settings', icon: 'settings' },
-		{ label: 'Profile', icon: 'account_circle' },
-		{ label: 'Sign Out', icon: 'logout' }
-	];
+	let { data } = $props();
 
 	let message = $state('');
 	let sidebarOpen = $state(false);
+	let isStreaming = $state(false);
+	let activeSessionId = $state<string | null>(null);
+	let selectedProviderIdOverride = $state<string | null>(null);
+	let selectedModelOverride = $state<string | null>(null);
+	let errorText = $state('');
+	let messages = $state<UiMessage[]>([]);
 	let focusChatInput: (() => void) | undefined;
 
-	const canSend = $derived(message.trim().length > 0);
+	const providerOptions = $derived(data.providers);
+	const selectedProviderId = $derived(selectedProviderIdOverride ?? data.defaultProviderId ?? '');
+	const selectedModel = $derived(selectedModelOverride ?? data.defaultModel ?? '');
+	const selectedProvider = $derived(
+		providerOptions.find((provider) => provider.id === selectedProviderId) ?? providerOptions[0]
+	);
+	const canSend = $derived(message.trim().length > 0 && !isStreaming);
+	const hasProviders = $derived(providerOptions.length > 0);
 
 	function resizeTextarea(node: HTMLTextAreaElement) {
 		node.style.height = 'auto';
@@ -66,9 +43,7 @@
 		focusChatInput = focus;
 
 		return () => {
-			if (focusChatInput === focus) {
-				focusChatInput = undefined;
-			}
+			if (focusChatInput === focus) focusChatInput = undefined;
 		};
 	};
 
@@ -76,41 +51,128 @@
 		resizeTextarea(event.currentTarget as HTMLTextAreaElement);
 	}
 
-	async function useSuggestion(prompt: string) {
-		message = prompt;
+	function newChat() {
+		activeSessionId = null;
+		messages = [];
+		errorText = '';
 		sidebarOpen = false;
+		tick().then(() => focusChatInput?.());
+	}
+
+	async function loadSession(id: string) {
+		const response = await fetch(`/api/chat-sessions/${id}`);
+		if (!response.ok) return;
+		const payload = (await response.json()) as {
+			session: { id: string; providerConnectionId: string | null; modelId: string | null };
+			messages: Array<{ role: string; text: string }>;
+		};
+		activeSessionId = payload.session.id;
+		selectedProviderIdOverride = payload.session.providerConnectionId ?? selectedProviderId;
+		selectedModelOverride = payload.session.modelId ?? selectedModel;
+		messages = payload.messages.map((item) => ({
+			role: item.role === 'assistant' ? 'assistant' : item.role === 'toolResult' ? 'tool' : 'user',
+			text: item.text
+		}));
+		sidebarOpen = false;
+	}
+
+	function selectProvider(event: Event) {
+		const id = (event.currentTarget as HTMLSelectElement).value;
+		selectedProviderIdOverride = id;
+		selectedModelOverride =
+			providerOptions.find((provider) => provider.id === id)?.defaultModel ?? selectedModel;
+	}
+
+	function consumeSseChunk(buffer: string, onEvent: (event: string, data: string) => void) {
+		const blocks = buffer.split('\n\n');
+		const rest = blocks.pop() ?? '';
+		for (const block of blocks) {
+			const eventLine = block.split('\n').find((line) => line.startsWith('event: '));
+			const dataLine = block.split('\n').find((line) => line.startsWith('data: '));
+			if (!eventLine || !dataLine) continue;
+			onEvent(eventLine.slice(7), dataLine.slice(6));
+		}
+		return rest;
+	}
+
+	async function handleSubmit(event: SubmitEvent) {
+		event.preventDefault();
+		const prompt = message.trim();
+		if (!prompt || !hasProviders) return;
+
+		message = '';
+		errorText = '';
+		isStreaming = true;
+		messages = [...messages, { role: 'user', text: prompt }, { role: 'assistant', text: '' }];
 
 		await tick();
 		focusChatInput?.();
-	}
 
-	function handleSubmit(event: SubmitEvent) {
-		event.preventDefault();
-		if (!canSend) return;
-	}
+		try {
+			const response = await fetch('/api/chat', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					sessionId: activeSessionId,
+					message: prompt,
+					providerConnectionId: selectedProviderId || null,
+					modelId: selectedModel || null
+				})
+			});
 
+			if (!response.ok || !response.body) throw new Error('Chat request failed');
+
+			const reader = response.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+
+				buffer += decoder.decode(value, { stream: true });
+				buffer = consumeSseChunk(buffer, (eventName, dataText) => {
+					const payload = JSON.parse(dataText) as Record<string, unknown>;
+					if (eventName === 'session' && typeof payload.id === 'string') {
+						activeSessionId = payload.id;
+					}
+					if (eventName === 'error') {
+						errorText = String(payload.message ?? 'Chat request failed');
+					}
+					if (eventName === 'event' && payload.type === 'message_update') {
+						const eventMessage = payload.message as { role?: string; text?: string } | undefined;
+						if (eventMessage?.role === 'assistant') {
+							messages[messages.length - 1] = {
+								role: 'assistant',
+								text: eventMessage.text ?? ''
+							};
+						}
+					}
+					if (eventName === 'event' && payload.type === 'message_end') {
+						const eventMessage = payload.message as { role?: string; text?: string } | undefined;
+						if (eventMessage?.role === 'assistant') {
+							messages[messages.length - 1] = {
+								role: 'assistant',
+								text: eventMessage.text ?? ''
+							};
+						}
+					}
+				});
+			}
+		} catch (error) {
+			errorText = error instanceof Error ? error.message : 'Chat request failed';
+		} finally {
+			isStreaming = false;
+		}
+	}
 </script>
 
 <svelte:head>
-	<title>Persona Chat - Modern Intelligence</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com" />
-	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-	<link
-		href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap"
-		rel="stylesheet"
-	/>
-	<link
-		href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-		rel="stylesheet"
-	/>
+	<title>Persona Chat</title>
 </svelte:head>
 
-<div
-	class="min-h-dvh overflow-hidden bg-background text-text-primary selection:bg-primary-container selection:text-on-primary-container"
->
-	<header
-		class="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-4 backdrop-blur-md md:hidden"
-	>
+<div class="min-h-dvh overflow-hidden bg-background text-text-primary selection:bg-primary-container selection:text-on-primary-container">
+	<header class="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-4 backdrop-blur-md md:hidden">
 		<button
 			type="button"
 			class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
@@ -119,11 +181,12 @@
 		>
 			<span class="material-symbols-outlined" aria-hidden="true">menu</span>
 		</button>
-		<h1 class="font-headline-md text-headline-md text-primary">Persona Chat</h1>
+		<h1 class="font-headline-md text-headline-md text-primary">Persona</h1>
 		<button
 			type="button"
 			class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
 			aria-label="New chat"
+			onclick={newChat}
 		>
 			<span class="material-symbols-outlined" aria-hidden="true">add</span>
 		</button>
@@ -140,165 +203,153 @@
 			<div class="mb-8 px-gutter">
 				<div class="mb-1 flex items-center gap-3">
 					<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-background">
-						<span class="material-symbols-outlined filled !text-[20px]" aria-hidden="true">
-							neurology
-						</span>
+						<span class="material-symbols-outlined filled !text-[20px]" aria-hidden="true">neurology</span>
 					</div>
 					<h2 class="font-headline-md text-headline-md font-bold text-primary">Persona</h2>
 				</div>
-				<p class="font-body-sm text-body-sm text-text-muted">Modern Intelligence</p>
+				<p class="font-body-sm text-body-sm text-text-muted">Local agent runtime</p>
 			</div>
 
 			<nav class="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3" aria-label="Main">
 				<button
 					type="button"
 					class="flex w-full items-center gap-3 rounded-lg border-l-2 border-primary bg-surface-container px-4 py-2.5 text-left text-primary transition-colors duration-200"
+					onclick={newChat}
 				>
 					<span class="material-symbols-outlined" aria-hidden="true">add</span>
 					<span class="font-body-sm text-body-sm font-medium">New Chat</span>
 				</button>
 
 				<div class="px-4 pb-2 pt-6">
-					<p class="text-[10px] font-bold uppercase tracking-widest text-text-muted/50">
-						Recent Chats
-					</p>
+					<p class="text-[10px] font-bold uppercase tracking-widest text-text-muted/50">Recent Chats</p>
 				</div>
 
 				<div class="space-y-1">
-					{#each recentChats as chat (chat)}
+					{#each data.sessions as chat (chat.id)}
 						<button
 							type="button"
-							class="flex w-full items-center gap-3 truncate rounded-lg px-4 py-2 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+							class={[
+								'flex w-full items-center gap-3 truncate rounded-lg px-4 py-2 text-left transition-colors duration-200',
+								activeSessionId === chat.id
+									? 'bg-surface-container text-primary'
+									: 'text-text-muted hover:bg-surface-container-high hover:text-primary'
+							]}
+							onclick={() => loadSession(chat.id)}
 						>
-							<span class="truncate font-body-sm text-body-sm">{chat}</span>
+							<span class="truncate font-body-sm text-body-sm">{chat.title}</span>
 						</button>
+					{:else}
+						<p class="px-4 py-2 font-body-sm text-body-sm text-text-muted">No chats yet.</p>
 					{/each}
 				</div>
 			</nav>
 
 			<div class="space-y-1 border-t border-border-subtle px-3 pt-4">
-				{#each footerItems as item (item.label)}
-					<button
-						type="button"
-						class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
-					>
-						<span class="material-symbols-outlined" aria-hidden="true">{item.icon}</span>
-						<span class="font-body-sm text-body-sm">{item.label}</span>
-					</button>
-				{/each}
+				<a
+					href={resolve('/settings')}
+					class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+				>
+					<span class="material-symbols-outlined" aria-hidden="true">settings</span>
+					<span class="font-body-sm text-body-sm">Settings</span>
+				</a>
 			</div>
 		</aside>
 
 		<button
 			type="button"
-			class={[
-				'fixed inset-0 z-40 bg-black/60 md:hidden',
-				sidebarOpen ? 'block' : 'hidden'
-			]}
+			class={['fixed inset-0 z-40 bg-black/60 md:hidden', sidebarOpen ? 'block' : 'hidden']}
 			aria-label="Close sidebar"
 			aria-hidden={!sidebarOpen}
 			onclick={() => (sidebarOpen = false)}
 		></button>
 
 		<main class="relative flex h-full flex-1 flex-col md:ml-sidebar-width">
-			<header
-				class="sticky top-0 z-30 hidden h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-gutter backdrop-blur-md md:flex"
-			>
-				<button
-					type="button"
-					class="flex items-center gap-1.5 rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary transition-colors hover:bg-surface-variant"
-					aria-label="Select model"
-				>
-					<span>{modelName}</span>
-					<span class="material-symbols-outlined !text-[16px]" aria-hidden="true">
-						keyboard_arrow_down
-					</span>
-				</button>
-
-				<button
-					type="button"
+			<header class="sticky top-0 z-30 hidden h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-gutter backdrop-blur-md md:flex">
+				<div class="flex items-center gap-2">
+					<select
+						class="rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant"
+						value={selectedProviderId}
+						onchange={selectProvider}
+						aria-label="Provider"
+					>
+						{#each providerOptions as provider (provider.id)}
+							<option value={provider.id}>{provider.name}</option>
+						{/each}
+					</select>
+					<input
+						class="w-44 rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant"
+						value={selectedModel}
+						oninput={(event) => (selectedModelOverride = (event.currentTarget as HTMLInputElement).value)}
+						placeholder="model"
+						aria-label="Model"
+					/>
+				</div>
+				<a
+					href={resolve('/settings')}
 					class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
-					aria-label="More options"
+					aria-label="Settings"
 				>
-					<span class="material-symbols-outlined" aria-hidden="true">more_vert</span>
-				</button>
+					<span class="material-symbols-outlined" aria-hidden="true">settings</span>
+				</a>
 			</header>
 
-			<section
-				class="custom-scrollbar flex flex-1 flex-col items-center overflow-y-auto px-4 pb-48 pt-8 md:justify-center md:pb-44 md:pt-0"
-			>
-				<div class="mx-auto w-full max-w-container-max-width">
-					<div class="mb-6 text-center sm:mb-8 md:mb-12">
-						<div
-							class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-border-subtle bg-surface-container-high text-primary shadow-[0_18px_50px_rgba(0,0,0,0.22)] sm:mb-6 sm:h-16 sm:w-16 sm:rounded-2xl"
-						>
-							<span class="material-symbols-outlined !text-[32px]" aria-hidden="true">
-								neurology
-							</span>
+			<section class="custom-scrollbar flex flex-1 flex-col overflow-y-auto px-4 pb-48 pt-8 md:pb-44">
+				<div class="mx-auto flex w-full max-w-container-max-width flex-1 flex-col gap-5">
+					{#if !hasProviders}
+						<div class="mt-16 rounded-lg border border-border-subtle bg-surface-container-low p-6">
+							<h2 class="font-headline-md text-headline-md text-primary">Add a provider to start</h2>
+							{#if data.loadError}
+								<p class="mt-3 font-body-sm text-body-sm text-error">{data.loadError}</p>
+							{/if}
+							<a class="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 font-body-sm text-body-sm font-semibold text-background" href={resolve('/settings')}>
+								Open settings
+							</a>
 						</div>
-						<h2 class="mb-2 font-headline-md text-headline-md text-primary sm:font-headline-lg sm:text-headline-lg">
-							How can I help you today?
-						</h2>
-						<p class="mx-auto max-w-md font-body-sm text-body-sm text-text-muted sm:font-body-md sm:text-body-md">
-							Ask me anything—from coding complex scripts to drafting the perfect email or
-							brainstorming your next big idea.
-						</p>
-					</div>
-
-					<div class="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-						{#each suggestions as suggestion (suggestion.title)}
-							<button
-								type="button"
-								class="group relative flex h-24 flex-col justify-between overflow-hidden rounded-xl border border-border-subtle bg-surface-container-low p-4 text-left transition-all duration-300 hover:border-outline-variant hover:bg-surface-container-high sm:h-32"
-								onclick={() => useSuggestion(suggestion.prompt)}
-							>
-								<span class="relative z-10 block pr-8">
-									<span class="mb-1 block font-body-md text-body-md font-semibold text-primary">
-										{suggestion.title}
-									</span>
-									<span class="block font-body-sm text-body-sm text-text-muted">
-										{suggestion.prompt}
-									</span>
-								</span>
-								<span class="absolute bottom-4 right-4 z-10 flex justify-end">
-									<span
-										class="material-symbols-outlined !text-[20px] text-text-muted transition-colors group-hover:text-primary"
-										aria-hidden="true"
-									>
-										{suggestion.icon}
-									</span>
-								</span>
-							</button>
+					{:else if messages.length === 0}
+						<div class="flex flex-1 items-center justify-center">
+							<div class="text-center">
+								<div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg border border-border-subtle bg-surface-container-low text-primary">
+									<span class="material-symbols-outlined !text-[32px]" aria-hidden="true">neurology</span>
+								</div>
+								<h2 class="font-headline-md text-headline-md text-primary">Ready when you are.</h2>
+							</div>
+						</div>
+					{:else}
+						{#each messages as item, index (`${index}-${item.role}`)}
+							<article class={['message-row', item.role === 'user' ? 'justify-end' : 'justify-start']}>
+								<div class={['message-block', item.role]}>
+									{#if item.role === 'assistant' && item.text.length === 0 && isStreaming}
+										<span class="text-text-muted">...</span>
+									{:else}
+										{item.text}
+									{/if}
+								</div>
+							</article>
 						{/each}
-					</div>
+					{/if}
+
+					{#if errorText}
+						<div class="rounded-lg border border-error-container bg-error-container/25 px-4 py-3 text-error">
+							{errorText}
+						</div>
+					{/if}
 				</div>
 			</section>
 
-			<div
-				class="fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-12 md:left-sidebar-width md:pb-6"
-			>
+			<div class="fixed bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-12 md:left-sidebar-width md:pb-6">
 				<div class="mx-auto max-w-container-max-width">
 					<form
 						class="glass-effect rounded-2xl border border-border-subtle bg-surface-container-low p-2 pl-4 shadow-[0_24px_80px_rgba(0,0,0,0.32)] transition-all duration-300 focus-within:border-outline"
 						onsubmit={handleSubmit}
 					>
 						<div class="flex items-end gap-2">
-							<button
-								type="button"
-								class="rounded-lg p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
-								aria-label="Attach file"
-							>
-								<span class="material-symbols-outlined !text-[22px]" aria-hidden="true">
-									attach_file
-								</span>
-							</button>
-
 							<textarea
 								bind:value={message}
 								class="custom-scrollbar max-h-48 min-h-11 flex-1 resize-none border-none bg-transparent py-2.5 font-body-md text-body-md text-text-primary outline-none placeholder:text-text-muted focus:ring-0"
-								placeholder="Message Persona..."
+								placeholder={hasProviders ? 'Message Persona...' : 'Add a provider first'}
 								rows="1"
 								aria-label="Message Persona"
+								disabled={!hasProviders || isStreaming}
 								oninput={handleMessageInput}
 								{@attach autosize}
 							></textarea>
@@ -309,17 +360,41 @@
 								disabled={!canSend}
 								aria-label="Send message"
 							>
-								<span class="material-symbols-outlined !text-[22px] font-bold" aria-hidden="true">
-									arrow_upward
-								</span>
+								<span class="material-symbols-outlined !text-[22px] font-bold" aria-hidden="true">arrow_upward</span>
 							</button>
 						</div>
 					</form>
-					<p class="mt-3 text-center text-[10px] font-medium uppercase tracking-wide text-text-muted/60">
-						Persona can make mistakes. Check important info.
-					</p>
 				</div>
 			</div>
 		</main>
 	</div>
 </div>
+
+<style>
+	.message-row {
+		display: flex;
+		width: 100%;
+	}
+
+	.message-block {
+		max-width: min(100%, 720px);
+		white-space: pre-wrap;
+		border-radius: 0.5rem;
+		padding: 0.875rem 1rem;
+		font-size: 16px;
+		line-height: 24px;
+	}
+
+	.message-block.user {
+		background: var(--color-primary);
+		color: var(--color-background);
+	}
+
+	.message-block.assistant,
+	.message-block.tool,
+	.message-block.system {
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container-low);
+		color: var(--color-text-primary);
+	}
+</style>

@@ -6,6 +6,14 @@
 
 ---
 
+## Dev Server
+
+- **Never** run `pnpm server` (or start the dev server yourself).
+- If you need the server, check whether it is already up (e.g. existing terminal sessions or a reachable dev URL).
+- If it is not running, ask the user to start it, then continue with your planned work (testing in the browser, verifying a change, etc.) once they confirm it is available.
+
+---
+
 ## PI SDK Guidance
 
 Whenever writing code for the PI SDK, use the local repository at `C:\MegaSync\Projects\Git\pi` as the source for documentation, examples, and implementation patterns.

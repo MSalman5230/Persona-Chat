@@ -1,3 +1,6 @@
 onlyBuiltDependencies:
+  - '@google/genai'
   - '@tailwindcss/oxide'
   - esbuild
+  - koffi
+  - protobufjs

@@ -1,0 +1,366 @@
+<script lang="ts">
+	import { resolve } from '$app/paths';
+
+	let { data, form } = $props();
+
+	type Tab = 'providers' | 'mcp';
+
+	let activeTab = $state<Tab>('providers');
+
+	const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+	const providerKinds = [
+		{ value: 'built_in', label: 'Built-in' },
+		{ value: 'custom', label: 'Custom' }
+	];
+	const mcpTransports = [
+		{ value: 'stdio', label: 'Local stdio' },
+		{ value: 'streamable_http', label: 'Streamable HTTP' },
+		{ value: 'sse', label: 'SSE' }
+	];
+</script>
+
+<svelte:head>
+	<title>Settings - Persona</title>
+</svelte:head>
+
+<div class="min-h-dvh overflow-y-auto bg-background text-text-primary">
+	<div class="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+		<header class="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle pb-5">
+			<div class="flex items-center gap-3">
+				<a
+					href={resolve('/')}
+					class="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface-container-low text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
+					aria-label="Back to chat"
+				>
+					<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">arrow_back</span>
+				</a>
+				<div>
+					<h1 class="font-headline-md text-headline-md text-primary">Settings</h1>
+					<p class="font-body-sm text-body-sm text-text-muted">Providers and MCP servers</p>
+				</div>
+			</div>
+
+			<div class="flex rounded-lg border border-border-subtle bg-surface-container-low p-1">
+				<button
+					type="button"
+					class={[
+						'rounded-md px-3 py-1.5 font-body-sm text-body-sm transition-colors',
+						activeTab === 'providers'
+							? 'bg-primary text-background'
+							: 'text-text-muted hover:bg-surface-container-high hover:text-primary'
+					]}
+					onclick={() => (activeTab = 'providers')}
+				>
+					Providers
+				</button>
+				<button
+					type="button"
+					class={[
+						'rounded-md px-3 py-1.5 font-body-sm text-body-sm transition-colors',
+						activeTab === 'mcp'
+							? 'bg-primary text-background'
+							: 'text-text-muted hover:bg-surface-container-high hover:text-primary'
+					]}
+					onclick={() => (activeTab = 'mcp')}
+				>
+					MCP
+				</button>
+			</div>
+		</header>
+
+		{#if form?.error}
+			<div class="mb-4 rounded-lg border border-error-container bg-error-container/25 px-4 py-3 text-error">
+				{form.error}
+			</div>
+		{:else if data.loadError}
+			<div class="mb-4 rounded-lg border border-error-container bg-error-container/25 px-4 py-3 text-error">
+				{data.loadError}
+			</div>
+		{:else if form?.message}
+			<div class="mb-4 rounded-lg border border-outline-variant bg-surface-container-low px-4 py-3 text-text-primary">
+				{form.message}
+			</div>
+		{/if}
+
+		{#if activeTab === 'providers'}
+			<section class="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
+				<div class="space-y-3">
+					{#each data.providers as provider (provider.id)}
+						<div class="rounded-lg border border-border-subtle bg-surface-container-low p-4">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<div class="flex items-center gap-2">
+										<h2 class="font-body-md text-body-md font-semibold text-primary">{provider.name}</h2>
+										{#if provider.isDefault}
+											<span class="rounded border border-outline-variant px-2 py-0.5 text-[11px] uppercase tracking-wide text-text-muted">
+												Default
+											</span>
+										{/if}
+									</div>
+									<p class="mt-1 font-code text-code text-text-muted">
+										{provider.providerId}/{provider.defaultModel}
+									</p>
+								</div>
+								<div class="flex items-center gap-2">
+									<form method="POST" action="?/testProvider">
+										<input type="hidden" name="id" value={provider.id} />
+										<button
+											class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
+											aria-label="Test provider"
+										>
+											<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">
+												network_check
+											</span>
+										</button>
+									</form>
+									<form method="POST" action="?/deleteProvider">
+										<input type="hidden" name="id" value={provider.id} />
+										<button
+											class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-error"
+											aria-label="Delete provider"
+										>
+											<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">
+												delete
+											</span>
+										</button>
+									</form>
+								</div>
+							</div>
+							<form class="mt-4 grid gap-3 sm:grid-cols-2" method="POST" action="?/saveProvider">
+								<input type="hidden" name="id" value={provider.id} />
+								<label class="space-y-1">
+									<span class="font-label-md text-label-md uppercase text-text-muted">Name</span>
+									<input class="field" name="name" value={provider.name} />
+								</label>
+								<label class="space-y-1">
+									<span class="font-label-md text-label-md uppercase text-text-muted">Provider ID</span>
+									<input class="field" name="providerId" value={provider.providerId} />
+								</label>
+								<label class="space-y-1">
+									<span class="font-label-md text-label-md uppercase text-text-muted">Kind</span>
+									<select class="field" name="kind" value={provider.kind}>
+										{#each providerKinds as kind (kind.value)}
+											<option value={kind.value}>{kind.label}</option>
+										{/each}
+									</select>
+								</label>
+								<label class="space-y-1">
+									<span class="font-label-md text-label-md uppercase text-text-muted">API</span>
+									<input class="field" name="api" value={provider.api} />
+								</label>
+								<label class="space-y-1 sm:col-span-2">
+									<span class="font-label-md text-label-md uppercase text-text-muted">Base URL</span>
+									<input class="field" name="baseUrl" value={provider.baseUrl ?? ''} />
+								</label>
+								<label class="space-y-1">
+									<span class="font-label-md text-label-md uppercase text-text-muted">Default Model</span>
+									<input class="field" name="defaultModel" value={provider.defaultModel} />
+								</label>
+								<label class="space-y-1">
+									<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
+									<select class="field" name="defaultThinkingLevel" value={provider.defaultThinkingLevel}>
+										{#each thinkingLevels as level (level)}
+											<option value={level}>{level}</option>
+										{/each}
+									</select>
+								</label>
+								<label class="space-y-1 sm:col-span-2">
+									<span class="font-label-md text-label-md uppercase text-text-muted">Models</span>
+									<textarea class="field min-h-20" name="models" value={provider.models.join('\n')}></textarea>
+								</label>
+								<label class="space-y-1 sm:col-span-2">
+									<span class="font-label-md text-label-md uppercase text-text-muted">New API Key</span>
+									<input class="field" name="apiKey" type="password" autocomplete="off" placeholder={provider.hasApiKey ? 'Saved' : ''} />
+								</label>
+								<div class="flex flex-wrap gap-4 sm:col-span-2">
+									<label class="toggle">
+										<input type="checkbox" name="enabled" checked={provider.enabled} />
+										<span>Enabled</span>
+									</label>
+									<label class="toggle">
+										<input type="checkbox" name="isDefault" checked={provider.isDefault} />
+										<span>Default</span>
+									</label>
+									<label class="toggle">
+										<input type="checkbox" name="authHeader" checked={provider.authHeader} />
+										<span>Auth header</span>
+									</label>
+								</div>
+								<div class="sm:col-span-2 flex justify-end">
+									<button class="primary-button">Save</button>
+								</div>
+							</form>
+						</div>
+					{:else}
+						<div class="rounded-lg border border-border-subtle bg-surface-container-low p-6 text-text-muted">
+							No providers saved.
+						</div>
+					{/each}
+				</div>
+
+				<form class="h-fit rounded-lg border border-border-subtle bg-surface-container-low p-4" method="POST" action="?/saveProvider">
+					<h2 class="mb-4 font-body-md text-body-md font-semibold text-primary">Add Provider</h2>
+					<div class="grid gap-3">
+						<input class="field" name="name" placeholder="OpenAI" />
+						<input class="field" name="providerId" placeholder="openai" />
+						<select class="field" name="kind">
+							<option value="built_in">Built-in</option>
+							<option value="custom">Custom</option>
+						</select>
+						<input class="field" name="api" value="openai" />
+						<input class="field" name="baseUrl" placeholder="https://api.openai.com/v1" />
+						<input class="field" name="defaultModel" placeholder="gpt-5.2" />
+						<select class="field" name="defaultThinkingLevel">
+							{#each thinkingLevels as level (level)}
+								<option value={level} selected={level === 'medium'}>{level}</option>
+							{/each}
+						</select>
+						<textarea class="field min-h-20" name="models" placeholder="gpt-5.2&#10;gpt-5.2-mini"></textarea>
+						<input class="field" name="apiKey" type="password" autocomplete="off" placeholder="API key" />
+						<textarea class="field min-h-20" name="headersJson" placeholder={`{"X-Header":"value"}`}></textarea>
+						<textarea class="field min-h-20" name="configJson" placeholder={`{}`}></textarea>
+						<label class="toggle">
+							<input type="checkbox" name="enabled" checked />
+							<span>Enabled</span>
+						</label>
+						<label class="toggle">
+							<input type="checkbox" name="isDefault" />
+							<span>Default</span>
+						</label>
+						<label class="toggle">
+							<input type="checkbox" name="authHeader" checked />
+							<span>Auth header</span>
+						</label>
+						<button class="primary-button">Add Provider</button>
+					</div>
+				</form>
+			</section>
+		{:else}
+			<section class="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
+				<div class="space-y-3">
+					{#each data.mcpServers as server (server.id)}
+						<div class="rounded-lg border border-border-subtle bg-surface-container-low p-4">
+							<div class="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<div class="flex items-center gap-2">
+										<h2 class="font-body-md text-body-md font-semibold text-primary">{server.name}</h2>
+										<span class="rounded border border-outline-variant px-2 py-0.5 text-[11px] uppercase tracking-wide text-text-muted">
+											{server.status}
+										</span>
+									</div>
+									<p class="mt-1 font-code text-code text-text-muted">{server.slug} · {server.transport}</p>
+								</div>
+								<div class="flex items-center gap-2">
+									<form method="POST" action="?/testMcp">
+										<input type="hidden" name="id" value={server.id} />
+										<button
+											class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
+											aria-label="Test MCP server"
+										>
+											<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">hub</span>
+										</button>
+									</form>
+									<form method="POST" action="?/deleteMcp">
+										<input type="hidden" name="id" value={server.id} />
+										<button
+											class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-error"
+											aria-label="Delete MCP server"
+										>
+											<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
+										</button>
+									</form>
+								</div>
+							</div>
+
+							<form class="mt-4 grid gap-3 sm:grid-cols-2" method="POST" action="?/saveMcp">
+								<input type="hidden" name="id" value={server.id} />
+								<input class="field" name="name" value={server.name} />
+								<input class="field" name="slug" value={server.slug} />
+								<select class="field" name="transport" value={server.transport}>
+									{#each mcpTransports as transport (transport.value)}
+										<option value={transport.value}>{transport.label}</option>
+									{/each}
+								</select>
+								<input class="field" name="command" value={server.command ?? ''} placeholder="command" />
+								<input class="field sm:col-span-2" name="args" value={server.args.join('\n')} placeholder="args" />
+								<input class="field sm:col-span-2" name="cwd" value={server.cwd ?? ''} placeholder="working directory" />
+								<input class="field sm:col-span-2" name="url" value={server.url ?? ''} placeholder="https://..." />
+								<label class="toggle sm:col-span-2">
+									<input type="checkbox" name="enabled" checked={server.enabled} />
+									<span>Enabled</span>
+								</label>
+								<div class="sm:col-span-2 flex justify-end">
+									<button class="primary-button">Save</button>
+								</div>
+							</form>
+							{#if server.lastError}
+								<p class="mt-3 font-body-sm text-body-sm text-error">{server.lastError}</p>
+							{/if}
+						</div>
+					{:else}
+						<div class="rounded-lg border border-border-subtle bg-surface-container-low p-6 text-text-muted">
+							No MCP servers saved.
+						</div>
+					{/each}
+				</div>
+
+				<form class="h-fit rounded-lg border border-border-subtle bg-surface-container-low p-4" method="POST" action="?/saveMcp">
+					<h2 class="mb-4 font-body-md text-body-md font-semibold text-primary">Add MCP Server</h2>
+					<div class="grid gap-3">
+						<input class="field" name="name" placeholder="Local memory" />
+						<input class="field" name="slug" placeholder="local_memory" />
+						<select class="field" name="transport">
+							{#each mcpTransports as transport (transport.value)}
+								<option value={transport.value}>{transport.label}</option>
+							{/each}
+						</select>
+						<input class="field" name="command" placeholder="node" />
+						<textarea class="field min-h-20" name="args" placeholder="server.js&#10;--flag"></textarea>
+						<input class="field" name="cwd" placeholder="C:\path\to\server" />
+						<input class="field" name="url" placeholder="https://mcp.example.com/mcp" />
+						<textarea class="field min-h-20" name="envJson" placeholder={`{"TOKEN":"value"}`}></textarea>
+						<textarea class="field min-h-20" name="headersJson" placeholder={`{"Authorization":"Bearer ..."}`}></textarea>
+						<label class="toggle">
+							<input type="checkbox" name="enabled" checked />
+							<span>Enabled</span>
+						</label>
+						<button class="primary-button">Add MCP Server</button>
+					</div>
+				</form>
+			</section>
+		{/if}
+	</div>
+</div>
+
+<style>
+	.field {
+		width: 100%;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container);
+		padding: 0.625rem 0.75rem;
+		color: var(--color-text-primary);
+		outline: none;
+	}
+
+	.field:focus {
+		border-color: var(--color-outline);
+	}
+
+	.toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--color-text-muted);
+		font-size: 14px;
+		line-height: 20px;
+	}
+
+	.primary-button {
+		border-radius: 0.5rem;
+		background: var(--color-primary);
+		padding: 0.625rem 0.875rem;
+		color: var(--color-background);
+		font-weight: 600;
+	}
+</style>

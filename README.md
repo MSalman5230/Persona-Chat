@@ -1,42 +1,33 @@
-# sv
+# Persona Chat
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Single-user SvelteKit chat app backed by PI SDK, Drizzle/Postgres provider settings, encrypted credentials, app-defined tools, and MCP-derived tools.
 
-## Creating a project
+## Environment
 
-If you're seeing this, you've probably already done this step. Congrats!
+Configure Postgres and credential encryption before saving providers or MCP secrets:
 
 ```sh
-# create a new project
-npx sv create my-app
+DATABASE_URL="postgres://user:password@host:port/db-name"
+CREDENTIAL_ENCRYPTION_KEY="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")"
 ```
 
-To recreate this project with the same configuration:
+## Database
 
 ```sh
-# recreate this project
-pnpm dlx sv@0.15.3 create --template minimal --types ts --add tailwindcss="plugins:none" drizzle="database:postgresql+postgresql:postgres.js+docker:no" mcp="ide:cursor,opencode,other+setup:local" --install pnpm personachat
+pnpm db:migrate
 ```
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
 ```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+pnpm install
+pnpm dev
 ```
 
-## Building
-
-To create a production version of your app:
+## Verification
 
 ```sh
-npm run build
+pnpm check
+pnpm test
+pnpm build
 ```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
