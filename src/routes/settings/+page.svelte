@@ -45,8 +45,8 @@
 	<title>Settings - Persona</title>
 </svelte:head>
 
-<div class="min-h-dvh overflow-y-auto bg-background text-text-primary">
-	<div class="mx-auto flex min-h-dvh w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+<div class="custom-scrollbar h-dvh overflow-y-auto bg-background text-text-primary">
+	<div class="mx-auto flex min-h-full w-full max-w-6xl flex-col px-4 py-6 sm:px-6 lg:px-8">
 		<header class="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle pb-5">
 			<div class="flex items-center gap-3">
 				<a
