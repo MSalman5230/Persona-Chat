@@ -305,7 +305,7 @@
 
 							<button
 								type="submit"
-								class="rounded-xl bg-primary p-2.5 text-background transition-all hover:opacity-90 active:scale-95 disabled:scale-100 disabled:opacity-30"
+								class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-background transition-all hover:opacity-90 active:scale-95 disabled:scale-100 disabled:opacity-30"
 								disabled={!canSend}
 								aria-label="Send message"
 							>
