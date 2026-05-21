@@ -13,7 +13,6 @@ import {
 	uuid
 } from 'drizzle-orm/pg-core';
 
-export const providerKind = pgEnum('provider_kind', ['built_in', 'custom']);
 export const mcpTransport = pgEnum('mcp_transport', ['stdio', 'streamable_http', 'sse']);
 export const mcpStatus = pgEnum('mcp_status', ['unknown', 'ok', 'error']);
 
@@ -40,7 +39,6 @@ export const providerConnections = pgTable(
 		id: uuid('id').defaultRandom().primaryKey(),
 		name: text('name').notNull(),
 		providerId: text('provider_id').notNull(),
-		kind: providerKind('kind').notNull().default('built_in'),
 		api: text('api').notNull().default('openai'),
 		baseUrl: text('base_url'),
 		defaultModel: text('default_model').notNull(),

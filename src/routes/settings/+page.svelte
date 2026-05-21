@@ -14,6 +14,7 @@
 	let { data, form }: PageProps = $props();
 
 	type Tab = 'providers' | 'mcp';
+	const CUSTOM_PROVIDER_ID = '__custom__';
 
 	let activeTab = $state<Tab>('providers');
 	let selectedSupportedProviderId = $state<string | null>(null);
@@ -22,7 +23,7 @@
 	const providers = $derived(data.providers as SavedProviderOption[]);
 	const supportedProviders = $derived(data.supportedProviders as SupportedProviderOption[]);
 	const mcpServers = $derived(data.mcpServers as McpServerOption[]);
-	const selectedProviderId = $derived(selectedSupportedProviderId ?? supportedProviders[0]?.id ?? '');
+	const selectedProviderId = $derived(selectedSupportedProviderId ?? supportedProviders[0]?.id ?? CUSTOM_PROVIDER_ID);
 	const selectedSupportedProvider = $derived(
 		supportedProviderFor(supportedProviders, selectedProviderId) ?? supportedProviders[0]
 	);
