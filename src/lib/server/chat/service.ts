@@ -5,9 +5,12 @@ import {
 	createChatSession,
 	getChatSession,
 	listChatMessages,
-	updateChatSession
+	updateChatSession,
+	upsertChatMessages,
+	type ChatMessageRow
 } from '$lib/server/repositories/chat';
 import {
+	hydrateChatMessageDisplay,
 	normalizeAgentMessageForStorage,
 	type AgentMessage,
 	type ThoughtTimingsByAssistant
@@ -97,4 +100,41 @@ export async function persistAgentMessages(
 			return normalizeAgentMessageForStorage(message, timings);
 		})
 	);
+}
+
+export async function upsertAgentMessages(
+	sessionId: string,
+	messages: AgentMessage[],
+	historyCount: number,
+	thoughtTimings?: ThoughtTimingsByAssistant
+): Promise<void> {
+	const newMessages = messages.slice(historyCount);
+	let assistantIndex = -1;
+
+	await upsertChatMessages(
+		sessionId,
+		historyCount + 1,
+		newMessages.map((message) => {
+			const timings = message.role === 'assistant' ? thoughtTimings?.get(++assistantIndex) : undefined;
+			return normalizeAgentMessageForStorage(message, timings);
+		})
+	);
+}
+
+export function serializeChatMessage(message: ChatMessageRow): Record<string, unknown> {
+	const piMessage = message.piMessage as unknown as PersistedAgentMessage;
+	const display = hydrateChatMessageDisplay(piMessage, message.display);
+
+	return {
+		id: message.id,
+		role: message.role,
+		text: display.text,
+		display,
+		...(typeof piMessage.toolName === 'string' ? { toolName: piMessage.toolName } : {}),
+		createdAt: message.createdAt
+	};
+}
+
+export function serializeChatMessages(messages: ChatMessageRow[]): Record<string, unknown>[] {
+	return messages.map(serializeChatMessage);
 }

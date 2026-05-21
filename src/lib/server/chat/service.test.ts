@@ -115,6 +115,34 @@ describe('chat service display helpers', () => {
 		});
 	});
 
+	it('preserves stored in-progress display state while hydrating', () => {
+		const display = hydrateChatMessageDisplay(
+			{
+				role: 'assistant',
+				content: [
+					{ type: 'thinking', thinking: 'Still working.' },
+					{ type: 'toolCall', id: 'call-1', name: 'search', arguments: {} },
+					{ type: 'text', text: 'Partial answer.' }
+				]
+			},
+			{
+				thoughts: [{ contentIndex: 0, status: 'thinking', durationMs: 1500 }],
+				tools: [{ contentIndex: 1, id: 'call-1', name: 'search', status: 'running' }]
+			}
+		);
+
+		expect(display.thoughts[0]).toMatchObject({
+			contentIndex: 0,
+			status: 'thinking',
+			durationMs: 1500
+		});
+		expect(display.tools[0]).toMatchObject({
+			contentIndex: 1,
+			id: 'call-1',
+			status: 'running'
+		});
+	});
+
 	it('does not expose redacted thinking signatures in normalized events', () => {
 		const message = {
 			role: 'assistant',

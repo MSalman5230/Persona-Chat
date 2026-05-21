@@ -125,6 +125,28 @@ export const chatSessions = pgTable(
 	})
 );
 
+export const chatRuns = pgTable(
+	'chat_runs',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		sessionId: uuid('session_id')
+			.notNull()
+			.references(() => chatSessions.id, { onDelete: 'cascade' }),
+		status: text('status').notNull().default('running'),
+		errorText: text('error_text'),
+		startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+		completedAt: timestamp('completed_at', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		sessionIdx: index('chat_runs_session_idx').on(table.sessionId),
+		activeSessionIdx: uniqueIndex('chat_runs_active_session_idx')
+			.on(table.sessionId)
+			.where(sql`${table.status} = 'running'`)
+	})
+);
+
 export const chatMessages = pgTable(
 	'chat_messages',
 	{
@@ -141,6 +163,6 @@ export const chatMessages = pgTable(
 	},
 	(table) => ({
 		sessionIdx: index('chat_messages_session_idx').on(table.sessionId),
-		sequenceIdx: index('chat_messages_sequence_idx').on(table.sessionId, table.sequence)
+		sequenceIdx: uniqueIndex('chat_messages_sequence_idx').on(table.sessionId, table.sequence)
 	})
 );

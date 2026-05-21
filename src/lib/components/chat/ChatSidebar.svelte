@@ -11,11 +11,10 @@
 		sessions: ChatSession[];
 		activeSessionId: string | null;
 		onNewChat: () => void;
-		onLoadSession: (id: string) => void;
 		onClose: () => void;
 	}
 
-	let { open, sessions, activeSessionId, onNewChat, onLoadSession, onClose }: Props = $props();
+	let { open, sessions, activeSessionId, onNewChat, onClose }: Props = $props();
 </script>
 
 <aside
@@ -51,18 +50,18 @@
 
 		<div class="space-y-1">
 			{#each sessions as chat (chat.id)}
-				<button
-					type="button"
+				<a
+					href={resolve(`/chat/${chat.id}`)}
 					class={[
 						'flex w-full items-center gap-3 truncate rounded-lg px-4 py-2 text-left transition-colors duration-200',
 						activeSessionId === chat.id
 							? 'bg-surface-container text-primary'
 							: 'text-text-muted hover:bg-surface-container-high hover:text-primary'
 					]}
-					onclick={() => onLoadSession(chat.id)}
+					onclick={onClose}
 				>
 					<span class="truncate font-body-sm text-body-sm">{chat.title}</span>
-				</button>
+				</a>
 			{:else}
 				<p class="px-4 py-2 font-body-sm text-body-sm text-text-muted">No chats yet.</p>
 			{/each}

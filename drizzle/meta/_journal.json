@@ -36,6 +36,13 @@
       "when": 1779363161911,
       "tag": "0004_reflective_blob",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779374907055,
+      "tag": "0005_refresh_safe_chat_runs",
+      "breakpoints": true
     }
   ]
 }

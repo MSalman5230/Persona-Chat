@@ -26,6 +26,7 @@ export type ChatToolDisplay = {
 	id: string;
 	name: string;
 	status: 'pending' | 'running' | 'completed' | 'failed';
+	durationMs?: number;
 };
 
 export type ChatMessageDisplay = {
@@ -163,21 +164,29 @@ export function hydrateChatMessageDisplay(
 		...display,
 		thoughts: display.thoughts.map((thought) => {
 			const storedThought = storedThoughts.get(thought.contentIndex);
+			const status = storedThought?.status === 'thinking' ? 'thinking' : 'thought';
 			const durationMs = roundedDurationMs(storedThought?.durationMs);
 
 			return {
 				...thought,
-				status: 'thought',
+				status,
 				...(durationMs !== undefined ? { durationMs } : {})
 			};
 		}),
 		tools: display.tools.map((tool) => {
 			const storedTool = storedTools.get(tool.contentIndex);
-			const status = storedTool?.status === 'failed' ? 'failed' : 'completed';
+			const status =
+				storedTool?.status === 'pending' ||
+				storedTool?.status === 'running' ||
+				storedTool?.status === 'failed'
+					? storedTool.status
+					: 'completed';
+			const durationMs = roundedDurationMs(storedTool?.durationMs);
 
 			return {
 				...tool,
-				status
+				status,
+				...(durationMs !== undefined ? { durationMs } : {})
 			};
 		})
 	};
