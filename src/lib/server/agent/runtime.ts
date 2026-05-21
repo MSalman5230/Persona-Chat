@@ -1,6 +1,6 @@
 import { createAgentSession, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 
-import { buildMcpToolDefinitions } from '$lib/server/mcp/adapter';
+import { buildProgressiveMcpToolDefinitions } from '$lib/server/mcp/adapter';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
 import {
 	piSystemPromptFromSessionPrompt,
@@ -66,7 +66,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 		}
 	}
 
-	const mcpTools = await buildMcpToolDefinitions();
+	const mcpTools = buildProgressiveMcpToolDefinitions();
 	const customTools = [...appTools, ...mcpTools];
 	const allowedToolNames = customTools.map((tool) => tool.name);
 	const settingsManager = SettingsManager.inMemory({

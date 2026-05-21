@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { BLANK_SYSTEM_PROMPT_SENTINEL } from '$lib/server/chat/settings';
 
@@ -49,5 +49,67 @@ describe('agent runtime session settings', () => {
 			maxTokens: 256,
 			temperature: 0.4
 		});
+	});
+
+	it('starts chat with stable progressive MCP meta-tools only', async () => {
+		vi.resetModules();
+		const listEnabledMcpServers = vi.fn(async () => {
+			throw new Error('MCP servers should not be connected or listed at startup');
+		});
+		const createAgentSession = vi.fn(async (options: Record<string, unknown>) => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} },
+			options
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({ appendMessage: vi.fn() })
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				row: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: 'medium',
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers,
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		const runtime = await createServerAgentSession();
+		const options = createAgentSession.mock.calls[0][0] as {
+			tools: string[];
+			customTools: Array<{ name: string }>;
+		};
+
+		expect(runtime.allowedToolNames.filter((name) => name.startsWith('mcp_'))).toEqual([
+			'mcp_list_servers',
+			'mcp_list_tools',
+			'mcp_call_tool'
+		]);
+		expect(options.customTools.map((tool) => tool.name)).toEqual(options.tools);
+		expect(listEnabledMcpServers).not.toHaveBeenCalled();
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
 	});
 });

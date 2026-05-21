@@ -18,11 +18,25 @@
 		{ value: 'built_in', label: 'Built-in' },
 		{ value: 'custom', label: 'Custom' }
 	];
-	const mcpTransports = [
-		{ value: 'stdio', label: 'Local stdio' },
-		{ value: 'streamable_http', label: 'Streamable HTTP' },
-		{ value: 'sse', label: 'SSE' }
-	];
+	const mcpJsonExample = `{
+  "mcpServers": {
+    "local_memory": {
+      "name": "Local Memory",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": {
+        "MEMORY_FILE_PATH": "C:/tmp/memory.json"
+      }
+    },
+    "remote_docs": {
+      "name": "Remote Docs",
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}`;
 	const selectedProviderId = $derived(selectedSupportedProviderId ?? data.supportedProviders[0]?.id ?? '');
 	const selectedSupportedProvider = $derived(
 		data.supportedProviders.find((provider) => provider.id === selectedProviderId) ??
@@ -339,97 +353,98 @@
 				</form>
 			</section>
 		{:else}
-			<section class="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
-				<div class="space-y-3">
-					{#each data.mcpServers as server (server.id)}
-						<div class="rounded-lg border border-border-subtle bg-surface-container-low p-4">
-							<div class="flex flex-wrap items-start justify-between gap-3">
-								<div>
-									<div class="flex items-center gap-2">
-										<h2 class="font-body-md text-body-md font-semibold text-primary">{server.name}</h2>
-										<span class="rounded border border-outline-variant px-2 py-0.5 text-[11px] uppercase tracking-wide text-text-muted">
-											{server.status}
-										</span>
-									</div>
-									<p class="mt-1 font-code text-code text-text-muted">{server.slug} · {server.transport}</p>
-								</div>
-								<div class="flex items-center gap-2">
-									<form method="POST" action="?/testMcp">
-										<input type="hidden" name="id" value={server.id} />
-										<button
-											class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
-											aria-label="Test MCP server"
-										>
-											<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">hub</span>
-										</button>
-									</form>
-									<form method="POST" action="?/deleteMcp">
-										<input type="hidden" name="id" value={server.id} />
-										<button
-											class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-error"
-											aria-label="Delete MCP server"
-										>
-											<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
-										</button>
-									</form>
-								</div>
-							</div>
+			<section class="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+				<form
+					class="mcp-json-panel"
+					method="POST"
+					action="?/saveMcpJson"
+					aria-labelledby="mcp-json-heading"
+				>
+					<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+						<div>
+							<h2 id="mcp-json-heading" class="font-body-md text-body-md font-semibold text-primary">
+								MCP JSON
+							</h2>
+							<p class="font-body-sm text-body-sm text-text-muted">mcpServers</p>
+						</div>
+						<button class="primary-button">Save JSON</button>
+					</div>
+					<label class="sr-only" for="mcp-json">MCP JSON</label>
+					<textarea
+						id="mcp-json"
+						class="json-editor"
+						name="mcpJson"
+						autocomplete="off"
+						autocapitalize="off"
+						spellcheck="false"
+						value={form?.mcpJson ?? data.mcpJson}
+					></textarea>
+				</form>
 
-							<form class="mt-4 grid gap-3 sm:grid-cols-2" method="POST" action="?/saveMcp">
-								<input type="hidden" name="id" value={server.id} />
-								<input class="field" name="name" value={server.name} />
-								<input class="field" name="slug" value={server.slug} />
-								<select class="field" name="transport" value={server.transport}>
-									{#each mcpTransports as transport (transport.value)}
-										<option value={transport.value}>{transport.label}</option>
-									{/each}
-								</select>
-								<input class="field" name="command" value={server.command ?? ''} placeholder="command" />
-								<input class="field sm:col-span-2" name="args" value={server.args.join('\n')} placeholder="args" />
-								<input class="field sm:col-span-2" name="cwd" value={server.cwd ?? ''} placeholder="working directory" />
-								<input class="field sm:col-span-2" name="url" value={server.url ?? ''} placeholder="https://..." />
-								<label class="toggle sm:col-span-2">
-									<input type="checkbox" name="enabled" checked={server.enabled} />
-									<span>Enabled</span>
-								</label>
-								<div class="sm:col-span-2 flex justify-end">
-									<button class="primary-button">Save</button>
+				<aside class="space-y-3" aria-label="Saved MCP servers">
+					<div class="mcp-example-panel">
+						<div class="mb-3">
+							<h2 class="font-body-md text-body-md font-semibold text-primary">JSON Example</h2>
+							<p class="mt-1 font-body-sm text-body-sm text-text-muted">
+								Use server keys as slugs. Local servers use command and args; remote servers use url.
+								Add transport: "sse" only for legacy SSE endpoints.
+							</p>
+						</div>
+						<pre class="example-code"><code>{mcpJsonExample}</code></pre>
+					</div>
+					<div class="flex items-center justify-between gap-3">
+						<h2 class="font-body-md text-body-md font-semibold text-primary">Saved Servers</h2>
+						<span class="font-code text-code text-text-muted">{data.mcpServers.length}</span>
+					</div>
+					{#each data.mcpServers as server (server.id)}
+						<div class="server-row">
+							<div class="min-w-0 flex-1">
+								<div class="flex min-w-0 items-center gap-2">
+									<span class={['status-dot', server.status]} aria-hidden="true"></span>
+									<h3 class="truncate font-body-sm text-body-sm font-semibold text-primary">
+										{server.name}
+									</h3>
 								</div>
-							</form>
-							{#if server.lastError}
-								<p class="mt-3 font-body-sm text-body-sm text-error">{server.lastError}</p>
-							{/if}
+								<p class="mt-1 truncate font-code text-code text-text-muted">
+									{server.slug} · {server.transport}
+								</p>
+								<div class="mt-2 flex flex-wrap gap-1.5">
+									<span class="status-pill">{server.enabled ? 'enabled' : 'disabled'}</span>
+									<span class="status-pill">{server.status}</span>
+									{#if server.hasEnvSecrets}
+										<span class="status-pill">env</span>
+									{/if}
+									{#if server.hasHeaderSecrets}
+										<span class="status-pill">headers</span>
+									{/if}
+								</div>
+								{#if server.lastError}
+									<p class="mt-2 line-clamp-2 font-body-sm text-body-sm text-error">
+										{server.lastError}
+									</p>
+								{/if}
+							</div>
+							<div class="server-actions">
+								<form method="POST" action="?/testMcp">
+									<input type="hidden" name="id" value={server.id} />
+									<button class="icon-button" aria-label="Test MCP server">
+										<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">hub</span>
+									</button>
+								</form>
+								<form method="POST" action="?/deleteMcp">
+									<input type="hidden" name="id" value={server.id} />
+									<button class="icon-button danger" aria-label="Delete MCP server">
+										<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
+									</button>
+								</form>
+							</div>
 						</div>
 					{:else}
 						<div class="rounded-lg border border-border-subtle bg-surface-container-low p-6 text-text-muted">
 							No MCP servers saved.
 						</div>
 					{/each}
-				</div>
-
-				<form class="h-fit rounded-lg border border-border-subtle bg-surface-container-low p-4" method="POST" action="?/saveMcp">
-					<h2 class="mb-4 font-body-md text-body-md font-semibold text-primary">Add MCP Server</h2>
-					<div class="grid gap-3">
-						<input class="field" name="name" placeholder="Local memory" />
-						<input class="field" name="slug" placeholder="local_memory" />
-						<select class="field" name="transport">
-							{#each mcpTransports as transport (transport.value)}
-								<option value={transport.value}>{transport.label}</option>
-							{/each}
-						</select>
-						<input class="field" name="command" placeholder="node" />
-						<textarea class="field min-h-20" name="args" placeholder="server.js&#10;--flag"></textarea>
-						<input class="field" name="cwd" placeholder="C:\path\to\server" />
-						<input class="field" name="url" placeholder="https://mcp.example.com/mcp" />
-						<textarea class="field min-h-20" name="envJson" placeholder={`{"TOKEN":"value"}`}></textarea>
-						<textarea class="field min-h-20" name="headersJson" placeholder={`{"Authorization":"Bearer ..."}`}></textarea>
-						<label class="toggle">
-							<input type="checkbox" name="enabled" checked />
-							<span>Enabled</span>
-						</label>
-						<button class="primary-button">Add MCP Server</button>
-					</div>
-				</form>
+				</aside>
 			</section>
 		{/if}
 	</div>
@@ -553,6 +568,122 @@
 		line-height: 1;
 		text-transform: uppercase;
 		color: var(--color-text-muted);
+	}
+
+	.mcp-json-panel {
+		display: flex;
+		min-height: 34rem;
+		flex-direction: column;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container-low);
+		padding: 1rem;
+	}
+
+	.json-editor {
+		min-height: 28rem;
+		flex: 1 1 auto;
+		resize: vertical;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container);
+		padding: 0.875rem;
+		color: var(--color-text-primary);
+		font-family: var(--font-code);
+		font-size: 14px;
+		line-height: 20px;
+		outline: none;
+		tab-size: 2;
+	}
+
+	.json-editor:focus {
+		border-color: var(--color-outline);
+	}
+
+	.mcp-example-panel {
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container-low);
+		padding: 0.875rem;
+	}
+
+	.example-code {
+		max-height: 24rem;
+		overflow: auto;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container);
+		padding: 0.75rem;
+		color: var(--color-text-primary);
+		font-family: var(--font-code);
+		font-size: 12px;
+		line-height: 18px;
+		white-space: pre;
+	}
+
+	.server-row {
+		display: flex;
+		gap: 0.75rem;
+		align-items: flex-start;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-surface-container-low);
+		padding: 0.875rem;
+	}
+
+	.status-dot {
+		width: 0.5rem;
+		height: 0.5rem;
+		flex: 0 0 auto;
+		border-radius: 9999px;
+		background: var(--color-outline-variant);
+	}
+
+	.status-dot.ok {
+		background: var(--color-primary);
+	}
+
+	.status-dot.error {
+		background: var(--color-error);
+	}
+
+	.status-pill {
+		border-radius: 0.25rem;
+		border: 1px solid var(--color-outline-variant);
+		padding: 0.125rem 0.375rem;
+		font-size: 11px;
+		line-height: 1;
+		text-transform: uppercase;
+		color: var(--color-text-muted);
+	}
+
+	.server-actions {
+		display: flex;
+		flex: 0 0 auto;
+		gap: 0.375rem;
+	}
+
+	.icon-button {
+		display: inline-flex;
+		width: 2.25rem;
+		height: 2.25rem;
+		align-items: center;
+		justify-content: center;
+		border-radius: 0.5rem;
+		border: 1px solid var(--color-border-subtle);
+		color: var(--color-text-muted);
+		transition:
+			background 150ms ease,
+			color 150ms ease;
+	}
+
+	.icon-button:hover {
+		background: var(--color-surface-container-high);
+		color: var(--color-primary);
+	}
+
+	.icon-button.danger:hover {
+		color: var(--color-error);
 	}
 
 	.primary-button {

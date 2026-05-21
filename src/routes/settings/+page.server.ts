@@ -1,8 +1,13 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { booleanFromForm, listFromLines, recordFromJson, stringFromForm } from '$lib/server/forms';
+import { stringFromForm } from '$lib/server/forms';
 import { testMcpServer } from '$lib/server/mcp/adapter';
+import {
+	buildMcpJsonUpserts,
+	parseMcpJsonConfig,
+	serializeMcpJsonConfig
+} from '$lib/server/mcp/json-config';
 import { getSupportedProviders } from '$lib/server/providers/catalog';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
 import { providerPayloadFromForm } from '$lib/server/providers/settings-form';
@@ -25,10 +30,12 @@ export const load: PageServerLoad = async () => {
 	const supportedProviders = getSupportedProviders();
 
 	try {
+		const mcpServers = await listMcpServers();
 		return {
 			providers: await listProviderConnections(),
 			supportedProviders,
-			mcpServers: await listMcpServers(),
+			mcpServers,
+			mcpJson: serializeMcpJsonConfig(mcpServers),
 			loadError: null
 		};
 	} catch (error) {
@@ -36,31 +43,11 @@ export const load: PageServerLoad = async () => {
 			providers: [],
 			supportedProviders,
 			mcpServers: [],
+			mcpJson: serializeMcpJsonConfig([]),
 			loadError: error instanceof Error ? error.message : 'Database is not ready'
 		};
 	}
 };
-
-function mcpPayloadFromForm(form: FormData, update: boolean) {
-	const envValue = stringFromForm(form, 'envJson');
-	const headersValue = stringFromForm(form, 'headersJson');
-	const payload = {
-		name: stringFromForm(form, 'name') ?? '',
-		slug: stringFromForm(form, 'slug') ?? '',
-		transport: (stringFromForm(form, 'transport') ?? 'stdio') as 'stdio' | 'streamable_http' | 'sse',
-		command: stringFromForm(form, 'command') ?? null,
-		args: listFromLines(stringFromForm(form, 'args')),
-		cwd: stringFromForm(form, 'cwd') ?? null,
-		url: stringFromForm(form, 'url') ?? null,
-		enabled: booleanFromForm(form, 'enabled', true),
-		...(envValue ? { env: recordFromJson(envValue, 'Environment') } : {}),
-		...(headersValue ? { headers: recordFromJson(headersValue, 'Headers') } : {})
-	};
-
-	if (!update && !payload.name) throw new Error('MCP server name is required');
-	if (!update && !payload.slug) throw new Error('MCP slug is required');
-	return payload;
-}
 
 async function saveProviderConnectionFromForm(form: FormData, id: string | undefined) {
 	const supportedProviders = getSupportedProviders();
@@ -116,16 +103,36 @@ export const actions: Actions = {
 			return fail(400, { error: error instanceof Error ? error.message : 'Provider test failed' });
 		}
 	},
-	saveMcp: async ({ request }) => {
+	saveMcpJson: async ({ request }) => {
+		let submittedJson: string | undefined;
 		try {
 			const form = await request.formData();
-			const id = stringFromForm(form, 'id');
-			const server = id
-				? await updateMcpServer(id, mcpPayloadFromForm(form, true))
-				: await createMcpServer(mcpPayloadFromForm(form, false));
-			return { ok: true, message: `${server.name} saved` };
+			const mcpJson = form.get('mcpJson');
+			if (typeof mcpJson !== 'string' || mcpJson.trim().length === 0) {
+				throw new Error('MCP JSON is required');
+			}
+			submittedJson = mcpJson;
+
+			const existingServers = await listMcpServers();
+			const upserts = buildMcpJsonUpserts(parseMcpJsonConfig(mcpJson), existingServers);
+
+			for (const upsert of upserts) {
+				if (upsert.mode === 'update') {
+					await updateMcpServer(upsert.id, upsert.payload);
+				} else {
+					await createMcpServer(upsert.payload);
+				}
+			}
+
+			return {
+				ok: true,
+				message: `Saved ${upserts.length} MCP server${upserts.length === 1 ? '' : 's'}`
+			};
 		} catch (error) {
-			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save MCP server' });
+			return fail(400, {
+				error: error instanceof Error ? error.message : 'Unable to save MCP JSON',
+				...(submittedJson !== undefined ? { mcpJson: submittedJson } : {})
+			});
 		}
 	},
 	deleteMcp: async ({ request }) => {

@@ -51,11 +51,26 @@ function buildSecret(input: Pick<McpInput, 'env' | 'headers'>): EncryptedJsonPay
 
 function serializeMcp(row: McpServerRow): PublicMcpServer {
 	const { secret: _secret, ...publicRow } = row;
-	const hasSecret = Boolean(row.secret);
+	let hasEnvSecrets = Boolean(row.secret);
+	let hasHeaderSecrets = Boolean(row.secret);
+
+	if (row.secret) {
+		try {
+			const secret = decryptMcpSecret(row.secret);
+			hasEnvSecrets = Boolean(secret.env && Object.keys(secret.env).length > 0);
+			hasHeaderSecrets = Boolean(secret.headers && Object.keys(secret.headers).length > 0);
+		} catch {
+			// If the encryption key is not available, keep the public signal conservative
+			// without exposing or requiring the secret payload during settings load.
+			hasEnvSecrets = true;
+			hasHeaderSecrets = true;
+		}
+	}
+
 	return {
 		...publicRow,
-		hasEnvSecrets: hasSecret,
-		hasHeaderSecrets: hasSecret
+		hasEnvSecrets,
+		hasHeaderSecrets
 	};
 }
 
