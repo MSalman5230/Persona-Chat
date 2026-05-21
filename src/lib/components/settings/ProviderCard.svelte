@@ -1,10 +1,10 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import {
-		PROVIDER_KINDS,
 		THINKING_LEVELS,
 		defaultModelValue,
 		hasModel,
+		isCatalogBackedProvider,
 		providerModelOptions,
 		type SavedProviderOption,
 		type SupportedProviderOption
@@ -16,6 +16,7 @@
 	}
 
 	let { provider, supportedProviders }: Props = $props();
+	const catalogBacked = $derived(isCatalogBackedProvider(provider, supportedProviders));
 	const modelOptions = $derived(providerModelOptions(provider, supportedProviders));
 
 	let deleteForm: HTMLFormElement | null = null;
@@ -80,31 +81,16 @@
 			</form>
 		</div>
 	</div>
+
 	<form class="mt-4 grid gap-3 sm:grid-cols-2" method="POST" action="?/saveProvider">
 		<input type="hidden" name="id" value={provider.id} />
+		{#if catalogBacked}
+			<input type="hidden" name="providerId" value={provider.providerId} />
+		{/if}
+
 		<label class="space-y-1">
 			<span class="font-label-md text-label-md uppercase text-text-muted">Name</span>
 			<input class="settings-field" name="name" value={provider.name} />
-		</label>
-		<label class="space-y-1">
-			<span class="font-label-md text-label-md uppercase text-text-muted">Provider ID</span>
-			<input class="settings-field" name="providerId" value={provider.providerId} />
-		</label>
-		<label class="space-y-1">
-			<span class="font-label-md text-label-md uppercase text-text-muted">Kind</span>
-			<select class="settings-field" name="kind" value={provider.kind}>
-				{#each PROVIDER_KINDS as kind (kind.value)}
-					<option value={kind.value}>{kind.label}</option>
-				{/each}
-			</select>
-		</label>
-		<label class="space-y-1">
-			<span class="font-label-md text-label-md uppercase text-text-muted">API</span>
-			<input class="settings-field" name="api" value={provider.api} />
-		</label>
-		<label class="space-y-1 sm:col-span-2">
-			<span class="font-label-md text-label-md uppercase text-text-muted">Base URL</span>
-			<input class="settings-field" name="baseUrl" value={provider.baseUrl ?? ''} />
 		</label>
 		<label class="space-y-1">
 			<span class="font-label-md text-label-md uppercase text-text-muted">Default Model</span>
@@ -125,6 +111,7 @@
 				{/each}
 			</select>
 		</label>
+
 		<div class="space-y-2 sm:col-span-2">
 			<span class="font-label-md text-label-md uppercase text-text-muted">Models</span>
 			{#if modelOptions.length > 0}
@@ -153,10 +140,47 @@
 					No models configured.
 				</div>
 			{/if}
-			{#if provider.kind === 'custom'}
-				<textarea class="settings-field min-h-20" name="models" value={provider.models.join('\n')}></textarea>
-			{/if}
 		</div>
+
+		<details class="settings-advanced sm:col-span-2">
+			<summary>
+				<span>Advanced</span>
+				<span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+			</summary>
+			<p class="mt-2 font-body-sm text-body-sm text-text-muted">
+				Advanced changes affect only this provider connection after saving.
+			</p>
+			<div class="mt-3 grid gap-3 sm:grid-cols-2">
+				<label class="space-y-1">
+					<span class="font-label-md text-label-md uppercase text-text-muted">Provider ID</span>
+					<input class="settings-field" name={catalogBacked ? undefined : 'providerId'} value={provider.providerId} readonly={catalogBacked} />
+				</label>
+				<label class="space-y-1">
+					<span class="font-label-md text-label-md uppercase text-text-muted">API</span>
+					<input class="settings-field" name={catalogBacked ? undefined : 'api'} value={provider.api} readonly={catalogBacked} />
+				</label>
+				<label class="space-y-1 sm:col-span-2">
+					<span class="font-label-md text-label-md uppercase text-text-muted">Base URL</span>
+					<input
+						class="settings-field"
+						name={catalogBacked ? undefined : 'baseUrl'}
+						value={provider.baseUrl ?? 'PI SDK default'}
+						readonly={catalogBacked}
+					/>
+				</label>
+				{#if !catalogBacked}
+					<label class="space-y-1 sm:col-span-2">
+						<span class="font-label-md text-label-md uppercase text-text-muted">Models</span>
+						<textarea class="settings-field min-h-20" name="models" value={provider.models.join('\n')}></textarea>
+					</label>
+					<label class="settings-toggle">
+						<input type="checkbox" name="authHeader" checked={provider.authHeader} />
+						<span>Auth header</span>
+					</label>
+				{/if}
+			</div>
+		</details>
+
 		<label class="space-y-1 sm:col-span-2">
 			<span class="font-label-md text-label-md uppercase text-text-muted">New API Key</span>
 			<input class="settings-field" name="apiKey" type="password" autocomplete="off" placeholder={provider.hasApiKey ? 'Saved' : ''} />
@@ -169,10 +193,6 @@
 			<label class="settings-toggle">
 				<input type="checkbox" name="isDefault" checked={provider.isDefault} />
 				<span>Default</span>
-			</label>
-			<label class="settings-toggle">
-				<input type="checkbox" name="authHeader" checked={provider.authHeader} />
-				<span>Auth header</span>
 			</label>
 		</div>
 		<div class="flex justify-end sm:col-span-2">

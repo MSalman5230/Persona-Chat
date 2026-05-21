@@ -25,7 +25,6 @@ const baseProvider: SavedProviderOption = {
 	id: 'provider-1',
 	name: 'Provider',
 	providerId: 'openai',
-	kind: 'built_in',
 	api: 'responses',
 	baseUrl: null,
 	defaultModel: 'gpt-5',
@@ -53,8 +52,8 @@ describe('settings client helpers', () => {
 			providerModelOptions(
 				{
 					...baseProvider,
-					kind: 'custom',
 					providerId: 'custom',
+					baseUrl: 'http://localhost:1234/v1',
 					defaultModel: 'local-default',
 					models: ['local-a', 'local-b']
 				},
@@ -69,10 +68,29 @@ describe('settings client helpers', () => {
 	it('falls back to the provider default when custom models are empty', () => {
 		expect(
 			providerModelOptions(
-				{ ...baseProvider, kind: 'custom', providerId: 'custom', defaultModel: 'local-default' },
+				{
+					...baseProvider,
+					providerId: 'custom',
+					baseUrl: 'http://localhost:1234/v1',
+					defaultModel: 'local-default'
+				},
 				supportedProviders
 			)
 		).toEqual([{ id: 'local-default', name: 'local-default' }]);
+	});
+
+	it('uses saved model ids when a supported provider has a custom base URL', () => {
+		expect(
+			providerModelOptions(
+				{
+					...baseProvider,
+					baseUrl: 'https://proxy.example.test/v1',
+					defaultModel: 'proxy-model',
+					models: ['proxy-model']
+				},
+				supportedProviders
+			)
+		).toEqual([{ id: 'proxy-model', name: 'proxy-model' }]);
 	});
 
 	it('chooses a valid default model value', () => {

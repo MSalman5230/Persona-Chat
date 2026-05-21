@@ -65,7 +65,8 @@ async function saveProviderConnectionFromForm(form: FormData, id: string | undef
 		id,
 		providerPayloadFromForm(form, {
 			update: true,
-			existingKind: current.kind,
+			existingBaseUrl: current.baseUrl,
+			existingProviderId: current.providerId,
 			supportedProviders
 		})
 	);

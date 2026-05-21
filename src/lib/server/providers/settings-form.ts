@@ -10,7 +10,7 @@ import {
 } from './catalog';
 import type { ThinkingLevel } from './runtime';
 
-type ProviderKind = 'built_in' | 'custom';
+export const CUSTOM_PROVIDER_ID = '__custom__';
 
 const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 
@@ -40,12 +40,13 @@ function legacyProviderPayloadFromForm(
 
 	const headersValue = stringFromForm(form, 'headersJson');
 	const apiKey = stringFromForm(form, 'apiKey');
+	const baseUrl = stringFromForm(form, 'baseUrl') ?? null;
+	const api = stringFromForm(form, 'api') ?? '';
 	const payload = {
 		name: stringFromForm(form, 'name') ?? '',
 		providerId: stringFromForm(form, 'providerId') ?? '',
-		kind: (stringFromForm(form, 'kind') ?? 'built_in') as ProviderKind,
-		api: stringFromForm(form, 'api') ?? 'openai',
-		baseUrl: stringFromForm(form, 'baseUrl') ?? null,
+		api,
+		baseUrl,
 		defaultModel,
 		defaultThinkingLevel: thinkingLevelFromForm(form),
 		authHeader: booleanFromForm(form, 'authHeader', !update),
@@ -60,6 +61,9 @@ function legacyProviderPayloadFromForm(
 
 	if (!update && !payload.name) throw new Error('Provider name is required');
 	if (!update && !payload.providerId) throw new Error('Provider ID is required');
+	if (!payload.api) throw new Error('API is required');
+	if (!payload.baseUrl) throw new Error('Base URL is required');
+	if (!update && !apiKey) throw new Error('API key is required');
 	return payload;
 }
 
@@ -78,10 +82,6 @@ export function builtInProviderPayloadFromForm(
 	update: boolean,
 	supportedProviders: SupportedProvider[] = getSupportedProviders()
 ): ProviderInput | ProviderUpdateInput {
-	if (!update && stringFromForm(form, 'kind') === 'custom') {
-		throw new Error('Custom providers cannot be created from Settings');
-	}
-
 	const providerId = stringFromForm(form, 'providerId');
 	if (!providerId) throw new Error('Provider is required');
 
@@ -96,9 +96,8 @@ export function builtInProviderPayloadFromForm(
 	const apiKey = stringFromForm(form, 'apiKey');
 	const modelIds = provider.models.map((model) => model.id);
 	return {
-		name: provider.name,
+		name: update ? (stringFromForm(form, 'name') ?? provider.name) : provider.name,
 		providerId: provider.id,
-		kind: 'built_in',
 		api: selectedModel.api,
 		baseUrl: null,
 		defaultModel: selectedModel.id,
@@ -124,7 +123,8 @@ export function providerPayloadFromForm(
 	form: FormData,
 	options: {
 		update: true;
-		existingKind?: ProviderKind;
+		existingBaseUrl?: string | null;
+		existingProviderId?: string;
 		supportedProviders?: SupportedProvider[];
 	}
 ): ProviderUpdateInput;
@@ -132,15 +132,23 @@ export function providerPayloadFromForm(
 	form: FormData,
 	options: {
 		update: boolean;
-		existingKind?: ProviderKind;
+		existingBaseUrl?: string | null;
+		existingProviderId?: string;
 		supportedProviders?: SupportedProvider[];
 	}
 ): ProviderInput | ProviderUpdateInput {
-	if (options.update && options.existingKind === 'custom') {
-		return legacyProviderPayloadFromForm(form, true);
+	const supportedProviders = options.supportedProviders ?? getSupportedProviders();
+	const providerId = options.update ? options.existingProviderId : stringFromForm(form, 'providerId');
+	const providerMode = stringFromForm(form, 'providerMode');
+	const isCustomProvider =
+		(!options.update && providerMode === CUSTOM_PROVIDER_ID) ||
+		!!options.existingBaseUrl ||
+		(!!providerId && !findSupportedProvider(providerId, supportedProviders));
+
+	if (isCustomProvider) {
+		return legacyProviderPayloadFromForm(form, options.update);
 	}
 
-	const supportedProviders = options.supportedProviders ?? getSupportedProviders();
 	return options.update
 		? builtInProviderPayloadFromForm(form, true, supportedProviders)
 		: builtInProviderPayloadFromForm(form, false, supportedProviders);

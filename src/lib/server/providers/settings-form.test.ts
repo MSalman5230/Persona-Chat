@@ -45,7 +45,6 @@ describe('provider settings form helper', () => {
 		expect(payload).toMatchObject({
 			name: provider.name,
 			providerId: provider.id,
-			kind: 'built_in',
 			api: model.api,
 			baseUrl: null,
 			defaultModel: model.id,
@@ -66,7 +65,6 @@ describe('provider settings form helper', () => {
 			formFromEntries({
 				name: 'Tampered',
 				providerId: provider.id,
-				kind: 'built_in',
 				api: 'tampered-api',
 				baseUrl: 'https://tampered.example.test',
 				models: 'tampered-model',
@@ -76,7 +74,6 @@ describe('provider settings form helper', () => {
 		);
 
 		expect(payload.name).toBe(provider.name);
-		expect(payload.kind).toBe('built_in');
 		expect(payload.api).toBe(model.api);
 		expect(payload.baseUrl).toBeNull();
 		expect(payload.models).toEqual(provider.models.map((item) => item.id));
@@ -122,7 +119,6 @@ describe('provider settings form helper', () => {
 			formFromPairs([
 				['name', 'Local OpenAI compatible'],
 				['providerId', 'local-openai'],
-				['kind', 'custom'],
 				['api', 'openai-completions'],
 				['baseUrl', 'http://localhost:1234/v1'],
 				['defaultModel', 'local-small'],
@@ -131,11 +127,39 @@ describe('provider settings form helper', () => {
 				['favoriteModels', 'not-configured'],
 				['favoriteModels', 'local-huge']
 			]),
-			{ update: true, existingKind: 'custom' }
+			{ update: true, existingBaseUrl: 'http://localhost:1234/v1', existingProviderId: 'local-openai' }
 		);
 
 		expect(payload.models).toEqual(['local-small', 'local-large', 'local-huge']);
 		expect(payload.favoriteModels).toEqual(['local-large', 'local-huge']);
+	});
+
+	it('creates a custom provider payload from the custom add mode', () => {
+		const payload = providerPayloadFromForm(
+			formFromEntries({
+				providerMode: '__custom__',
+				name: 'Local OpenAI compatible',
+				providerId: 'local-openai',
+				api: 'openai-completions',
+				baseUrl: 'http://localhost:1234/v1',
+				defaultModel: 'local-small',
+				models: 'local-small\nlocal-large',
+				apiKey: 'local-key',
+				authHeader: 'on'
+			}),
+			{ update: false }
+		);
+
+		expect(payload).toMatchObject({
+			name: 'Local OpenAI compatible',
+			providerId: 'local-openai',
+			api: 'openai-completions',
+			baseUrl: 'http://localhost:1234/v1',
+			defaultModel: 'local-small',
+			apiKey: 'local-key',
+			authHeader: true
+		});
+		expect(payload.models).toEqual(['local-small', 'local-large']);
 	});
 
 	it('rejects unknown provider IDs', () => {
@@ -150,18 +174,19 @@ describe('provider settings form helper', () => {
 		).toThrow(/not supported/);
 	});
 
-	it('rejects the create custom provider path', () => {
-		const [provider] = getSupportedProviders();
-
+	it('rejects custom creation without an API key', () => {
 		expect(() =>
-			builtInProviderPayloadFromForm(
+			providerPayloadFromForm(
 				formFromEntries({
-					kind: 'custom',
-					providerId: provider.id,
-					defaultModel: provider.defaultModel
+					providerMode: '__custom__',
+					name: 'Local',
+					providerId: 'local',
+					api: 'openai-completions',
+					baseUrl: 'http://localhost:1234/v1',
+					defaultModel: 'local-small'
 				}),
-				false
+				{ update: false }
 			)
-		).toThrow(/Custom providers cannot be created/);
+		).toThrow(/API key is required/);
 	});
 });

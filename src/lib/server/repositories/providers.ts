@@ -13,7 +13,6 @@ import {
 const providerInputSchema = z.object({
 	name: z.string().min(1),
 	providerId: z.string().min(1).regex(/^[a-zA-Z0-9_.-]+$/),
-	kind: z.enum(['built_in', 'custom']).default('built_in'),
 	api: z.string().min(1).default('openai'),
 	baseUrl: z.string().url().optional().nullable(),
 	defaultModel: z.string().min(1),
@@ -130,7 +129,6 @@ export async function createProviderConnection(input: ProviderInput): Promise<Pu
 		.values({
 			name: parsed.name,
 			providerId: parsed.providerId,
-			kind: parsed.kind,
 			api: parsed.api,
 			baseUrl: parsed.baseUrl ?? null,
 			defaultModel: parsed.defaultModel,
@@ -188,7 +186,6 @@ export async function updateProviderConnection(
 		.set({
 			...(parsed.name !== undefined ? { name: parsed.name } : {}),
 			...(parsed.providerId !== undefined ? { providerId: parsed.providerId } : {}),
-			...(parsed.kind !== undefined ? { kind: parsed.kind } : {}),
 			...(parsed.api !== undefined ? { api: parsed.api } : {}),
 			...(parsed.baseUrl !== undefined ? { baseUrl: parsed.baseUrl ?? null } : {}),
 			...(parsed.defaultModel !== undefined ? { defaultModel: parsed.defaultModel } : {}),

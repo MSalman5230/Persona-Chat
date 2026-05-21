@@ -43,6 +43,13 @@
       "when": 1779374907055,
       "tag": "0005_refresh_safe_chat_runs",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779465600000,
+      "tag": "0006_remove_provider_kind",
+      "breakpoints": true
     }
   ]
 }

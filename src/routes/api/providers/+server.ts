@@ -1,7 +1,8 @@
-import { json, type RequestHandler } from '@sveltejs/kit';
+import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { parseJsonRequest } from '$lib/server/api';
+import { findSupportedProvider } from '$lib/server/providers/catalog';
 import {
 	createProviderConnection,
 	listProviderConnections
@@ -10,7 +11,6 @@ import {
 const providerSchema = z.object({
 	name: z.string().min(1),
 	providerId: z.string().min(1),
-	kind: z.enum(['built_in', 'custom']).default('built_in'),
 	api: z.string().default('openai'),
 	baseUrl: z.string().url().optional().nullable(),
 	defaultModel: z.string().min(1),
@@ -31,6 +31,9 @@ export const GET: RequestHandler = async () => {
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await parseJsonRequest(request, providerSchema, 'Invalid provider connection');
+	if ((body.baseUrl || !findSupportedProvider(body.providerId)) && !body.apiKey) {
+		error(400, 'API key is required for custom providers');
+	}
 	const provider = await createProviderConnection(body);
 	return json({ provider }, { status: 201 });
 };

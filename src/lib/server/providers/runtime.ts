@@ -7,6 +7,7 @@ import {
 	getProviderConnection,
 	getProviderSecrets
 } from '$lib/server/repositories/providers';
+import { findSupportedProvider } from './catalog';
 
 export type ProviderRuntime = {
 	row: ProviderConnectionRow;
@@ -37,7 +38,7 @@ function buildAuthStorage(row: ProviderConnectionRow): AuthStorage {
 }
 
 function registerCustomProvider(row: ProviderConnectionRow, registry: ModelRegistry): void {
-	if (row.kind !== 'custom' && !row.baseUrl) return;
+	if (!row.baseUrl && findSupportedProvider(row.providerId)) return;
 	if (!row.baseUrl) throw new Error(`Custom provider ${row.name} needs a base URL`);
 
 	const secrets = getProviderSecrets(row);

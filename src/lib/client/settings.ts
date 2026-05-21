@@ -11,7 +11,6 @@ export type SavedProviderOption = {
 	id: string;
 	name: string;
 	providerId: string;
-	kind: string;
 	api: string;
 	baseUrl: string | null;
 	defaultModel: string;
@@ -37,11 +36,6 @@ export type McpServerOption = {
 };
 
 export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
-
-export const PROVIDER_KINDS = [
-	{ value: 'built_in', label: 'Built-in' },
-	{ value: 'custom', label: 'Custom' }
-];
 
 export const MCP_JSON_EXAMPLE = `{
   "mcpServers": {
@@ -70,14 +64,20 @@ export function supportedProviderFor(
 	return supportedProviders.find((provider) => provider.id === providerId);
 }
 
+export function isCatalogBackedProvider(
+	provider: SavedProviderOption,
+	supportedProviders: SupportedProviderOption[]
+): boolean {
+	return !provider.baseUrl && !!supportedProviderFor(supportedProviders, provider.providerId);
+}
+
 export function providerModelOptions(
 	provider: SavedProviderOption,
 	supportedProviders: SupportedProviderOption[]
 ): SettingsModelOption[] {
-	const supportedProvider =
-		provider.kind === 'built_in'
-			? supportedProviderFor(supportedProviders, provider.providerId)
-			: undefined;
+	const supportedProvider = isCatalogBackedProvider(provider, supportedProviders)
+		? supportedProviderFor(supportedProviders, provider.providerId)
+		: undefined;
 	if (supportedProvider) return supportedProvider.models;
 
 	const modelIds = provider.models.length > 0 ? provider.models : [provider.defaultModel];
