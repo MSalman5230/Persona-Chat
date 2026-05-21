@@ -1,23 +1,25 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { z } from 'zod';
 
+import { apiErrorMessage, readJsonRequest } from '$lib/server/api';
 import {
 	deleteSystemPromptPreset,
 	updateSystemPromptPresetDefault
 } from '$lib/server/repositories/system-prompts';
-
-function errorMessage(value: unknown, fallback: string): string {
-	if (value instanceof z.ZodError) return value.issues[0]?.message ?? fallback;
-	return value instanceof Error ? value.message : fallback;
-}
+import type { SystemPromptPresetPatchInput } from '$lib/server/repositories/system-prompts';
 
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	try {
-		const preset = await updateSystemPromptPresetDefault(params.id, await request.json());
+		const preset = await updateSystemPromptPresetDefault(
+			params.id,
+			(await readJsonRequest(
+				request,
+				'Unable to update system prompt preset'
+			)) as SystemPromptPresetPatchInput
+		);
 		return json({ preset });
 	} catch (cause) {
-		error(400, errorMessage(cause, 'Unable to update system prompt preset'));
+		error(400, apiErrorMessage(cause, 'Unable to update system prompt preset'));
 	}
 };
 

@@ -94,16 +94,3 @@ export async function appendChatMessages(
 	);
 	await db.update(chatSessions).set({ updatedAt: new Date() }).where(eq(chatSessions.id, sessionId));
 }
-
-export async function replaceChatMessages(
-	sessionId: string,
-	messages: Array<{
-		role: string;
-		contentText: string;
-		piMessage: Record<string, unknown>;
-		display?: Record<string, unknown>;
-	}>
-): Promise<void> {
-	await db.delete(chatMessages).where(eq(chatMessages.sessionId, sessionId));
-	await appendChatMessages(sessionId, messages);
-}

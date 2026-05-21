@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { BLANK_SYSTEM_PROMPT_SENTINEL } from '$lib/server/chat/settings';
 
-import { wrapStreamFnWithSessionSettings } from './runtime';
+import { wrapStreamFnWithSessionSettings } from './session-settings';
 
 describe('agent runtime session settings', () => {
 	it('strips the blank prompt sentinel before calling PI providers', () => {

@@ -1,6 +1,7 @@
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
+import { uniqueTrimmedStrings } from '$lib/server/collections';
 import { decryptJson, encryptJson } from '$lib/server/crypto';
 import { db } from '$lib/server/db';
 import {
@@ -68,29 +69,15 @@ function buildSecret(input: Pick<ProviderInput, 'apiKey' | 'headers'>): Encrypte
 	return Object.keys(secret).length > 0 ? encryptJson(secret) : null;
 }
 
-function uniqueStrings(values: string[]): string[] {
-	const seen = new Set<string>();
-	const result: string[] = [];
-
-	for (const value of values) {
-		const trimmed = value.trim();
-		if (!trimmed || seen.has(trimmed)) continue;
-		seen.add(trimmed);
-		result.push(trimmed);
-	}
-
-	return result;
-}
-
 function normalizeModels(defaultModel: string, models: string[]): string[] {
-	const normalized = uniqueStrings(models);
+	const normalized = uniqueTrimmedStrings(models);
 	if (!normalized.includes(defaultModel)) normalized.unshift(defaultModel);
 	return normalized;
 }
 
 function normalizeFavoriteModels(favoriteModels: string[], models: string[]): string[] {
 	const allowed = new Set(models);
-	return uniqueStrings(favoriteModels).filter((modelId) => allowed.has(modelId));
+	return uniqueTrimmedStrings(favoriteModels).filter((modelId) => allowed.has(modelId));
 }
 
 async function ensureSingleDefault(id: string): Promise<void> {
@@ -103,14 +90,6 @@ async function ensureSingleDefault(id: string): Promise<void> {
 export async function listProviderConnections(): Promise<PublicProviderConnection[]> {
 	const rows = await db.select().from(providerConnections).orderBy(desc(providerConnections.createdAt));
 	return rows.map(serializeProvider);
-}
-
-export async function listEnabledProviderConnections(): Promise<ProviderConnectionRow[]> {
-	return db
-		.select()
-		.from(providerConnections)
-		.where(eq(providerConnections.enabled, true))
-		.orderBy(desc(providerConnections.isDefault), desc(providerConnections.createdAt));
 }
 
 export async function getProviderConnection(id: string): Promise<ProviderConnectionRow | undefined> {

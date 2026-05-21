@@ -7,18 +7,11 @@ import {
 	pgEnum,
 	pgTable,
 	real,
-	serial,
 	text,
 	timestamp,
 	uniqueIndex,
 	uuid
 } from 'drizzle-orm/pg-core';
-
-export const task = pgTable('task', {
-	id: serial('id').primaryKey(),
-	title: text('title').notNull(),
-	priority: integer('priority').notNull().default(1)
-});
 
 export const providerKind = pgEnum('provider_kind', ['built_in', 'custom']);
 export const mcpTransport = pgEnum('mcp_transport', ['stdio', 'streamable_http', 'sse']);

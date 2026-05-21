@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
+import { parseJsonRequest } from '$lib/server/api';
 import {
 	createProviderConnection,
 	listProviderConnections
@@ -29,6 +30,7 @@ export const GET: RequestHandler = async () => {
 };
 
 export const POST: RequestHandler = async ({ request }) => {
-	const provider = await createProviderConnection(providerSchema.parse(await request.json()));
+	const body = await parseJsonRequest(request, providerSchema, 'Invalid provider connection');
+	const provider = await createProviderConnection(body);
 	return json({ provider }, { status: 201 });
 };

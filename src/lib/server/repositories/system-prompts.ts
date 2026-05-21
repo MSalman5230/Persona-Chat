@@ -2,7 +2,6 @@ import { and, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
 import {
-	defaultSystemPromptPreset,
 	orderSystemPromptPresets,
 	systemPromptPresetCreateSchema,
 	systemPromptPresetPatchSchema,
@@ -28,17 +27,13 @@ export async function listSystemPromptPresets(): Promise<SystemPromptPreset[]> {
 	return orderSystemPromptPresets(rows.map(serializeSystemPromptPreset));
 }
 
-export async function getSystemPromptPreset(id: string): Promise<SystemPromptPresetRow | undefined> {
+async function getSystemPromptPreset(id: string): Promise<SystemPromptPresetRow | undefined> {
 	const [row] = await db
 		.select()
 		.from(systemPromptPresets)
 		.where(eq(systemPromptPresets.id, id))
 		.limit(1);
 	return row;
-}
-
-export async function getDefaultSystemPromptPreset(): Promise<SystemPromptPreset | null> {
-	return defaultSystemPromptPreset(await listSystemPromptPresets());
 }
 
 export async function createSystemPromptPreset(

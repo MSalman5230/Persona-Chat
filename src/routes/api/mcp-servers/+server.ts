@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
+import { parseJsonRequest } from '$lib/server/api';
 import { createMcpServer, listMcpServers } from '$lib/server/repositories/mcp';
 
 const mcpSchema = z.object({
@@ -21,6 +22,7 @@ export const GET: RequestHandler = async () => {
 };
 
 export const POST: RequestHandler = async ({ request }) => {
-	const server = await createMcpServer(mcpSchema.parse(await request.json()));
+	const body = await parseJsonRequest(request, mcpSchema, 'Invalid MCP server');
+	const server = await createMcpServer(body);
 	return json({ server }, { status: 201 });
 };

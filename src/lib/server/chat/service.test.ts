@@ -6,7 +6,7 @@ import {
 	normalizeAgentEvent,
 	normalizeAgentMessageForStorage,
 	type ThoughtTimingsByContentIndex
-} from './service';
+} from './display';
 
 describe('chat service display helpers', () => {
 	it('keeps text-only assistant messages unchanged', () => {

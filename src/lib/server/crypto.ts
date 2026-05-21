@@ -65,9 +65,3 @@ export function decryptJson<T>(payload: EncryptedJsonPayload | null | undefined)
 
 	return JSON.parse(plaintext.toString('utf8')) as T;
 }
-
-export function redactSecret(value: string | null | undefined): string | null {
-	if (!value) return null;
-	if (value.length <= 8) return '••••';
-	return `${value.slice(0, 4)}••••${value.slice(-4)}`;
-}

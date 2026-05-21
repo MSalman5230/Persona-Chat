@@ -1,3 +1,5 @@
+import { tryParseStringRecord } from './json';
+
 export function stringFromForm(form: FormData, key: string): string | undefined {
 	const value = form.get(key);
 	if (typeof value !== 'string') return undefined;
@@ -19,15 +21,5 @@ export function listFromLines(value: string | undefined): string[] {
 }
 
 export function recordFromJson(value: string | undefined, label: string): Record<string, string> {
-	if (!value) return {};
-	const parsed = JSON.parse(value) as unknown;
-	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		throw new Error(`${label} must be a JSON object`);
-	}
-
-	for (const [key, item] of Object.entries(parsed)) {
-		if (typeof item !== 'string') throw new Error(`${label}.${key} must be a string`);
-	}
-
-	return parsed as Record<string, string>;
+	return tryParseStringRecord(value, label);
 }

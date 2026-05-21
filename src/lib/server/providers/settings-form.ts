@@ -1,5 +1,6 @@
 import { booleanFromForm, listFromLines, recordFromJson, stringFromForm } from '$lib/server/forms';
 import { tryParseJsonObject } from '$lib/server/json';
+import { uniqueTrimmedStrings } from '$lib/server/collections';
 import type { ProviderInput, ProviderUpdateInput } from '$lib/server/repositories/providers';
 
 import {
@@ -18,27 +19,13 @@ function thinkingLevelFromForm(form: FormData): ThinkingLevel {
 	return THINKING_LEVELS.includes(value as ThinkingLevel) ? (value as ThinkingLevel) : 'medium';
 }
 
-function uniqueModelIds(values: string[]): string[] {
-	const seen = new Set<string>();
-	const result: string[] = [];
-
-	for (const value of values) {
-		const trimmed = value.trim();
-		if (!trimmed || seen.has(trimmed)) continue;
-		seen.add(trimmed);
-		result.push(trimmed);
-	}
-
-	return result;
-}
-
 function favoriteModelsFromForm(form: FormData, availableModelIds: string[]): string[] {
 	const allowed = new Set(availableModelIds);
 	const requested = form
 		.getAll('favoriteModels')
 		.flatMap((value) => (typeof value === 'string' ? listFromLines(value) : []));
 
-	return uniqueModelIds(requested).filter((modelId) => allowed.has(modelId));
+	return uniqueTrimmedStrings(requested).filter((modelId) => allowed.has(modelId));
 }
 
 function legacyProviderPayloadFromForm(
@@ -48,7 +35,7 @@ function legacyProviderPayloadFromForm(
 	const defaultModel = stringFromForm(form, 'defaultModel');
 	if (!defaultModel) throw new Error('Default model is required');
 
-	const models = uniqueModelIds(listFromLines(stringFromForm(form, 'models')));
+	const models = uniqueTrimmedStrings(listFromLines(stringFromForm(form, 'models')));
 	if (!models.includes(defaultModel)) models.unshift(defaultModel);
 
 	const headersValue = stringFromForm(form, 'headersJson');

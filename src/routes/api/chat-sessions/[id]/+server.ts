@@ -1,8 +1,9 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
+import { parseJsonRequest } from '$lib/server/api';
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
-import { hydrateChatMessageDisplay } from '$lib/server/chat/service';
+import { hydrateChatMessageDisplay } from '$lib/server/chat/display';
 import { chatSessionSettingsPatchSchema } from '$lib/server/chat/settings';
 import { getChatSession, listChatMessages, updateChatSession } from '$lib/server/repositories/chat';
 
@@ -32,7 +33,11 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	const session = await getChatSession(params.id);
 	if (!session) error(404, 'Chat session not found');
 
-	const body = chatSessionSettingsPatchSchema.parse(await request.json());
+	const body = await parseJsonRequest(
+		request,
+		chatSessionSettingsPatchSchema,
+		'Invalid chat session settings'
+	);
 	await updateChatSession(session.id, body);
 
 	return json({

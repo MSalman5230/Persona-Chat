@@ -1,11 +1,11 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
+import { parseJsonRequest } from '$lib/server/api';
+import { normalizeAgentEvent, type ThoughtTimingsByAssistant } from '$lib/server/chat/display';
 import {
-	normalizeAgentEvent,
 	persistAgentMessages,
-	prepareChatTurn,
-	type ThoughtTimingsByAssistant
+	prepareChatTurn
 } from '$lib/server/chat/service';
 import { systemPromptSchema, temperatureSchema } from '$lib/server/chat/settings';
 
@@ -72,7 +72,7 @@ function trackThinkingEvent(
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-	const body = chatRequestSchema.parse(await request.json());
+	const body = await parseJsonRequest(request, chatRequestSchema, 'Invalid chat request');
 
 	const stream = new ReadableStream<Uint8Array>({
 		async start(controller) {
