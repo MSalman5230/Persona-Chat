@@ -10,6 +10,7 @@ import {
 	serial,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid
 } from 'drizzle-orm/pg-core';
 
@@ -89,6 +90,24 @@ export const mcpServers = pgTable(
 	(table) => ({
 		enabledIdx: index('mcp_servers_enabled_idx').on(table.enabled),
 		slugIdx: index('mcp_servers_slug_idx').on(table.slug)
+	})
+);
+
+export const systemPromptPresets = pgTable(
+	'system_prompt_presets',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		name: text('name').notNull(),
+		prompt: text('prompt').notNull(),
+		isDefault: boolean('is_default').notNull().default(false),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		nameIdx: uniqueIndex('system_prompt_presets_name_idx').on(table.name),
+		defaultIdx: uniqueIndex('system_prompt_presets_default_idx')
+			.on(table.isDefault)
+			.where(sql`${table.isDefault} = true`)
 	})
 );
 

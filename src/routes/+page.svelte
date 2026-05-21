@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { renderAssistantMarkdown } from '$lib/markdown';
 	import type { Attachment } from 'svelte/attachments';
-	import { onMount, tick } from 'svelte';
+	import { onMount, tick, untrack } from 'svelte';
 
 	type UiThought = {
 		contentIndex: number;
@@ -34,7 +34,9 @@
 	let { data } = $props();
 
 	type ProviderOption = typeof data.providers[number];
+	type SystemPromptPresetOption = typeof data.systemPromptPresets[number];
 	type ModelOption = { id: string; name: string };
+	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 	const DEFAULT_MANUAL_TEMPERATURE = 0.7;
 
@@ -45,12 +47,17 @@
 	let activeSessionId = $state<string | null>(null);
 	let selectedProviderIdOverride = $state<string | null>(null);
 	let selectedModelOverride = $state<string | null>(null);
-	let systemPrompt = $state('');
+	let systemPromptPresets = $state<SystemPromptPresetOption[]>(
+		untrack(() => data.systemPromptPresets)
+	);
+	let selectedSystemPromptPresetId = $state(untrack(() => data.defaultSystemPrompt?.id ?? ''));
+	let systemPrompt = $state(untrack(() => data.defaultSystemPrompt?.prompt ?? ''));
 	let temperatureAuto = $state(true);
 	let temperatureValue = $state(DEFAULT_MANUAL_TEMPERATURE);
-	let lastSavedSystemPrompt = $state('');
+	let lastSavedSystemPrompt = $state(untrack(() => data.defaultSystemPrompt?.prompt ?? ''));
 	let lastSavedTemperature = $state<number | null>(null);
 	let settingsSaveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let presetActionStatus = $state<PresetActionStatus>('idle');
 	let settingsErrorText = $state('');
 	let errorText = $state('');
 	let messages = $state<UiMessage[]>([]);
@@ -79,6 +86,13 @@
 		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
 	);
 	const currentTemperature = $derived(temperatureAuto ? null : clampTemperature(temperatureValue));
+	const selectedSystemPromptPreset = $derived(
+		systemPromptPresets.find((preset) => preset.id === selectedSystemPromptPresetId)
+	);
+	const defaultSystemPromptPreset = $derived(
+		systemPromptPresets.find((preset) => preset.isDefault) ?? null
+	);
+	const defaultSystemPromptText = $derived(defaultSystemPromptPreset?.prompt ?? '');
 	const settingsDirty = $derived(
 		activeSessionId !== null &&
 			(systemPrompt !== lastSavedSystemPrompt || currentTemperature !== lastSavedTemperature)
@@ -105,11 +119,23 @@
 		return typeof value === 'number' && Number.isFinite(value) ? clampTemperature(value) : null;
 	}
 
+	function sortSystemPromptPresets(presets: SystemPromptPresetOption[]): SystemPromptPresetOption[] {
+		return [...presets].sort((a, b) => {
+			if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+			return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+		});
+	}
+
+	function presetIdForPrompt(prompt: string): string {
+		return systemPromptPresets.find((preset) => preset.prompt === prompt)?.id ?? '';
+	}
+
 	function resetSessionSettings(settings?: { systemPrompt?: string; temperature?: number | null }) {
 		const nextSystemPrompt = settings?.systemPrompt ?? '';
 		const nextTemperature = settings?.temperature ?? null;
 
 		systemPrompt = nextSystemPrompt;
+		selectedSystemPromptPresetId = presetIdForPrompt(nextSystemPrompt);
 		temperatureAuto = nextTemperature === null;
 		temperatureValue = nextTemperature ?? DEFAULT_MANUAL_TEMPERATURE;
 		lastSavedSystemPrompt = nextSystemPrompt;
@@ -120,6 +146,7 @@
 
 	function markSettingsChanged() {
 		if (settingsSaveStatus === 'saved' || settingsSaveStatus === 'error') settingsSaveStatus = 'idle';
+		if (presetActionStatus === 'saved' || presetActionStatus === 'error') presetActionStatus = 'idle';
 		settingsErrorText = '';
 	}
 
@@ -386,7 +413,7 @@
 		errorText = '';
 		sidebarOpen = false;
 		settingsOpen = false;
-		resetSessionSettings();
+		resetSessionSettings({ systemPrompt: defaultSystemPromptText, temperature: null });
 		tick().then(() => focusChatInput?.());
 	}
 
@@ -414,7 +441,9 @@
 		sidebarOpen = false;
 	}
 
-	function updateSystemPrompt() {
+	function updateSystemPrompt(event: Event) {
+		systemPrompt = (event.currentTarget as HTMLTextAreaElement).value;
+		selectedSystemPromptPresetId = presetIdForPrompt(systemPrompt);
 		markSettingsChanged();
 	}
 
@@ -469,6 +498,124 @@
 		} catch (error) {
 			settingsSaveStatus = 'error';
 			settingsErrorText = error instanceof Error ? error.message : 'Settings save failed';
+		}
+	}
+
+	async function responseErrorMessage(response: Response, fallback: string): Promise<string> {
+		try {
+			const payload = (await response.json()) as unknown;
+			if (isRecord(payload) && typeof payload.message === 'string') return payload.message;
+		} catch {
+			return fallback;
+		}
+
+		return fallback;
+	}
+
+	function applySystemPromptPresetUpdate(preset: SystemPromptPresetOption) {
+		systemPromptPresets = sortSystemPromptPresets(
+			systemPromptPresets.map((item) => ({
+				...item,
+				isDefault: preset.isDefault ? false : item.isDefault,
+				...(item.id === preset.id ? preset : {})
+			}))
+		);
+	}
+
+	function selectSystemPromptPreset(event: Event) {
+		const id = (event.currentTarget as HTMLSelectElement).value;
+		selectedSystemPromptPresetId = id;
+		const preset = systemPromptPresets.find((item) => item.id === id);
+		if (!preset) return;
+
+		systemPrompt = preset.prompt;
+		markSettingsChanged();
+	}
+
+	async function saveCurrentSystemPromptAsPreset() {
+		if (presetActionStatus === 'saving') return;
+		if (systemPrompt.trim().length === 0) {
+			settingsErrorText = 'System prompt is required';
+			presetActionStatus = 'error';
+			return;
+		}
+
+		const name = window.prompt('Preset name');
+		if (name === null) return;
+
+		presetActionStatus = 'saving';
+		settingsErrorText = '';
+
+		try {
+			const response = await fetch('/api/system-prompts', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name, prompt: systemPrompt })
+			});
+			if (!response.ok) {
+				throw new Error(await responseErrorMessage(response, 'Unable to save preset'));
+			}
+
+			const payload = (await response.json()) as { preset: SystemPromptPresetOption };
+			systemPromptPresets = sortSystemPromptPresets([
+				...systemPromptPresets.filter((preset) => preset.id !== payload.preset.id),
+				payload.preset
+			]);
+			selectedSystemPromptPresetId = payload.preset.id;
+			presetActionStatus = 'saved';
+		} catch (error) {
+			presetActionStatus = 'error';
+			settingsErrorText = error instanceof Error ? error.message : 'Unable to save preset';
+		}
+	}
+
+	async function toggleSelectedSystemPromptPresetDefault() {
+		const preset = selectedSystemPromptPreset;
+		if (!preset || presetActionStatus === 'saving') return;
+
+		presetActionStatus = 'saving';
+		settingsErrorText = '';
+
+		try {
+			const response = await fetch(`/api/system-prompts/${preset.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ isDefault: !preset.isDefault })
+			});
+			if (!response.ok) {
+				throw new Error(await responseErrorMessage(response, 'Unable to update preset'));
+			}
+
+			const payload = (await response.json()) as { preset: SystemPromptPresetOption };
+			applySystemPromptPresetUpdate(payload.preset);
+			selectedSystemPromptPresetId = payload.preset.id;
+			presetActionStatus = 'saved';
+		} catch (error) {
+			presetActionStatus = 'error';
+			settingsErrorText = error instanceof Error ? error.message : 'Unable to update preset';
+		}
+	}
+
+	async function deleteSelectedSystemPromptPreset() {
+		const preset = selectedSystemPromptPreset;
+		if (!preset || presetActionStatus === 'saving') return;
+		if (!window.confirm(`Delete "${preset.name}"?`)) return;
+
+		presetActionStatus = 'saving';
+		settingsErrorText = '';
+
+		try {
+			const response = await fetch(`/api/system-prompts/${preset.id}`, { method: 'DELETE' });
+			if (!response.ok) {
+				throw new Error(await responseErrorMessage(response, 'Unable to delete preset'));
+			}
+
+			systemPromptPresets = systemPromptPresets.filter((item) => item.id !== preset.id);
+			selectedSystemPromptPresetId = '';
+			presetActionStatus = 'saved';
+		} catch (error) {
+			presetActionStatus = 'error';
+			settingsErrorText = error instanceof Error ? error.message : 'Unable to delete preset';
 		}
 	}
 
@@ -937,16 +1084,77 @@
 
 			<form class="custom-scrollbar flex flex-1 flex-col overflow-y-auto" onsubmit={(event) => { event.preventDefault(); void saveSessionSettings(); }}>
 				<div class="flex-1 space-y-6 px-gutter py-5">
-					<label class="block space-y-2">
-						<span class="font-label-md text-label-md uppercase text-text-muted">System Prompt</span>
-						<textarea
-							bind:value={systemPrompt}
-							class="custom-scrollbar min-h-44 w-full resize-none rounded-lg border border-border-subtle bg-surface-container px-3 py-2.5 font-body-sm text-body-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-outline"
-							placeholder="Empty"
-							aria-label="System prompt"
-							oninput={updateSystemPrompt}
-						></textarea>
-					</label>
+					<div class="space-y-3">
+						<div class="space-y-2">
+							<div class="flex items-center justify-between gap-3">
+								<label for="system-prompt-preset" class="font-label-md text-label-md uppercase text-text-muted">
+									Preset
+								</label>
+								<div class="flex items-center gap-1">
+									<button
+										type="button"
+										class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-35"
+										aria-label="Save system prompt as preset"
+										title="Save as preset"
+										disabled={systemPrompt.trim().length === 0 || presetActionStatus === 'saving'}
+										onclick={() => void saveCurrentSystemPromptAsPreset()}
+									>
+										<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">bookmark_add</span>
+									</button>
+									<button
+										type="button"
+										class={[
+											'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-35',
+											selectedSystemPromptPreset?.isDefault ? 'text-primary' : ''
+										]}
+										aria-label={selectedSystemPromptPreset?.isDefault
+											? 'Unset default prompt preset'
+											: 'Set prompt preset as default'}
+										title={selectedSystemPromptPreset?.isDefault ? 'Unset default' : 'Set default'}
+										disabled={!selectedSystemPromptPreset || presetActionStatus === 'saving'}
+										onclick={() => void toggleSelectedSystemPromptPresetDefault()}
+									>
+										<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">star</span>
+									</button>
+									<button
+										type="button"
+										class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-error disabled:opacity-35"
+										aria-label="Delete prompt preset"
+										title="Delete preset"
+										disabled={!selectedSystemPromptPreset || presetActionStatus === 'saving'}
+										onclick={() => void deleteSelectedSystemPromptPreset()}
+									>
+										<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
+									</button>
+								</div>
+							</div>
+							<select
+								id="system-prompt-preset"
+								class="h-10 w-full rounded-lg border border-border-subtle bg-surface-container px-3 font-body-sm text-body-sm text-text-primary outline-none transition-colors focus:border-outline"
+								value={selectedSystemPromptPresetId}
+								onchange={selectSystemPromptPreset}
+								aria-label="System prompt preset"
+							>
+								<option value="">Custom</option>
+								{#each systemPromptPresets as preset (preset.id)}
+									<option value={preset.id}>
+										{preset.isDefault ? 'Default - ' : ''}{preset.name}
+									</option>
+								{/each}
+							</select>
+						</div>
+
+						<label class="block space-y-2">
+							<span class="font-label-md text-label-md uppercase text-text-muted">System Prompt</span>
+							<textarea
+								bind:value={systemPrompt}
+								class="custom-scrollbar min-h-44 w-full resize-none rounded-lg border border-border-subtle bg-surface-container px-3 py-2.5 font-body-sm text-body-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-outline"
+								placeholder="Empty"
+								aria-label="System prompt"
+								oninput={updateSystemPrompt}
+							></textarea>
+						</label>
+					</div>
 
 					<div class="space-y-4">
 						<div class="flex items-center justify-between gap-4">
