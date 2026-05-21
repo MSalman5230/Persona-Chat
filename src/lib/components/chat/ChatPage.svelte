@@ -18,16 +18,21 @@
 	import { resolve } from '$app/paths';
 	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
 	import ChatSidebar from '$lib/components/chat/ChatSidebar.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import DesktopHeader from '$lib/components/chat/DesktopHeader.svelte';
 	import MessageList from '$lib/components/chat/MessageList.svelte';
 	import MobileHeader from '$lib/components/chat/MobileHeader.svelte';
 	import SessionSettingsDrawer from '$lib/components/chat/SessionSettingsDrawer.svelte';
+	import TextPromptDialog from '$lib/components/common/TextPromptDialog.svelte';
 	import { onMount, tick, untrack } from 'svelte';
 
 	let { data } = $props();
 
 	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 	type ChatSessionSummary = { id: string; title: string };
+	type PendingConfirmation =
+		| { kind: 'chat'; chat: ChatSessionSummary }
+		| { kind: 'preset'; preset: SystemPromptPresetOption };
 	type ChatSessionDetails = {
 		id: string;
 		title: string;
@@ -41,6 +46,8 @@
 	let message = $state('');
 	let sidebarOpen = $state(false);
 	let settingsOpen = $state(false);
+	let pendingConfirmation = $state<PendingConfirmation | null>(null);
+	let presetNameDialogOpen = $state(false);
 	let sessions = $state<ChatSessionSummary[]>(untrack(() => data.sessions));
 	let activeRun = $state<ActiveRun | null>(untrack(() => data.activeRun));
 	let isStreaming = $state(Boolean(untrack(() => data.activeRun)));
@@ -121,6 +128,23 @@
 		activeSessionId !== null &&
 			(systemPrompt !== lastSavedSystemPrompt || currentTemperature !== lastSavedTemperature)
 	);
+	const confirmationDialog = $derived.by(() => {
+		if (!pendingConfirmation) return null;
+
+		if (pendingConfirmation.kind === 'chat') {
+			return {
+				title: 'Delete chat?',
+				description: `Delete "${pendingConfirmation.chat.title}"? This cannot be undone.`,
+				confirmLabel: 'Delete chat'
+			};
+		}
+
+		return {
+			title: 'Delete preset?',
+			description: `Delete "${pendingConfirmation.preset.name}"?`,
+			confirmLabel: 'Delete preset'
+		};
+	});
 
 	onMount(() => {
 		const interval = window.setInterval(() => {
@@ -217,9 +241,11 @@
 		tick().then(() => focusChatInput?.());
 	}
 
-	async function deleteChat(chat: ChatSessionSummary) {
-		if (!window.confirm(`Delete "${chat.title}"? This cannot be undone.`)) return;
+	function deleteChat(chat: ChatSessionSummary) {
+		pendingConfirmation = { kind: 'chat', chat };
+	}
 
+	async function confirmDeleteChat(chat: ChatSessionSummary) {
 		const wasActive = activeSessionId === chat.id;
 		errorText = '';
 
@@ -326,7 +352,7 @@
 		markSettingsChanged();
 	}
 
-	async function saveCurrentSystemPromptAsPreset() {
+	function saveCurrentSystemPromptAsPreset() {
 		if (presetActionStatus === 'saving') return;
 		if (systemPrompt.trim().length === 0) {
 			settingsErrorText = 'System prompt is required';
@@ -334,9 +360,11 @@
 			return;
 		}
 
-		const name = window.prompt('Preset name');
-		if (name === null) return;
+		presetNameDialogOpen = true;
+	}
 
+	async function confirmSaveCurrentSystemPromptAsPreset(name: string) {
+		presetNameDialogOpen = false;
 		presetActionStatus = 'saving';
 		settingsErrorText = '';
 
@@ -393,8 +421,11 @@
 	async function deleteSelectedSystemPromptPreset() {
 		const preset = selectedSystemPromptPreset;
 		if (!preset || presetActionStatus === 'saving') return;
-		if (!window.confirm(`Delete "${preset.name}"?`)) return;
 
+		pendingConfirmation = { kind: 'preset', preset };
+	}
+
+	async function confirmDeleteSelectedSystemPromptPreset(preset: SystemPromptPresetOption) {
 		presetActionStatus = 'saving';
 		settingsErrorText = '';
 
@@ -410,6 +441,19 @@
 		} catch (error) {
 			presetActionStatus = 'error';
 			settingsErrorText = error instanceof Error ? error.message : 'Unable to delete preset';
+		}
+	}
+
+	async function confirmPendingDeletion() {
+		const confirmation = pendingConfirmation;
+		if (!confirmation) return;
+
+		pendingConfirmation = null;
+
+		if (confirmation.kind === 'chat') {
+			await confirmDeleteChat(confirmation.chat);
+		} else {
+			await confirmDeleteSelectedSystemPromptPreset(confirmation.preset);
 		}
 	}
 
@@ -702,4 +746,24 @@
 			onDeleteSelectedSystemPromptPreset={deleteSelectedSystemPromptPreset}
 		/>
 	</div>
+
+	<ConfirmDialog
+		open={confirmationDialog !== null}
+		title={confirmationDialog?.title ?? ''}
+		description={confirmationDialog?.description ?? ''}
+		confirmLabel={confirmationDialog?.confirmLabel ?? 'Delete'}
+		variant="danger"
+		onCancel={() => (pendingConfirmation = null)}
+		onConfirm={confirmPendingDeletion}
+	/>
+
+	<TextPromptDialog
+		open={presetNameDialogOpen}
+		title="Save preset"
+		description="Name this system prompt preset."
+		label="Preset name"
+		confirmLabel="Save preset"
+		onCancel={() => (presetNameDialogOpen = false)}
+		onConfirm={(name) => void confirmSaveCurrentSystemPromptAsPreset(name)}
+	/>
 </div>

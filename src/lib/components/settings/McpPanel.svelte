@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { MCP_JSON_EXAMPLE, type McpServerOption } from '$lib/client/settings';
 
 	interface Props {
@@ -8,6 +9,27 @@
 	}
 
 	let { mcpServers, mcpJson, formMcpJson }: Props = $props();
+
+	let pendingDeleteServer = $state<McpServerOption | null>(null);
+	let deleteForm: HTMLFormElement | null = null;
+
+	function requestDeleteMcp(event: SubmitEvent, server: McpServerOption) {
+		event.preventDefault();
+		deleteForm = event.currentTarget as HTMLFormElement;
+		pendingDeleteServer = server;
+	}
+
+	function cancelDeleteMcp() {
+		pendingDeleteServer = null;
+		deleteForm = null;
+	}
+
+	function confirmDeleteMcp() {
+		const form = deleteForm;
+		pendingDeleteServer = null;
+		deleteForm = null;
+		form?.submit();
+	}
 </script>
 
 <section class="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -88,7 +110,7 @@
 							<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">hub</span>
 						</button>
 					</form>
-					<form method="POST" action="?/deleteMcp">
+					<form method="POST" action="?/deleteMcp" onsubmit={(event) => requestDeleteMcp(event, server)}>
 						<input type="hidden" name="id" value={server.id} />
 						<button class="settings-icon-button danger" aria-label="Delete MCP server">
 							<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
@@ -98,8 +120,20 @@
 			</div>
 		{:else}
 			<div class="rounded-lg border border-border-subtle bg-surface-container-low p-6 text-text-muted">
-				No MCP servers saved.
-			</div>
-		{/each}
-	</aside>
+			No MCP servers saved.
+		</div>
+	{/each}
+</aside>
+
+<ConfirmDialog
+	open={pendingDeleteServer !== null}
+	title="Delete MCP server?"
+	description={pendingDeleteServer
+		? `Delete "${pendingDeleteServer.name}"? This removes its saved configuration.`
+		: ''}
+	confirmLabel="Delete server"
+	variant="danger"
+	onCancel={cancelDeleteMcp}
+	onConfirm={confirmDeleteMcp}
+/>
 </section>

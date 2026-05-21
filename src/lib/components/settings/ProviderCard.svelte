@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import {
 		PROVIDER_KINDS,
 		THINKING_LEVELS,
@@ -16,6 +17,27 @@
 
 	let { provider, supportedProviders }: Props = $props();
 	const modelOptions = $derived(providerModelOptions(provider, supportedProviders));
+
+	let deleteForm: HTMLFormElement | null = null;
+	let deleteConfirmationOpen = $state(false);
+
+	function requestDeleteProvider(event: SubmitEvent) {
+		event.preventDefault();
+		deleteForm = event.currentTarget as HTMLFormElement;
+		deleteConfirmationOpen = true;
+	}
+
+	function cancelDeleteProvider() {
+		deleteConfirmationOpen = false;
+		deleteForm = null;
+	}
+
+	function confirmDeleteProvider() {
+		const form = deleteForm;
+		deleteConfirmationOpen = false;
+		deleteForm = null;
+		form?.submit();
+	}
 </script>
 
 <div class="rounded-lg border border-border-subtle bg-surface-container-low p-4">
@@ -45,7 +67,7 @@
 					</span>
 				</button>
 			</form>
-			<form method="POST" action="?/deleteProvider">
+			<form method="POST" action="?/deleteProvider" onsubmit={requestDeleteProvider}>
 				<input type="hidden" name="id" value={provider.id} />
 				<button
 					class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-error"
@@ -157,4 +179,14 @@
 			<button class="settings-primary-button">Save</button>
 		</div>
 	</form>
+
+	<ConfirmDialog
+		open={deleteConfirmationOpen}
+		title="Delete provider?"
+		description={`Delete "${provider.name}"? This removes its saved configuration.`}
+		confirmLabel="Delete provider"
+		variant="danger"
+		onCancel={cancelDeleteProvider}
+		onConfirm={confirmDeleteProvider}
+	/>
 </div>
