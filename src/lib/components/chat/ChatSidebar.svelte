@@ -11,10 +11,11 @@
 		sessions: ChatSession[];
 		activeSessionId: string | null;
 		onNewChat: () => void;
+		onDeleteChat: (chat: ChatSession) => void;
 		onClose: () => void;
 	}
 
-	let { open, sessions, activeSessionId, onNewChat, onClose }: Props = $props();
+	let { open, sessions, activeSessionId, onNewChat, onDeleteChat, onClose }: Props = $props();
 </script>
 
 <aside
@@ -50,18 +51,32 @@
 
 		<div class="space-y-1">
 			{#each sessions as chat (chat.id)}
-				<a
-					href={resolve(`/chat/${chat.id}`)}
+				<div
 					class={[
-						'flex w-full items-center gap-3 truncate rounded-lg px-4 py-2 text-left transition-colors duration-200',
+						'group flex w-full items-center rounded-lg transition-colors duration-200',
 						activeSessionId === chat.id
 							? 'bg-surface-container text-primary'
 							: 'text-text-muted hover:bg-surface-container-high hover:text-primary'
 					]}
-					onclick={onClose}
 				>
-					<span class="truncate font-body-sm text-body-sm">{chat.title}</span>
-				</a>
+					<a
+						href={resolve(`/chat/${chat.id}`)}
+						class="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-2 pl-4 pr-2 text-left"
+						aria-current={activeSessionId === chat.id ? 'page' : undefined}
+						onclick={onClose}
+					>
+						<span class="truncate font-body-sm text-body-sm">{chat.title}</span>
+					</a>
+					<button
+						type="button"
+						class="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted opacity-100 transition-[background-color,color,opacity] duration-200 hover:bg-error-container/40 hover:text-error focus-visible:bg-error-container/40 focus-visible:text-error focus-visible:outline focus-visible:outline-1 focus-visible:outline-error md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+						aria-label={`Delete chat ${chat.title}`}
+						title={`Delete ${chat.title}`}
+						onclick={() => onDeleteChat(chat)}
+					>
+						<span class="material-symbols-outlined !text-[18px]" aria-hidden="true">delete</span>
+					</button>
+				</div>
 			{:else}
 				<p class="px-4 py-2 font-body-sm text-body-sm text-text-muted">No chats yet.</p>
 			{/each}

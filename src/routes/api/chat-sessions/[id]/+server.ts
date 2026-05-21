@@ -5,7 +5,12 @@ import { parseJsonRequest } from '$lib/server/api';
 import { resolveActiveChatRun } from '$lib/server/chat/runs';
 import { serializeChatMessages } from '$lib/server/chat/service';
 import { chatSessionSettingsPatchSchema } from '$lib/server/chat/settings';
-import { getChatSession, listChatMessages, updateChatSession } from '$lib/server/repositories/chat';
+import {
+	deleteChatSession,
+	getChatSession,
+	listChatMessages,
+	updateChatSession
+} from '$lib/server/repositories/chat';
 
 export const GET: RequestHandler = async ({ params }) => {
 	const session = await getChatSession(params.id);
@@ -38,4 +43,17 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 			updatedAt: new Date()
 		}
 	});
+};
+
+export const DELETE: RequestHandler = async ({ params }) => {
+	const session = await getChatSession(params.id);
+	if (!session) error(404, 'Chat session not found');
+
+	const runState = await resolveActiveChatRun(session.id);
+	if (runState.activeRun) {
+		error(409, 'Wait for the response to finish before deleting this chat');
+	}
+
+	await deleteChatSession(session.id);
+	return json({ ok: true });
 };

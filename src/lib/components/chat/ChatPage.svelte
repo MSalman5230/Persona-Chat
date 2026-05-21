@@ -198,7 +198,7 @@
 		settingsOpen = true;
 	}
 
-	function newChat() {
+	function resetChatView() {
 		activeSessionId = null;
 		activeRun = null;
 		isStreaming = false;
@@ -207,10 +207,44 @@
 		sidebarOpen = false;
 		settingsOpen = false;
 		resetSessionSettings({ systemPrompt: defaultSystemPromptText, temperature: null });
+	}
+
+	function newChat() {
+		resetChatView();
 		if (loadedSessionId !== null) {
 			void goto(resolve('/'));
 		}
 		tick().then(() => focusChatInput?.());
+	}
+
+	async function deleteChat(chat: ChatSessionSummary) {
+		if (!window.confirm(`Delete "${chat.title}"? This cannot be undone.`)) return;
+
+		const wasActive = activeSessionId === chat.id;
+		errorText = '';
+
+		try {
+			const response = await fetch(`/api/chat-sessions/${chat.id}`, { method: 'DELETE' });
+			if (!response.ok) {
+				const fallback =
+					response.status === 409
+						? 'Wait for the response to finish before deleting this chat'
+						: 'Unable to delete chat';
+				throw new Error(await responseErrorMessage(response, fallback));
+			}
+
+			sessions = sessions.filter((item) => item.id !== chat.id);
+
+			if (wasActive) {
+				closeRunEvents();
+				resetChatView();
+				await goto(resolve('/'), { replaceState: true });
+				await tick();
+				focusChatInput?.();
+			}
+		} catch (error) {
+			errorText = error instanceof Error ? error.message : 'Unable to delete chat';
+		}
 	}
 
 	function updateSystemPrompt(value: string) {
@@ -602,6 +636,7 @@
 			{sessions}
 			{activeSessionId}
 			onNewChat={newChat}
+			onDeleteChat={deleteChat}
 			onClose={() => (sidebarOpen = false)}
 		/>
 

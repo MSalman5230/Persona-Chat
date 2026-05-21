@@ -66,6 +66,10 @@ export async function updateChatSession(
 		.where(eq(chatSessions.id, id));
 }
 
+export async function deleteChatSession(id: string): Promise<void> {
+	await db.delete(chatSessions).where(eq(chatSessions.id, id));
+}
+
 export async function listChatMessages(sessionId: string): Promise<ChatMessageRow[]> {
 	return db
 		.select()
