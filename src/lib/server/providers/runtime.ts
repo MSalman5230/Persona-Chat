@@ -7,6 +7,7 @@ import {
 	getProviderConnection,
 	getProviderSecrets
 } from '$lib/server/repositories/providers';
+import { isThinkingLevel, type ThinkingLevel } from '$lib/shared/thinking';
 import { findSupportedProvider } from './catalog';
 
 export type ProviderRuntime = {
@@ -14,16 +15,11 @@ export type ProviderRuntime = {
 	authStorage: AuthStorage;
 	modelRegistry: ModelRegistry;
 	model: Model<Api>;
-	thinkingLevel: ThinkingLevel;
+	thinkingLevel: ThinkingLevel | undefined;
 };
 
-export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-
-function toThinkingLevel(value: string): ThinkingLevel {
-	if (['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value)) {
-		return value as ThinkingLevel;
-	}
-	return 'medium';
+function toThinkingLevel(value: string | null | undefined): ThinkingLevel | undefined {
+	return isThinkingLevel(value) ? value : undefined;
 }
 
 function ensureModelIds(row: ProviderConnectionRow): string[] {
@@ -96,6 +92,6 @@ export async function createProviderRuntime(input?: {
 		authStorage,
 		modelRegistry,
 		model,
-		thinkingLevel: toThinkingLevel(input?.thinkingLevel ?? row.defaultThinkingLevel)
+		thinkingLevel: toThinkingLevel(input?.thinkingLevel)
 	};
 }

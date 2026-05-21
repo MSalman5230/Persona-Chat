@@ -112,4 +112,112 @@ describe('agent runtime session settings', () => {
 		vi.doUnmock('$lib/server/providers/runtime');
 		vi.doUnmock('$lib/server/repositories/mcp');
 	});
+
+	it('omits PI thinking options when thinking level is auto', async () => {
+		vi.resetModules();
+		const createAgentSession = vi.fn(async (options: Record<string, unknown>) => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} },
+			options
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({ appendMessage: vi.fn() })
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				row: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: undefined,
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers: vi.fn(),
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		await createServerAgentSession({ thinkingLevel: null });
+		const options = createAgentSession.mock.calls[0][0] as {
+			thinkingLevel?: string;
+			settingsManager: { settings: Record<string, unknown> };
+		};
+
+		expect(options).not.toHaveProperty('thinkingLevel');
+		expect(options.settingsManager.settings).not.toHaveProperty('defaultThinkingLevel');
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
+	});
+
+	it('passes explicit thinking options through to PI', async () => {
+		vi.resetModules();
+		const createAgentSession = vi.fn(async (options: Record<string, unknown>) => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} },
+			options
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({ appendMessage: vi.fn() })
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				row: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: 'high',
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers: vi.fn(),
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		await createServerAgentSession({ thinkingLevel: 'high' });
+		const options = createAgentSession.mock.calls[0][0] as {
+			thinkingLevel?: string;
+			settingsManager: { settings: Record<string, unknown> };
+		};
+
+		expect(options.thinkingLevel).toBe('high');
+		expect(options.settingsManager.settings.defaultThinkingLevel).toBe('high');
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
+	});
 });

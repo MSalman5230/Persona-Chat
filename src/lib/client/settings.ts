@@ -1,5 +1,7 @@
 export type SettingsModelOption = { id: string; name: string };
 
+export { THINKING_LEVELS } from '$lib/shared/thinking';
+
 export type SupportedProviderOption = {
 	id: string;
 	name: string;
@@ -34,8 +36,6 @@ export type McpServerOption = {
 	hasHeaderSecrets: boolean;
 	lastError: string | null;
 };
-
-export const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
 export const MCP_JSON_EXAMPLE = `{
   "mcpServers": {

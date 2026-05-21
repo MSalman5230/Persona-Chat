@@ -2,21 +2,19 @@ import { booleanFromForm, listFromLines, recordFromJson, stringFromForm } from '
 import { tryParseJsonObject } from '$lib/server/json';
 import { uniqueTrimmedStrings } from '$lib/server/collections';
 import type { ProviderInput, ProviderUpdateInput } from '$lib/server/repositories/providers';
+import { isThinkingLevel, type ThinkingLevel } from '$lib/shared/thinking';
 
 import {
 	findSupportedProvider,
 	getSupportedProviders,
 	type SupportedProvider
 } from './catalog';
-import type { ThinkingLevel } from './runtime';
 
 export const CUSTOM_PROVIDER_ID = '__custom__';
 
-const THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
-
 function thinkingLevelFromForm(form: FormData): ThinkingLevel {
 	const value = stringFromForm(form, 'defaultThinkingLevel');
-	return THINKING_LEVELS.includes(value as ThinkingLevel) ? (value as ThinkingLevel) : 'medium';
+	return isThinkingLevel(value) ? value : 'medium';
 }
 
 function favoriteModelsFromForm(form: FormData, availableModelIds: string[]): string[] {

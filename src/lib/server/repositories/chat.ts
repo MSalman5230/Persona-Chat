@@ -29,7 +29,7 @@ export async function createChatSession(input: {
 	providerConnectionId: string | null;
 	providerId: string | null;
 	modelId: string | null;
-	thinkingLevel: string;
+	thinkingLevel: string | null;
 	systemPrompt: string;
 	temperature: number | null;
 }): Promise<ChatSessionRow> {
@@ -55,7 +55,7 @@ export async function updateChatSession(
 		providerConnectionId: string | null;
 		providerId: string | null;
 		modelId: string | null;
-		thinkingLevel: string;
+		thinkingLevel: string | null;
 		systemPrompt: string;
 		temperature: number | null;
 	}>

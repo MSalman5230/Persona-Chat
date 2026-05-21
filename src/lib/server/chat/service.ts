@@ -36,10 +36,12 @@ export async function prepareChatTurn(input: {
 	const history = historyRows.map((row) => row.piMessage as unknown as AgentMessage);
 	const systemPrompt = input.systemPrompt ?? existing?.systemPrompt ?? '';
 	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
+	const thinkingLevel =
+		input.thinkingLevel !== undefined ? input.thinkingLevel : (existing?.thinkingLevel ?? null);
 	const runtime = await createServerAgentSession({
 		providerConnectionId: input.providerConnectionId ?? existing?.providerConnectionId,
 		modelId: input.modelId ?? existing?.modelId,
-		thinkingLevel: input.thinkingLevel ?? existing?.thinkingLevel,
+		thinkingLevel,
 		systemPrompt,
 		temperature,
 		history
@@ -52,7 +54,7 @@ export async function prepareChatTurn(input: {
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
-			thinkingLevel: runtime.thinkingLevel,
+			thinkingLevel,
 			systemPrompt,
 			temperature
 		}));
@@ -62,7 +64,7 @@ export async function prepareChatTurn(input: {
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
-			thinkingLevel: runtime.thinkingLevel,
+			thinkingLevel,
 			systemPrompt,
 			temperature
 		});
@@ -71,7 +73,7 @@ export async function prepareChatTurn(input: {
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
-			thinkingLevel: runtime.thinkingLevel,
+			thinkingLevel,
 			systemPrompt,
 			temperature
 		};

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import {
-		THINKING_LEVELS,
 		defaultModelValue,
 		hasModel,
 		isCatalogBackedProvider,
@@ -103,15 +102,6 @@
 				{/each}
 			</select>
 		</label>
-		<label class="space-y-1">
-			<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
-			<select class="settings-field" name="defaultThinkingLevel" value={provider.defaultThinkingLevel}>
-				{#each THINKING_LEVELS as level (level)}
-					<option value={level}>{level}</option>
-				{/each}
-			</select>
-		</label>
-
 		<div class="space-y-2 sm:col-span-2">
 			<span class="font-label-md text-label-md uppercase text-text-muted">Models</span>
 			{#if modelOptions.length > 0}

@@ -50,6 +50,13 @@
       "when": 1779465600000,
       "tag": "0006_remove_provider_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779405797894,
+      "tag": "0007_remarkable_mentallo",
+      "breakpoints": true
     }
   ]
 }

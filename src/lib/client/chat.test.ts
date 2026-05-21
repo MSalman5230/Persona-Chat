@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	clampTemperature,
+	chatThinkingSelectionFromServer,
 	consumeSseChunk,
 	formatDuration,
 	mergeToolIntoAssistant,
@@ -9,6 +10,7 @@ import {
 	normalizeServerThoughts,
 	normalizeServerTools,
 	thoughtLabel,
+	thinkingLevelForRequest,
 	toolStatusLabel,
 	uiMessageFromServer,
 	type UiMessage
@@ -20,6 +22,15 @@ describe('chat client helpers', () => {
 		expect(clampTemperature(2.9)).toBe(2);
 		expect(clampTemperature(0.74)).toBe(0.7);
 		expect(clampTemperature(Number.NaN)).toBe(0.7);
+	});
+
+	it('maps chat thinking selections to server request values', () => {
+		expect(chatThinkingSelectionFromServer(null)).toBe('auto');
+		expect(chatThinkingSelectionFromServer(undefined)).toBe('auto');
+		expect(chatThinkingSelectionFromServer('medium')).toBe('medium');
+		expect(chatThinkingSelectionFromServer('unsupported')).toBe('auto');
+		expect(thinkingLevelForRequest('auto')).toBeNull();
+		expect(thinkingLevelForRequest('high')).toBe('high');
 	});
 
 	it('normalizes server thoughts while preserving expanded state', () => {

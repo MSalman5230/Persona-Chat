@@ -27,6 +27,13 @@ export type UiMessage = {
 
 export type ModelOption = { id: string; name: string };
 
+export {
+	CHAT_THINKING_OPTIONS,
+	chatThinkingSelectionFromServer,
+	thinkingLevelForRequest,
+	type ChatThinkingSelection
+} from '$lib/shared/thinking';
+
 export type ChatProviderOption = {
 	id: string;
 	name: string;

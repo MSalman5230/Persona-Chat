@@ -7,6 +7,7 @@ import {
 	createProviderConnection,
 	listProviderConnections
 } from '$lib/server/repositories/providers';
+import { THINKING_LEVELS } from '$lib/shared/thinking';
 
 const providerSchema = z.object({
 	name: z.string().min(1),
@@ -14,7 +15,7 @@ const providerSchema = z.object({
 	api: z.string().default('openai'),
 	baseUrl: z.string().url().optional().nullable(),
 	defaultModel: z.string().min(1),
-	defaultThinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']).default('medium'),
+	defaultThinkingLevel: z.enum(THINKING_LEVELS).default('medium'),
 	authHeader: z.boolean().default(true),
 	models: z.array(z.string()).default([]),
 	favoriteModels: z.array(z.string()).default([]),

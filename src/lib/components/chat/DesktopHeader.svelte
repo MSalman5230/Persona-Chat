@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { ChatProviderOption, ModelOption } from '$lib/client/chat';
+	import type { ChatProviderOption, ChatThinkingSelection, ModelOption } from '$lib/client/chat';
 
 	interface Props {
 		providerOptions: ChatProviderOption[];
 		selectedProviderId: string;
 		selectedModelOptions: ModelOption[];
 		selectedModel: string;
+		thinkingOptions: readonly ChatThinkingSelection[];
+		selectedThinking: ChatThinkingSelection;
 		settingsOpen: boolean;
 		onSelectProvider: (id: string) => void;
 		onSelectModel: (id: string) => void;
+		onSelectThinking: (value: ChatThinkingSelection) => void;
 		onToggleSettings: () => void;
 	}
 
@@ -18,11 +21,18 @@
 		selectedProviderId,
 		selectedModelOptions,
 		selectedModel,
+		thinkingOptions,
+		selectedThinking,
 		settingsOpen,
 		onSelectProvider,
 		onSelectModel,
+		onSelectThinking,
 		onToggleSettings
 	}: Props = $props();
+
+	function optionLabel(value: ChatThinkingSelection): string {
+		return value === 'auto' ? 'Auto' : value;
+	}
 </script>
 
 <header class="sticky top-0 z-30 hidden h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-gutter backdrop-blur-md md:flex">
@@ -46,6 +56,17 @@
 		>
 			{#each selectedModelOptions as model (model.id)}
 				<option value={model.id}>{model.name}</option>
+			{/each}
+		</select>
+		<select
+			class="rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant"
+			value={selectedThinking}
+			onchange={(event) =>
+				onSelectThinking((event.currentTarget as HTMLSelectElement).value as ChatThinkingSelection)}
+			aria-label="Thinking"
+		>
+			{#each thinkingOptions as option (option)}
+				<option value={option}>{optionLabel(option)}</option>
 			{/each}
 		</select>
 	</div>

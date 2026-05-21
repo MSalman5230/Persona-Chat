@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SystemPromptPresetOption } from '$lib/client/chat';
+	import type { ChatThinkingSelection, SystemPromptPresetOption } from '$lib/client/chat';
 
 	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -10,6 +10,8 @@
 		selectedSystemPromptPresetId: string;
 		selectedSystemPromptPreset: SystemPromptPresetOption | undefined;
 		systemPrompt: string;
+		thinkingOptions: readonly ChatThinkingSelection[];
+		selectedThinking: ChatThinkingSelection;
 		temperatureAuto: boolean;
 		temperatureValue: number;
 		settingsErrorText: string;
@@ -19,6 +21,7 @@
 		onClose: () => void;
 		onSelectSystemPromptPreset: (id: string) => void;
 		onSystemPromptInput: (value: string) => void;
+		onThinkingChange: (value: ChatThinkingSelection) => void;
 		onTemperatureAutoChange: (checked: boolean) => void;
 		onTemperatureValueChange: (value: number) => void;
 		onSaveSessionSettings: () => void | Promise<void>;
@@ -34,6 +37,8 @@
 		selectedSystemPromptPresetId,
 		selectedSystemPromptPreset,
 		systemPrompt,
+		thinkingOptions,
+		selectedThinking,
 		temperatureAuto,
 		temperatureValue,
 		settingsErrorText,
@@ -43,6 +48,7 @@
 		onClose,
 		onSelectSystemPromptPreset,
 		onSystemPromptInput,
+		onThinkingChange,
 		onTemperatureAutoChange,
 		onTemperatureValueChange,
 		onSaveSessionSettings,
@@ -50,6 +56,10 @@
 		onToggleSelectedSystemPromptPresetDefault,
 		onDeleteSelectedSystemPromptPreset
 	}: Props = $props();
+
+	function optionLabel(value: ChatThinkingSelection): string {
+		return value === 'auto' ? 'Auto' : value;
+	}
 </script>
 
 <button
@@ -163,6 +173,21 @@
 					></textarea>
 				</label>
 			</div>
+
+			<label class="block space-y-2">
+				<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
+				<select
+					class="h-10 w-full rounded-lg border border-border-subtle bg-surface-container px-3 font-body-sm text-body-sm text-text-primary outline-none transition-colors focus:border-outline"
+					value={selectedThinking}
+					onchange={(event) =>
+						onThinkingChange((event.currentTarget as HTMLSelectElement).value as ChatThinkingSelection)}
+					aria-label="Thinking"
+				>
+					{#each thinkingOptions as option (option)}
+						<option value={option}>{optionLabel(option)}</option>
+					{/each}
+				</select>
+			</label>
 
 			<div class="space-y-4">
 				<div class="flex items-center justify-between gap-4">

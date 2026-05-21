@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { THINKING_LEVELS, type SettingsModelOption, type SupportedProviderOption } from '$lib/client/settings';
+	import type { SettingsModelOption, SupportedProviderOption } from '$lib/client/settings';
 
 	const CUSTOM_PROVIDER_ID = '__custom__';
 
@@ -87,14 +87,6 @@
 			</label>
 		{/if}
 
-		<label class="space-y-1">
-			<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
-			<select class="settings-field" name="defaultThinkingLevel">
-				{#each THINKING_LEVELS as level (level)}
-					<option value={level} selected={level === 'medium'}>{level}</option>
-				{/each}
-			</select>
-		</label>
 		<label class="space-y-1">
 			<span class="font-label-md text-label-md uppercase text-text-muted">API Key</span>
 			<input

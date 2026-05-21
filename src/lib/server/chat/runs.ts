@@ -271,6 +271,7 @@ async function executeChatRun(
 			title: turn.chatSession.title,
 			providerId: turn.runtime.provider.providerId,
 			modelId: turn.runtime.model.id,
+			thinkingLevel: turn.chatSession.thinkingLevel,
 			systemPrompt: turn.chatSession.systemPrompt,
 			temperature: turn.chatSession.temperature,
 			tools: turn.runtime.allowedToolNames

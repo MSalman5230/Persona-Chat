@@ -34,7 +34,6 @@ describe('provider settings form helper', () => {
 			formFromEntries({
 				providerId: provider.id,
 				defaultModel: model.id,
-				defaultThinkingLevel: 'high',
 				apiKey: 'sk-test',
 				enabled: 'on',
 				isDefault: 'on'
@@ -48,7 +47,7 @@ describe('provider settings form helper', () => {
 			api: model.api,
 			baseUrl: null,
 			defaultModel: model.id,
-			defaultThinkingLevel: 'high',
+			defaultThinkingLevel: 'medium',
 			apiKey: 'sk-test',
 			enabled: true,
 			isDefault: true

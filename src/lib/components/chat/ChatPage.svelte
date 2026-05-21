@@ -1,6 +1,8 @@
 <script lang="ts">
 	import {
 		DEFAULT_MANUAL_TEMPERATURE,
+		CHAT_THINKING_OPTIONS,
+		chatThinkingSelectionFromServer,
 		clampTemperature,
 		isRecord,
 		mergeToolIntoAssistant,
@@ -9,7 +11,9 @@
 		responseErrorMessage,
 		sortSystemPromptPresets,
 		temperatureFromServer,
+		thinkingLevelForRequest,
 		uiMessageFromServer,
+		type ChatThinkingSelection,
 		type ChatProviderOption,
 		type SystemPromptPresetOption,
 		type UiMessage
@@ -38,6 +42,7 @@
 		title: string;
 		providerConnectionId: string | null;
 		modelId: string | null;
+		thinkingLevel: string | null;
 		systemPrompt: string;
 		temperature: number | null;
 	};
@@ -57,6 +62,9 @@
 		untrack(() => data.activeSession?.providerConnectionId ?? null)
 	);
 	let selectedModelOverride = $state<string | null>(untrack(() => data.activeSession?.modelId ?? null));
+	let selectedThinking = $state<ChatThinkingSelection>(
+		untrack(() => chatThinkingSelectionFromServer(data.activeSession?.thinkingLevel))
+	);
 	let systemPromptPresets = $state<SystemPromptPresetOption[]>(
 		untrack(() => data.systemPromptPresets)
 	);
@@ -101,6 +109,7 @@
 		providerOptions.find((provider) => provider.id === selectedProviderId) ?? providerOptions[0]
 	);
 	const selectedModelOptions = $derived(modelOptionsForProvider(selectedProvider));
+	const thinkingOptions = CHAT_THINKING_OPTIONS;
 	const selectedModel = $derived.by(() => {
 		if (selectedModelOverride && selectedModelOptions.some((model) => model.id === selectedModelOverride)) {
 			return selectedModelOverride;
@@ -176,6 +185,7 @@
 		systemPromptPresets = data.systemPromptPresets;
 		selectedProviderIdOverride = session?.providerConnectionId ?? null;
 		selectedModelOverride = session?.modelId ?? null;
+		selectedThinking = chatThinkingSelectionFromServer(session?.thinkingLevel);
 		resetSessionSettings({
 			systemPrompt: session?.systemPrompt ?? defaultSystemPromptText,
 			temperature: temperatureFromServer(session?.temperature)
@@ -230,6 +240,7 @@
 		errorText = '';
 		sidebarOpen = false;
 		settingsOpen = false;
+		selectedThinking = 'auto';
 		resetSessionSettings({ systemPrompt: defaultSystemPromptText, temperature: null });
 	}
 
@@ -467,6 +478,10 @@
 		selectedModelOverride = id;
 	}
 
+	function selectThinking(value: ChatThinkingSelection) {
+		selectedThinking = value;
+	}
+
 	function mergeToolIntoLastAssistant(payload: Record<string, unknown>) {
 		const lastAssistantIndex = messages.findLastIndex((item) => item.role === 'assistant');
 		if (lastAssistantIndex < 0) return;
@@ -515,6 +530,9 @@
 				systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : systemPrompt,
 				temperature: temperatureFromServer(payload.temperature)
 			});
+			if ('thinkingLevel' in payload) {
+				selectedThinking = chatThinkingSelectionFromServer(payload.thinkingLevel);
+			}
 		}
 
 		if (eventName === 'snapshot') {
@@ -628,6 +646,7 @@
 					message: prompt,
 					providerConnectionId: selectedProviderId || null,
 					modelId: selectedModel || null,
+					thinkingLevel: thinkingLevelForRequest(selectedThinking),
 					systemPrompt,
 					temperature: currentTemperature
 				})
@@ -651,6 +670,7 @@
 				systemPrompt: payload.session.systemPrompt,
 				temperature: temperatureFromServer(payload.session.temperature)
 			});
+			selectedThinking = chatThinkingSelectionFromServer(payload.session.thinkingLevel);
 
 			const href = resolve(`/chat/${payload.session.id}`);
 			if (wasNewChat || activeSessionId !== payload.session.id) {
@@ -695,9 +715,12 @@
 				{selectedProviderId}
 				{selectedModelOptions}
 				{selectedModel}
+				{thinkingOptions}
+				{selectedThinking}
 				{settingsOpen}
 				onSelectProvider={selectProvider}
 				onSelectModel={selectModel}
+				onSelectThinking={selectThinking}
 				onToggleSettings={() => (settingsOpen = !settingsOpen)}
 			/>
 
@@ -729,6 +752,8 @@
 			{selectedSystemPromptPresetId}
 			{selectedSystemPromptPreset}
 			{systemPrompt}
+			{thinkingOptions}
+			{selectedThinking}
 			{temperatureAuto}
 			{temperatureValue}
 			{settingsErrorText}
@@ -738,6 +763,7 @@
 			onClose={() => (settingsOpen = false)}
 			onSelectSystemPromptPreset={selectSystemPromptPreset}
 			onSystemPromptInput={updateSystemPrompt}
+			onThinkingChange={selectThinking}
 			onTemperatureAutoChange={updateTemperatureAuto}
 			onTemperatureValueChange={updateTemperatureValue}
 			onSaveSessionSettings={saveSessionSettings}

@@ -38,7 +38,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 	const settingsManager = SettingsManager.inMemory({
 		defaultProvider: provider.row.providerId,
 		defaultModel: provider.model.id,
-		defaultThinkingLevel: provider.thinkingLevel,
+		...(provider.thinkingLevel ? { defaultThinkingLevel: provider.thinkingLevel } : {}),
 		compaction: { enabled: false }
 	});
 
@@ -47,7 +47,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 		authStorage: provider.authStorage,
 		modelRegistry: provider.modelRegistry,
 		model: provider.model,
-		thinkingLevel: provider.thinkingLevel,
+		...(provider.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : {}),
 		noTools: 'builtin',
 		tools: allowedToolNames,
 		customTools,
