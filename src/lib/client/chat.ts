@@ -1,4 +1,5 @@
 import {
+	applyToolEventToDisplay,
 	mergeClientSnapshotTools,
 	normalizeChatThoughtDisplays,
 	type ChatThoughtDisplay,
@@ -16,6 +17,7 @@ export type UiThought = Omit<ChatThoughtDisplay, 'redacted'> & {
 export type UiTool = ChatToolDisplay;
 
 export type UiMessage = {
+	id?: string;
 	role: 'user' | 'assistant' | 'tool' | 'system';
 	text: string;
 	thoughts: UiThought[];
@@ -139,12 +141,48 @@ export function uiMessageFromServer(
 				: '';
 
 	return {
+		...(typeof payload.id === 'string' ? { id: payload.id } : previous?.id ? { id: previous.id } : {}),
 		role: roleFromServer(payload.role),
 		text,
 		thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts, now),
 		tools: normalizeServerTools(display?.tools, previous?.tools, now),
 		...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {})
 	};
+}
+
+export function uiMessagesFromServerSnapshot(
+	payloadMessages: unknown,
+	previousMessages: UiMessage[] = [],
+	now = Date.now()
+): UiMessage[] {
+	if (!Array.isArray(payloadMessages)) return [];
+
+	const previousById = new Map(
+		previousMessages.flatMap((message): [string, UiMessage][] =>
+			message.id ? [[message.id, message]] : []
+		)
+	);
+
+	return payloadMessages.flatMap((payload, index): UiMessage[] => {
+		if (!isRecord(payload)) return [];
+
+		const previous =
+			typeof payload.id === 'string'
+				? (previousById.get(payload.id) ?? previousMessages[index])
+				: previousMessages[index];
+
+		return [uiMessageFromServer(payload, previous, now)];
+	});
+}
+
+export function mergeToolIntoAssistant(
+	message: UiMessage,
+	payload: Record<string, unknown>,
+	now = Date.now()
+): UiMessage {
+	const display = applyToolEventToDisplay(message, payload, now);
+	if (display === message) return message;
+	return { ...message, tools: display.tools };
 }
 
 export function thoughtDurationMs(thought: UiThought, now = Date.now()): number | undefined {

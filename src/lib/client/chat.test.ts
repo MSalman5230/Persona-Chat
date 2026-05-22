@@ -4,6 +4,7 @@ import {
 	clampTemperature,
 	chatThinkingSelectionFromServer,
 	formatDuration,
+	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
 	normalizeServerTools,
@@ -11,9 +12,9 @@ import {
 	thinkingLevelForRequest,
 	toolStatusLabel,
 	uiMessageFromServer,
+	uiMessagesFromServerSnapshot,
 	type UiMessage
 } from './chat';
-import { applyToolEventToDisplay } from '$lib/shared/chat-display';
 
 describe('chat client helpers', () => {
 	it('clamps temperature to supported one-decimal bounds', () => {
@@ -95,19 +96,32 @@ describe('chat client helpers', () => {
 		);
 
 		expect(message.role).toBe('assistant');
+		expect(message.id).toBeUndefined();
 		expect(message.text).toBe('hello');
 		expect(message.thoughts).toHaveLength(1);
 		expect(message.tools).toHaveLength(1);
 	});
 
+	it('preserves message ids across streaming payloads without ids', () => {
+		const message = uiMessageFromServer(
+			{
+				role: 'assistant',
+				display: { text: 'updated', thoughts: [], tools: [] }
+			},
+			{ id: 'message-1', role: 'assistant', text: '', thoughts: [], tools: [] }
+		);
+
+		expect(message.id).toBe('message-1');
+	});
+
 	it('merges streaming tool events into an assistant message', () => {
 		const message: UiMessage = { role: 'assistant', text: '', thoughts: [], tools: [] };
-		const running = applyToolEventToDisplay(
+		const running = mergeToolIntoAssistant(
 			message,
 			{ type: 'tool_execution_start', toolName: 'mcp_web_search', toolCallId: 'call-1' },
 			1000
 		);
-		const completed = applyToolEventToDisplay(
+		const completed = mergeToolIntoAssistant(
 			running,
 			{ type: 'tool_execution_end', toolName: 'mcp_web_search', toolCallId: 'call-1' },
 			2500
@@ -123,6 +137,171 @@ describe('chat client helpers', () => {
 				durationMs: 1500
 			}
 		]);
+	});
+
+	it('keeps completed client tools completed across stale snapshots', () => {
+		const messages = uiMessagesFromServerSnapshot(
+			[
+				{
+					id: 'message-1',
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }]
+					}
+				}
+			],
+			[
+				{
+					id: 'message-1',
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-1',
+							name: 'mcp_search',
+							status: 'completed',
+							startedAt: 1000,
+							durationMs: 1500
+						}
+					]
+				}
+			],
+			3000
+		);
+
+		expect(messages[0].tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 1500
+			}
+		]);
+	});
+
+	it('keeps running client tools running across stale snapshots', () => {
+		const messages = uiMessagesFromServerSnapshot(
+			[
+				{
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }]
+					}
+				}
+			],
+			[
+				{
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-1',
+							name: 'mcp_search',
+							status: 'running',
+							startedAt: 1000
+						}
+					]
+				}
+			],
+			3000
+		);
+
+		expect(messages[0].tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'running',
+				startedAt: 1000
+			}
+		]);
+	});
+
+	it('matches snapshot messages by id before falling back to index', () => {
+		const messages = uiMessagesFromServerSnapshot(
+			[
+				{
+					id: 'message-b',
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: [{ contentIndex: 0, id: 'call-b', name: 'mcp_search', status: 'pending' }]
+					}
+				},
+				{
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: [{ contentIndex: 0, id: 'call-index', name: 'mcp_lookup', status: 'pending' }]
+					}
+				}
+			],
+			[
+				{
+					id: 'message-a',
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: []
+				},
+				{
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-index',
+							name: 'mcp_lookup',
+							status: 'running',
+							startedAt: 2000
+						}
+					]
+				},
+				{
+					id: 'message-b',
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-b',
+							name: 'mcp_search',
+							status: 'completed',
+							startedAt: 1000,
+							durationMs: 1500
+						}
+					]
+				}
+			],
+			3000
+		);
+
+		expect(messages[0].tools[0]).toMatchObject({
+			id: 'call-b',
+			status: 'completed',
+			startedAt: 1000,
+			durationMs: 1500
+		});
+		expect(messages[1].id).toBeUndefined();
+		expect(messages[1].tools[0]).toMatchObject({
+			id: 'call-index',
+			status: 'running',
+			startedAt: 2000
+		});
 	});
 
 	it('formats durations, thought labels, and tool labels', () => {

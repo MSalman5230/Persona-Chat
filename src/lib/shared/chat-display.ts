@@ -25,6 +25,8 @@ export type ChatMessageDisplay = {
 	tools: ChatToolDisplay[];
 };
 
+// Display helpers are split by policy: normalize stored/server DTOs, overlay stored hydration
+// state, and apply live tool events.
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -275,22 +277,22 @@ function mergeClientSnapshotTool(
 	};
 }
 
-export function applyToolEventToDisplay<T extends ChatMessageDisplay>(
-	display: T,
+export function applyToolEventToDisplay(
+	display: ChatMessageDisplay,
 	event: unknown,
 	now = Date.now()
-): T {
+): ChatMessageDisplay {
 	const eventTool = toolEventDisplay(event);
 	if (!eventTool) return display;
 
 	const tools = applyToolEventToTools(display.tools, eventTool, now);
-	return { ...display, tools } as T;
+	return { ...display, tools };
 }
 
-export function overlayStoredDisplay<T extends ChatMessageDisplay>(
-	hydratedDisplay: T,
+export function overlayStoredDisplay(
+	hydratedDisplay: ChatMessageDisplay,
 	storedDisplay: unknown
-): T {
+): ChatMessageDisplay {
 	const storedRecord = isRecord(storedDisplay) ? storedDisplay : {};
 	const storedThoughts = normalizeChatThoughtDisplays(storedRecord.thoughts);
 	const storedTools = normalizeChatToolDisplays(storedRecord.tools, 'completed');
@@ -320,25 +322,7 @@ export function overlayStoredDisplay<T extends ChatMessageDisplay>(
 		...hydratedDisplay,
 		thoughts,
 		tools
-	} as T;
-}
-
-export function mergeClientSnapshotDisplay<T extends ChatMessageDisplay>(
-	existingDisplay: T,
-	incomingDisplay: unknown,
-	now = Date.now()
-): T {
-	const incomingRecord = isRecord(incomingDisplay) ? incomingDisplay : {};
-	const incoming = normalizeChatMessageDisplay(incomingDisplay);
-	const tools = mergeClientSnapshotTools(existingDisplay.tools, incoming.tools, now);
-
-	return {
-		...existingDisplay,
-		...(typeof incomingRecord.role === 'string' ? { role: incoming.role } : {}),
-		...(typeof incomingRecord.text === 'string' ? { text: incoming.text } : {}),
-		thoughts: incoming.thoughts,
-		tools
-	} as T;
+	};
 }
 
 export function mergeClientSnapshotTools(

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyToolEventToDisplay, type ChatMessageDisplay } from '$lib/shared/chat-display';
+import { mergeToolIntoAssistant, type UiMessage } from '$lib/client/chat';
+import type { ChatMessageDisplay } from '$lib/shared/chat-display';
 import type { ChatMessageInput } from '$lib/server/repositories/chat';
 
 import { mergeToolEventIntoStoredMessage } from './runs';
@@ -61,11 +62,16 @@ describe('chat run helpers', () => {
 			piMessage: { role: 'assistant', content: [] },
 			display: initialDisplay
 		};
-		let clientDisplay = initialDisplay;
+		let clientDisplay: UiMessage = {
+			role: 'assistant',
+			text: '',
+			thoughts: [],
+			tools: []
+		};
 		let storedMessage = initialMessage;
 
 		for (const [index, event] of events.entries()) {
-			clientDisplay = applyToolEventToDisplay(clientDisplay, event, times[index]);
+			clientDisplay = mergeToolIntoAssistant(clientDisplay, event, times[index]);
 			storedMessage = mergeToolEventIntoStoredMessage(storedMessage, event, times[index]);
 		}
 

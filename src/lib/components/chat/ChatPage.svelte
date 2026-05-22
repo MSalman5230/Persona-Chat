@@ -5,6 +5,7 @@
 		chatThinkingSelectionFromServer,
 		clampTemperature,
 		isRecord,
+		mergeToolIntoAssistant,
 		modelOptionsForProvider,
 		presetIdForPrompt,
 		responseErrorMessage,
@@ -12,6 +13,7 @@
 		temperatureFromServer,
 		thinkingLevelForRequest,
 		uiMessageFromServer,
+		uiMessagesFromServerSnapshot,
 		type ChatThinkingSelection,
 		type ChatProviderOption,
 		type SystemPromptPresetOption,
@@ -19,7 +21,6 @@
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { applyToolEventToDisplay } from '$lib/shared/chat-display';
 	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
 	import ChatSidebar from '$lib/components/chat/ChatSidebar.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -486,7 +487,7 @@
 		const lastAssistantIndex = messages.findLastIndex((item) => item.role === 'assistant');
 		if (lastAssistantIndex < 0) return;
 
-		messages[lastAssistantIndex] = applyToolEventToDisplay(messages[lastAssistantIndex], payload);
+		messages[lastAssistantIndex] = mergeToolIntoAssistant(messages[lastAssistantIndex], payload);
 	}
 
 	function activeRunFromPayload(payload: unknown): ActiveRun | null {
@@ -537,9 +538,7 @@
 
 		if (eventName === 'snapshot') {
 			if (Array.isArray(payload.messages)) {
-				messages = payload.messages
-					.filter((item): item is Record<string, unknown> => isRecord(item))
-					.map((item) => uiMessageFromServer(item));
+				messages = uiMessagesFromServerSnapshot(payload.messages, messages);
 			}
 			setActiveRun(activeRunFromPayload(payload.activeRun));
 		}

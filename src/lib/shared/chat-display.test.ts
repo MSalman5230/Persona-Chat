@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	applyToolEventToDisplay,
-	mergeClientSnapshotDisplay,
 	normalizeChatMessageDisplay,
 	overlayStoredDisplay,
 	type ChatMessageDisplay
@@ -215,44 +214,6 @@ describe('chat display helpers', () => {
 				name: 'mcp_search',
 				status: 'running',
 				startedAt: 1000
-			}
-		]);
-	});
-
-	it('preserves terminal client tool state across stale snapshots', () => {
-		const display = mergeClientSnapshotDisplay(
-			{
-				role: 'assistant',
-				text: '',
-				thoughts: [],
-				tools: [
-					{
-						contentIndex: 0,
-						id: 'call-1',
-						name: 'search',
-						status: 'completed',
-						startedAt: 1000,
-						durationMs: 1500
-					}
-				]
-			},
-			{
-				role: 'assistant',
-				text: '',
-				thoughts: [],
-				tools: [{ contentIndex: 0, id: 'call-1', name: 'search', status: 'pending' }]
-			},
-			3000
-		);
-
-		expect(display.tools).toEqual([
-			{
-				contentIndex: 0,
-				id: 'call-1',
-				name: 'search',
-				status: 'completed',
-				startedAt: 1000,
-				durationMs: 1500
 			}
 		]);
 	});
