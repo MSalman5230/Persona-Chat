@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { PublicMcpServer } from '$lib/server/repositories/mcp';
 
 import {
+	buildMcpJsonSyncOperations,
 	buildMcpJsonUpserts,
 	parseMcpJsonConfig,
 	serializeMcpJsonConfig
@@ -101,7 +102,7 @@ describe('MCP JSON config helpers', () => {
 		});
 	});
 
-	it('builds upserts by slug while leaving omitted saved servers untouched', () => {
+	it('builds sync operations by slug and deletes omitted saved servers', () => {
 		const existing = [
 			publicServer(),
 			publicServer({
@@ -113,7 +114,7 @@ describe('MCP JSON config helpers', () => {
 			})
 		];
 
-		const upserts = buildMcpJsonUpserts(
+		const sync = buildMcpJsonSyncOperations(
 			parseMcpJsonConfig(
 				JSON.stringify({
 					mcpServers: {
@@ -125,16 +126,50 @@ describe('MCP JSON config helpers', () => {
 			existing
 		);
 
-		expect(upserts.map((item) => [item.mode, item.slug])).toEqual([
+		expect(sync.upserts.map((item) => [item.mode, item.slug])).toEqual([
 			['update', 'svelte'],
 			['create', 'remote']
 		]);
-		expect(upserts).not.toContainEqual(expect.objectContaining({ slug: 'memory' }));
-		expect(upserts[0].payload).toMatchObject({
+		expect(sync.upserts).not.toContainEqual(expect.objectContaining({ slug: 'memory' }));
+		expect(sync.upserts[0].payload).toMatchObject({
 			name: 'Svelte',
 			command: 'pnpm',
 			args: ['dlx', '@sveltejs/mcp']
 		});
+		expect(sync.deletes).toEqual([
+			{ id: '00000000-0000-0000-0000-000000000002', slug: 'memory' }
+		]);
+	});
+
+	it('does not delete servers when the JSON contains all existing slugs', () => {
+		const existing = [
+			publicServer(),
+			publicServer({
+				id: '00000000-0000-0000-0000-000000000002',
+				name: 'Memory',
+				slug: 'memory',
+				command: 'node',
+				args: ['memory.js']
+			})
+		];
+
+		const sync = buildMcpJsonSyncOperations(
+			parseMcpJsonConfig(
+				JSON.stringify({
+					mcpServers: {
+						memory: { command: 'node', args: ['memory.js'] },
+						svelte: { command: 'npx', args: ['-y', '@sveltejs/mcp'] }
+					}
+				})
+			),
+			existing
+		);
+
+		expect(sync.upserts.map((item) => [item.mode, item.slug])).toEqual([
+			['update', 'memory'],
+			['update', 'svelte']
+		]);
+		expect(sync.deletes).toEqual([]);
 	});
 
 	it('preserves omitted secrets and explicitly clears empty secret objects', () => {

@@ -4,7 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { stringFromForm } from '$lib/server/forms';
 import { testMcpServer } from '$lib/server/mcp/adapter';
 import {
-	buildMcpJsonUpserts,
+	buildMcpJsonSyncOperations,
 	parseMcpJsonConfig,
 	serializeMcpJsonConfig
 } from '$lib/server/mcp/json-config';
@@ -114,8 +114,12 @@ export const actions: Actions = {
 			}
 			submittedJson = mcpJson;
 
+			const config = parseMcpJsonConfig(mcpJson);
 			const existingServers = await listMcpServers();
-			const upserts = buildMcpJsonUpserts(parseMcpJsonConfig(mcpJson), existingServers);
+			const { upserts, deletes } = buildMcpJsonSyncOperations(
+				config,
+				existingServers
+			);
 
 			for (const upsert of upserts) {
 				if (upsert.mode === 'update') {
@@ -124,10 +128,17 @@ export const actions: Actions = {
 					await createMcpServer(upsert.payload);
 				}
 			}
+			for (const deletedServer of deletes) {
+				await deleteMcpServer(deletedServer.id);
+			}
 
 			return {
 				ok: true,
-				message: `Saved ${upserts.length} MCP server${upserts.length === 1 ? '' : 's'}`
+				message: `Saved ${upserts.length} MCP server${upserts.length === 1 ? '' : 's'}${
+					deletes.length === 0
+						? ''
+						: `, deleted ${deletes.length} MCP server${deletes.length === 1 ? '' : 's'}`
+				}`
 			};
 		} catch (error) {
 			return fail(400, {

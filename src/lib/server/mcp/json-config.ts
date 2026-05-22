@@ -34,6 +34,16 @@ export type McpJsonUpsert =
 			payload: McpUpdateInput;
 	  };
 
+export type McpJsonDelete = {
+	id: string;
+	slug: string;
+};
+
+export type McpJsonSyncOperations = {
+	upserts: McpJsonUpsert[];
+	deletes: McpJsonDelete[];
+};
+
 const slugPattern = /^[a-zA-Z0-9_-]+$/;
 const transports = new Set<McpTransport>(['stdio', 'streamable_http', 'sse']);
 
@@ -241,4 +251,19 @@ export function buildMcpJsonUpserts(
 			? { mode: 'update', slug: server.slug, id: existing.id, payload }
 			: { mode: 'create', slug: server.slug, payload };
 	});
+}
+
+export function buildMcpJsonSyncOperations(
+	config: ParsedMcpJsonConfig,
+	existingServers: Array<Pick<PublicMcpServer, 'id' | 'name' | 'slug' | 'enabled'>>
+): McpJsonSyncOperations {
+	const submittedSlugs = new Set(config.servers.map((server) => server.slug));
+	const deletes = existingServers
+		.filter((server) => !submittedSlugs.has(server.slug))
+		.map((server) => ({ id: server.id, slug: server.slug }));
+
+	return {
+		upserts: buildMcpJsonUpserts(config, existingServers),
+		deletes
+	};
 }
