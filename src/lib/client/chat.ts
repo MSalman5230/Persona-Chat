@@ -1,7 +1,7 @@
 import {
 	applyToolEvent,
+	mergeChatToolDisplays,
 	normalizeChatMessageDisplay,
-	reconcileToolStatus,
 	type ChatToolDisplay
 } from '$lib/shared/chat-display';
 
@@ -142,25 +142,7 @@ export function normalizeServerTools(
 		thoughts: [],
 		tools: Array.isArray(tools) ? tools : []
 	}).tools;
-	const previousById = new Map(existingTools.map((tool) => [tool.id, tool]));
-
-	return incomingTools.map((tool) => {
-		const previous = previousById.get(tool.id);
-		const status = reconcileToolStatus(tool.status, previous?.status);
-		const durationMs = tool.durationMs ?? previous?.durationMs;
-		const startedAt =
-			tool.startedAt ??
-			(status === 'running'
-				? (previous?.startedAt ?? now - (durationMs ?? 0))
-				: previous?.startedAt);
-
-		return {
-			...tool,
-			status,
-			...(startedAt !== undefined ? { startedAt } : {}),
-			...(durationMs !== undefined ? { durationMs } : {})
-		};
-	});
+	return mergeChatToolDisplays(incomingTools, existingTools, { now });
 }
 
 export function uiMessageFromServer(

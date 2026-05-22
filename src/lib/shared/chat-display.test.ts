@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	applyToolEvent,
+	mergeChatToolDisplays,
 	mergeStoredChatMessageDisplayState,
 	normalizeChatMessageDisplay,
 	reconcileToolStatus,
@@ -138,5 +139,57 @@ describe('chat display helpers', () => {
 		expect(reconcileToolStatus('pending', 'failed')).toBe('failed');
 		expect(reconcileToolStatus('pending', 'running')).toBe('running');
 		expect(reconcileToolStatus('running', 'pending')).toBe('running');
+	});
+
+	it('merges tool display state by id and content index with shared precedence', () => {
+		expect(
+			mergeChatToolDisplays(
+				[{ contentIndex: 3, id: 'call-1', name: 'mcp_search', status: 'pending' }],
+				[
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'mcp_search',
+						status: 'completed',
+						startedAt: 100,
+						durationMs: 400
+					}
+				]
+			)
+		).toEqual([
+			{
+				contentIndex: 3,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'completed',
+				startedAt: 100,
+				durationMs: 400
+			}
+		]);
+
+		expect(
+			mergeChatToolDisplays(
+				[{ contentIndex: 2, id: 'call-new', name: 'mcp_lookup', status: 'pending' }],
+				[{ contentIndex: 2, id: 'call-old', name: 'mcp_lookup', status: 'running', startedAt: 500 }]
+			)
+		).toEqual([
+			{
+				contentIndex: 2,
+				id: 'call-new',
+				name: 'mcp_lookup',
+				status: 'running',
+				startedAt: 500
+			}
+		]);
+	});
+
+	it('appends previous-only tools only when requested by stored display merging', () => {
+		const incoming = [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'completed' }] as const;
+		const previous = [{ contentIndex: 1, id: 'call-2', name: 'mcp_lookup', status: 'failed' }] as const;
+
+		expect(mergeChatToolDisplays([...incoming], [...previous])).toEqual([...incoming]);
+		expect(
+			mergeChatToolDisplays([...incoming], [...previous], { appendPreviousOnly: true })
+		).toEqual([...incoming, ...previous]);
 	});
 });

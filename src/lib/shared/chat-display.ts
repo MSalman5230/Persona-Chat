@@ -40,6 +40,18 @@ export function reconcileToolStatus(
 	return incomingStatus;
 }
 
+type ToolStatusMergeMode = 'previous' | 'reconcile';
+
+function toolMergeStatus(
+	incomingStatus: ChatToolStatus,
+	previousStatus: ChatToolStatus | undefined,
+	mode: ToolStatusMergeMode
+): ChatToolStatus {
+	return mode === 'previous'
+		? (previousStatus ?? incomingStatus)
+		: reconcileToolStatus(incomingStatus, previousStatus);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -129,10 +141,6 @@ export function mergeStoredChatMessageDisplayState(
 ): ChatMessageDisplay {
 	const stored = normalizeChatMessageDisplay(storedDisplay, { toolStatusFallback: 'completed' });
 	const storedThoughts = new Map(stored.thoughts.map((thought) => [thought.contentIndex, thought]));
-	const storedToolsById = new Map(stored.tools.map((tool) => [tool.id, tool]));
-	const storedToolsByIndex = new Map(stored.tools.map((tool) => [tool.contentIndex, tool]));
-	const usedStoredToolIds = new Set<string>();
-
 	const thoughts = display.thoughts.map((thought) => {
 		const storedThought = storedThoughts.get(thought.contentIndex);
 		if (!storedThought) return thought;
@@ -144,30 +152,60 @@ export function mergeStoredChatMessageDisplayState(
 		};
 	});
 
-	const tools = display.tools.map((tool) => {
-		const storedTool = storedToolsById.get(tool.id) ?? storedToolsByIndex.get(tool.contentIndex);
-		if (!storedTool) return tool;
-		usedStoredToolIds.add(storedTool.id);
-
-		return {
-			...tool,
-			status: storedTool.status,
-			...(storedTool.startedAt !== undefined ? { startedAt: storedTool.startedAt } : {}),
-			...(storedTool.durationMs !== undefined ? { durationMs: storedTool.durationMs } : {})
-		};
-	});
-
-	for (const storedTool of stored.tools) {
-		if (!usedStoredToolIds.has(storedTool.id) && !tools.some((tool) => tool.id === storedTool.id)) {
-			tools.push(storedTool);
-		}
-	}
-
 	return {
 		...display,
 		thoughts,
-		tools
+		tools: mergeChatToolDisplays(display.tools, stored.tools, {
+			appendPreviousOnly: true,
+			statusMergeMode: 'previous'
+		})
 	};
+}
+
+export function mergeChatToolDisplays(
+	incomingTools: ChatToolDisplay[],
+	previousTools: ChatToolDisplay[],
+	options: {
+		appendPreviousOnly?: boolean;
+		now?: number;
+		statusMergeMode?: ToolStatusMergeMode;
+	} = {}
+): ChatToolDisplay[] {
+	const statusMergeMode = options.statusMergeMode ?? 'reconcile';
+	const previousById = new Map(previousTools.map((tool) => [tool.id, tool]));
+	const previousByIndex = new Map(previousTools.map((tool) => [tool.contentIndex, tool]));
+	const matchedPrevious = new Set<ChatToolDisplay>();
+
+	const tools = incomingTools.map((tool) => {
+		const previous = previousById.get(tool.id) ?? previousByIndex.get(tool.contentIndex);
+		if (previous) matchedPrevious.add(previous);
+
+		const status = toolMergeStatus(tool.status, previous?.status, statusMergeMode);
+		const durationMs = tool.durationMs ?? previous?.durationMs;
+		const startedAt =
+			tool.startedAt ??
+			previous?.startedAt ??
+			(status === 'running' && options.now !== undefined
+				? options.now - (durationMs ?? 0)
+				: undefined);
+
+		return {
+			...tool,
+			status,
+			...(startedAt !== undefined ? { startedAt } : {}),
+			...(durationMs !== undefined ? { durationMs } : {})
+		};
+	});
+
+	if (options.appendPreviousOnly === true) {
+		for (const previous of previousTools) {
+			if (!matchedPrevious.has(previous) && !tools.some((tool) => tool.id === previous.id)) {
+				tools.push(previous);
+			}
+		}
+	}
+
+	return tools;
 }
 
 export function applyToolEvent(
