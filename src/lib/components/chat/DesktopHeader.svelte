@@ -56,7 +56,7 @@
 			onChange={onSelectProvider}
 		/>
 		<SelectField
-			class="w-56"
+			class="w-auto max-w-56"
 			value={selectedModel}
 			options={modelSelectOptions}
 			ariaLabel="Model"
