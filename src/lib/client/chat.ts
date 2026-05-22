@@ -314,19 +314,6 @@ export function modelOptionsForProvider(provider: ChatProviderOption | undefined
 	return options;
 }
 
-export function consumeSseChunk(buffer: string, onEvent: (event: string, data: string) => void) {
-	const blocks = buffer.split('\n\n');
-	const rest = blocks.pop() ?? '';
-	for (const block of blocks) {
-		const lines = block.split('\n');
-		const eventLine = lines.find((line) => line.startsWith('event: '));
-		const dataLine = lines.find((line) => line.startsWith('data: '));
-		if (!eventLine || !dataLine) continue;
-		onEvent(eventLine.slice(7), dataLine.slice(6));
-	}
-	return rest;
-}
-
 export async function responseErrorMessage(response: Response, fallback: string): Promise<string> {
 	try {
 		const payload = (await response.json()) as unknown;

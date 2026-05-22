@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, max } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '$lib/server/db';
 import { chatMessages, chatRuns, chatSessions } from '$lib/server/db/schema';
@@ -113,28 +113,6 @@ export async function upsertChatMessages(
 	for (const [index, message] of messages.entries()) {
 		await upsertChatMessage(sessionId, startSequence + index, message);
 	}
-}
-
-export async function appendChatMessages(sessionId: string, messages: ChatMessageInput[]): Promise<void> {
-	if (messages.length === 0) return;
-
-	const [{ value: currentMax }] = await db
-		.select({ value: max(chatMessages.sequence) })
-		.from(chatMessages)
-		.where(eq(chatMessages.sessionId, sessionId));
-
-	const start = currentMax ?? 0;
-	await db.insert(chatMessages).values(
-		messages.map((message, index) => ({
-			sessionId,
-			sequence: start + index + 1,
-			role: message.role,
-			contentText: message.contentText,
-			piMessage: message.piMessage,
-			display: message.display ?? {}
-		}))
-	);
-	await db.update(chatSessions).set({ updatedAt: new Date() }).where(eq(chatSessions.id, sessionId));
 }
 
 export async function createChatRun(sessionId: string): Promise<ChatRunRow> {
