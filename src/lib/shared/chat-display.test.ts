@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyToolEventToDisplay, type ChatMessageDisplay } from './chat-display';
+import { mergeChatMessageDisplay, type ChatMessageDisplay } from './chat-display';
 
 function emptyDisplay(): ChatMessageDisplay {
 	return {
@@ -13,11 +13,11 @@ function emptyDisplay(): ChatMessageDisplay {
 
 describe('chat display helpers', () => {
 	it('creates a running tool from a start event', () => {
-		const display = applyToolEventToDisplay(
-			emptyDisplay(),
-			{ type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
-			1000
-		);
+		const display = mergeChatMessageDisplay(emptyDisplay(), {
+			mode: 'live-event',
+			event: { type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
+			now: 1000
+		});
 
 		expect(display.tools).toEqual([
 			{
@@ -31,16 +31,16 @@ describe('chat display helpers', () => {
 	});
 
 	it('keeps an updated tool running', () => {
-		const running = applyToolEventToDisplay(
-			emptyDisplay(),
-			{ type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
-			1000
-		);
-		const updated = applyToolEventToDisplay(
-			running,
-			{ type: 'tool_execution_update', toolName: 'mcp_search', toolCallId: 'call-1' },
-			1500
-		);
+		const running = mergeChatMessageDisplay(emptyDisplay(), {
+			mode: 'live-event',
+			event: { type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
+			now: 1000
+		});
+		const updated = mergeChatMessageDisplay(running, {
+			mode: 'live-event',
+			event: { type: 'tool_execution_update', toolName: 'mcp_search', toolCallId: 'call-1' },
+			now: 1500
+		});
 
 		expect(updated.tools).toEqual([
 			{
@@ -54,16 +54,16 @@ describe('chat display helpers', () => {
 	});
 
 	it('completes a successful tool with duration', () => {
-		const running = applyToolEventToDisplay(
-			emptyDisplay(),
-			{ type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
-			1000
-		);
-		const completed = applyToolEventToDisplay(
-			running,
-			{ type: 'tool_execution_end', toolName: 'mcp_search', toolCallId: 'call-1' },
-			2500
-		);
+		const running = mergeChatMessageDisplay(emptyDisplay(), {
+			mode: 'live-event',
+			event: { type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
+			now: 1000
+		});
+		const completed = mergeChatMessageDisplay(running, {
+			mode: 'live-event',
+			event: { type: 'tool_execution_end', toolName: 'mcp_search', toolCallId: 'call-1' },
+			now: 2500
+		});
 
 		expect(completed.tools).toEqual([
 			{
@@ -78,21 +78,21 @@ describe('chat display helpers', () => {
 	});
 
 	it('marks an errored tool as failed with duration', () => {
-		const running = applyToolEventToDisplay(
-			emptyDisplay(),
-			{ type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
-			1000
-		);
-		const failed = applyToolEventToDisplay(
-			running,
-			{
+		const running = mergeChatMessageDisplay(emptyDisplay(), {
+			mode: 'live-event',
+			event: { type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
+			now: 1000
+		});
+		const failed = mergeChatMessageDisplay(running, {
+			mode: 'live-event',
+			event: {
 				type: 'tool_execution_end',
 				toolName: 'mcp_search',
 				toolCallId: 'call-1',
 				isError: true
 			},
-			2500
-		);
+			now: 2500
+		});
 
 		expect(failed.tools).toEqual([
 			{
@@ -107,11 +107,11 @@ describe('chat display helpers', () => {
 	});
 
 	it('falls back to the tool name when the call id is missing', () => {
-		const display = applyToolEventToDisplay(
-			emptyDisplay(),
-			{ type: 'tool_execution_start', toolName: 'mcp_search' },
-			1000
-		);
+		const display = mergeChatMessageDisplay(emptyDisplay(), {
+			mode: 'live-event',
+			event: { type: 'tool_execution_start', toolName: 'mcp_search' },
+			now: 1000
+		});
 
 		expect(display.tools[0]).toMatchObject({
 			id: 'mcp_search',
@@ -122,12 +122,92 @@ describe('chat display helpers', () => {
 
 	it('leaves the display unchanged when the tool name is missing', () => {
 		const display = emptyDisplay();
-		const updated = applyToolEventToDisplay(
-			display,
-			{ type: 'tool_execution_start', toolCallId: 'call-1' },
-			1000
-		);
+		const updated = mergeChatMessageDisplay(display, {
+			mode: 'live-event',
+			event: { type: 'tool_execution_start', toolCallId: 'call-1' },
+			now: 1000
+		});
 
 		expect(updated).toBe(display);
+	});
+
+	it('overlays stored display state onto hydrated agent display', () => {
+		const display = mergeChatMessageDisplay(
+			{
+				role: 'assistant',
+				text: 'Done.',
+				thoughts: [{ contentIndex: 0, text: 'Thinking', status: 'thought' }],
+				tools: [{ contentIndex: 1, id: 'call-1', name: 'search', status: 'pending' }]
+			},
+			{
+				mode: 'stored-overlay',
+				incoming: {
+					thoughts: [{ contentIndex: 0, status: 'thinking', durationMs: 500 }],
+					tools: [
+						{
+							contentIndex: 1,
+							id: 'call-1',
+							name: 'search',
+							status: 'running',
+							startedAt: 1000
+						}
+					]
+				}
+			}
+		);
+
+		expect(display.thoughts[0]).toMatchObject({
+			contentIndex: 0,
+			text: 'Thinking',
+			status: 'thinking',
+			durationMs: 500
+		});
+		expect(display.tools[0]).toMatchObject({
+			contentIndex: 1,
+			id: 'call-1',
+			status: 'running',
+			startedAt: 1000
+		});
+	});
+
+	it('preserves terminal client tool state across stale snapshots', () => {
+		const display = mergeChatMessageDisplay(
+			{
+				role: 'assistant',
+				text: '',
+				thoughts: [],
+				tools: [
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'search',
+						status: 'completed',
+						startedAt: 1000,
+						durationMs: 1500
+					}
+				]
+			},
+			{
+				mode: 'client-snapshot-merge',
+				incoming: {
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [{ contentIndex: 0, id: 'call-1', name: 'search', status: 'pending' }]
+				},
+				now: 3000
+			}
+		);
+
+		expect(display.tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'search',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 1500
+			}
+		]);
 	});
 });

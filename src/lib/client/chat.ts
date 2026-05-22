@@ -1,10 +1,8 @@
 import {
-	applyToolEventToDisplay,
-	mergeToolSnapshotStatus,
-	normalizeChatThoughtDisplay,
-	normalizeChatToolDisplay,
+	mergeChatDisplayThoughts,
+	mergeChatDisplayTools,
+	mergeChatMessageDisplay,
 	normalizeDisplayDurationMs,
-	normalizeDisplayTimestamp,
 	type ChatThoughtDisplay,
 	type ChatToolDisplay
 } from '$lib/shared/chat-display';
@@ -98,16 +96,15 @@ export function normalizeServerThoughts(
 	existingThoughts: UiThought[] = [],
 	now = Date.now()
 ): UiThought[] {
-	if (!Array.isArray(thoughts)) return [];
-
 	const previousByIndex = new Map(
 		existingThoughts.map((thought) => [thought.contentIndex, thought])
 	);
 
-	return thoughts.flatMap((thought): UiThought[] => {
-		const incoming = normalizeChatThoughtDisplay(thought);
-		if (!incoming) return [];
-
+	return mergeChatDisplayThoughts(existingThoughts, thoughts, {
+		mode: 'client-snapshot-merge',
+		incoming: thoughts,
+		now
+	}).map((incoming): UiThought => {
 		const previous = previousByIndex.get(incoming.contentIndex);
 		const status = incoming.status;
 		const durationMs = incoming.durationMs;
@@ -118,17 +115,15 @@ export function normalizeServerThoughts(
 			status === 'thinking' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : undefined;
 		const redacted = incoming.redacted === true;
 
-		return [
-			{
-				contentIndex: incoming.contentIndex,
-				text: incoming.text,
-				status,
-				...(durationMs !== undefined ? { durationMs } : {}),
-				redacted,
-				expanded,
-				...(startedAt !== undefined ? { startedAt } : {})
-			}
-		];
+		return {
+			contentIndex: incoming.contentIndex,
+			text: incoming.text,
+			status,
+			...(durationMs !== undefined ? { durationMs } : {}),
+			redacted,
+			expanded,
+			...(startedAt !== undefined ? { startedAt } : {})
+		};
 	});
 }
 
@@ -137,36 +132,10 @@ export function normalizeServerTools(
 	existingTools: UiTool[] = [],
 	now = Date.now()
 ): UiTool[] {
-	if (!Array.isArray(tools)) return [];
-
-	const previousByKey = new Map(
-		existingTools.map((tool) => [tool.id || String(tool.contentIndex), tool])
-	);
-
-	return tools.flatMap((tool): UiTool[] => {
-		const incoming = normalizeChatToolDisplay(tool);
-		if (!incoming) return [];
-
-		const previous =
-			previousByKey.get(incoming.id) ?? previousByKey.get(String(incoming.contentIndex));
-		const status = mergeToolSnapshotStatus(previous?.status, incoming.status);
-		const durationMs = incoming.durationMs ?? previous?.durationMs;
-		const incomingStartedAt = normalizeDisplayTimestamp(incoming.startedAt);
-		const startedAt =
-			status === 'running'
-				? (previous?.startedAt ?? incomingStartedAt ?? now - (durationMs ?? 0))
-				: (incomingStartedAt ?? previous?.startedAt);
-
-		return [
-			{
-				contentIndex: incoming.contentIndex,
-				id: incoming.id,
-				name: incoming.name,
-				status,
-				...(startedAt !== undefined ? { startedAt } : {}),
-				...(durationMs !== undefined ? { durationMs } : {})
-			}
-		];
+	return mergeChatDisplayTools(existingTools, tools, {
+		mode: 'client-snapshot-merge',
+		incoming: tools,
+		now
 	});
 }
 
@@ -257,7 +226,7 @@ export function mergeToolIntoAssistant(
 	payload: Record<string, unknown>,
 	now = Date.now()
 ): UiMessage {
-	return applyToolEventToDisplay(current, payload, now);
+	return mergeChatMessageDisplay(current, { mode: 'live-event', event: payload, now });
 }
 
 export function modelOptionsForProvider(provider: ChatProviderOption | undefined): ModelOption[] {

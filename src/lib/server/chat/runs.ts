@@ -5,7 +5,7 @@ import {
 	upsertAgentMessages
 } from '$lib/server/chat/service';
 import {
-	applyToolEventToDisplay,
+	mergeChatMessageDisplay,
 	normalizeChatMessageDisplay
 } from '$lib/shared/chat-display';
 import {
@@ -178,7 +178,7 @@ export function mergeToolEventIntoStoredMessage(
 		role: message.role,
 		text: message.contentText
 	});
-	const nextDisplay = applyToolEventToDisplay(display, payload, now);
+	const nextDisplay = mergeChatMessageDisplay(display, { mode: 'live-event', event: payload, now });
 	if (nextDisplay === display) return message;
 
 	return {

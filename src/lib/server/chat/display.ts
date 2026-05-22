@@ -1,10 +1,10 @@
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import { isRecord } from '$lib/server/json';
 import {
-	normalizeChatToolDisplays,
-	normalizeDisplayDurationMs,
-	normalizeDisplayTimestamp,
-	normalizeStoredToolStatus
+	createChatThoughtDisplay,
+	createChatToolDisplay,
+	mergeChatMessageDisplay,
+	normalizeDisplayDurationMs
 } from '$lib/shared/chat-display';
 import type {
 	ChatMessageDisplay,
@@ -72,32 +72,6 @@ function thoughtStatusFromTiming(timing: ThoughtTiming | undefined): ChatThought
 	return timing?.startedAt !== undefined && timing.endedAt === undefined ? 'thinking' : 'thought';
 }
 
-function storedThoughtsByIndex(storedDisplay: unknown): Map<number, Record<string, unknown>> {
-	const thoughts = isRecord(storedDisplay) ? storedDisplay.thoughts : undefined;
-	const result = new Map<number, Record<string, unknown>>();
-	if (!Array.isArray(thoughts)) return result;
-
-	for (const thought of thoughts) {
-		if (!isRecord(thought) || typeof thought.contentIndex !== 'number') continue;
-		result.set(thought.contentIndex, thought);
-	}
-
-	return result;
-}
-
-function storedToolsByIndex(storedDisplay: unknown): Map<number, Record<string, unknown>> {
-	const tools = isRecord(storedDisplay) ? storedDisplay.tools : undefined;
-	const result = new Map<number, Record<string, unknown>>();
-	if (!Array.isArray(tools)) return result;
-
-	for (const tool of tools) {
-		if (!isRecord(tool) || typeof tool.contentIndex !== 'number') continue;
-		result.set(tool.contentIndex, tool);
-	}
-
-	return result;
-}
-
 export function buildChatMessageDisplay(
 	message: AgentMessage,
 	thoughtTimings?: ThoughtTimingsByContentIndex
@@ -110,13 +84,13 @@ export function buildChatMessageDisplay(
 			const redacted = block.redacted === true;
 			const durationMs = durationFromTiming(timing);
 
-			return {
+			return createChatThoughtDisplay({
 				contentIndex,
 				text: redacted ? '' : (block.thinking ?? ''),
 				status: thoughtStatusFromTiming(timing),
-				...(durationMs !== undefined ? { durationMs } : {}),
-				...(redacted ? { redacted: true } : {})
-			};
+				durationMs,
+				redacted
+			});
 		})
 		.filter((thought): thought is ChatThoughtDisplay => thought !== undefined);
 	const tools = blocks
@@ -125,12 +99,12 @@ export function buildChatMessageDisplay(
 				return undefined;
 			}
 
-			return {
+			return createChatToolDisplay({
 				contentIndex,
 				id: block.id,
 				name: block.name,
 				status: 'pending'
-			};
+			});
 		})
 		.filter((tool): tool is ChatToolDisplay => tool !== undefined);
 
@@ -146,45 +120,10 @@ export function hydrateChatMessageDisplay(
 	message: AgentMessage,
 	storedDisplay: unknown
 ): ChatMessageDisplay {
-	const display = buildChatMessageDisplay(message);
-	const storedThoughts = storedThoughtsByIndex(storedDisplay);
-	const storedTools = storedToolsByIndex(storedDisplay);
-	const hydratedToolIndexes = new Set(display.tools.map((tool) => tool.contentIndex));
-	const storedOnlyTools = normalizeChatToolDisplays(
-		isRecord(storedDisplay) ? storedDisplay.tools : undefined,
-		'completed'
-	).filter((tool) => !hydratedToolIndexes.has(tool.contentIndex));
-
-	return {
-		...display,
-		thoughts: display.thoughts.map((thought) => {
-			const storedThought = storedThoughts.get(thought.contentIndex);
-			const status = storedThought?.status === 'thinking' ? 'thinking' : 'thought';
-			const durationMs = normalizeDisplayDurationMs(storedThought?.durationMs);
-
-			return {
-				...thought,
-				status,
-				...(durationMs !== undefined ? { durationMs } : {})
-			};
-		}),
-		tools: [
-			...display.tools.map((tool) => {
-				const storedTool = storedTools.get(tool.contentIndex);
-				const status = normalizeStoredToolStatus(storedTool?.status);
-				const startedAt = normalizeDisplayTimestamp(storedTool?.startedAt);
-				const durationMs = normalizeDisplayDurationMs(storedTool?.durationMs);
-
-				return {
-					...tool,
-					status,
-					...(startedAt !== undefined ? { startedAt } : {}),
-					...(durationMs !== undefined ? { durationMs } : {})
-				};
-			}),
-			...storedOnlyTools
-		]
-	};
+	return mergeChatMessageDisplay(buildChatMessageDisplay(message), {
+		mode: 'stored-overlay',
+		incoming: storedDisplay
+	});
 }
 
 export function normalizeAgentMessageForStorage(
