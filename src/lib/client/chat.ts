@@ -1,10 +1,14 @@
 import {
 	applyToolEventToDisplay,
+	mergeClientSnapshotThoughtDisplays,
 	mergeClientSnapshotTools,
 	normalizeChatThoughtDisplays,
 	type ChatThoughtDisplay,
 	type ChatToolDisplay
 } from '$lib/shared/chat-display';
+import { isRecord } from '$lib/shared/json';
+
+export { isRecord };
 
 export type UiThought = Omit<ChatThoughtDisplay, 'redacted'> & {
 	contentIndex: number;
@@ -51,10 +55,6 @@ export type SystemPromptPresetOption = {
 
 export const DEFAULT_MANUAL_TEMPERATURE = 0.7;
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
 export function clampTemperature(value: number): number {
 	if (!Number.isFinite(value)) return DEFAULT_MANUAL_TEMPERATURE;
 	return Math.min(2, Math.max(0, Math.round(value * 10) / 10));
@@ -92,11 +92,31 @@ export function normalizeServerThoughts(
 	existingThoughts: UiThought[] = [],
 	now = Date.now()
 ): UiThought[] {
+	return normalizeThoughtDisplaysForUi(normalizeChatThoughtDisplays(thoughts), existingThoughts, now);
+}
+
+function normalizeSnapshotThoughts(
+	thoughts: unknown,
+	existingThoughts: UiThought[] = [],
+	now = Date.now()
+): UiThought[] {
+	return normalizeThoughtDisplaysForUi(
+		mergeClientSnapshotThoughtDisplays(existingThoughts, thoughts),
+		existingThoughts,
+		now
+	);
+}
+
+function normalizeThoughtDisplaysForUi(
+	thoughts: ChatThoughtDisplay[],
+	existingThoughts: UiThought[] = [],
+	now = Date.now()
+): UiThought[] {
 	const previousByIndex = new Map(
 		existingThoughts.map((thought) => [thought.contentIndex, thought])
 	);
 
-	return normalizeChatThoughtDisplays(thoughts).map((incoming): UiThought => {
+	return thoughts.map((incoming): UiThought => {
 		const previous = previousByIndex.get(incoming.contentIndex);
 		const status = incoming.status;
 		const durationMs = incoming.durationMs;
@@ -119,14 +139,6 @@ export function normalizeServerThoughts(
 	});
 }
 
-export function normalizeServerTools(
-	tools: unknown,
-	existingTools: UiTool[] = [],
-	now = Date.now()
-): UiTool[] {
-	return mergeClientSnapshotTools(existingTools, tools, now);
-}
-
 export function uiMessageFromServer(
 	payload: Record<string, unknown>,
 	previous?: UiMessage,
@@ -145,7 +157,30 @@ export function uiMessageFromServer(
 		role: roleFromServer(payload.role),
 		text,
 		thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts, now),
-		tools: normalizeServerTools(display?.tools, previous?.tools, now),
+		tools: mergeClientSnapshotTools(previous?.tools, display?.tools, now),
+		...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {})
+	};
+}
+
+function uiMessageFromServerSnapshot(
+	payload: Record<string, unknown>,
+	previous?: UiMessage,
+	now = Date.now()
+): UiMessage {
+	const display = isRecord(payload.display) ? payload.display : undefined;
+	const text =
+		typeof display?.text === 'string'
+			? display.text
+			: typeof payload.text === 'string'
+				? payload.text
+				: '';
+
+	return {
+		...(typeof payload.id === 'string' ? { id: payload.id } : previous?.id ? { id: previous.id } : {}),
+		role: roleFromServer(payload.role),
+		text,
+		thoughts: normalizeSnapshotThoughts(display?.thoughts, previous?.thoughts, now),
+		tools: mergeClientSnapshotTools(previous?.tools, display?.tools, now),
 		...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {})
 	};
 }
@@ -171,7 +206,7 @@ export function uiMessagesFromServerSnapshot(
 				? (previousById.get(payload.id) ?? previousMessages[index])
 				: previousMessages[index];
 
-		return [uiMessageFromServer(payload, previous, now)];
+		return [uiMessageFromServerSnapshot(payload, previous, now)];
 	});
 }
 

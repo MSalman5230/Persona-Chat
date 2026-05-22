@@ -7,7 +7,6 @@ import {
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
-	normalizeServerTools,
 	thoughtLabel,
 	thinkingLevelForRequest,
 	toolStatusLabel,
@@ -59,24 +58,6 @@ describe('chat client helpers', () => {
 				status: 'thought',
 				redacted: true,
 				expanded: false
-			}
-		]);
-	});
-
-	it('keeps running tools running across pending server echoes', () => {
-		const tools = normalizeServerTools(
-			[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'pending' }],
-			[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'running', startedAt: 100 }],
-			500
-		);
-
-		expect(tools).toEqual([
-			{
-				contentIndex: 0,
-				id: 'tool-1',
-				name: 'mcp_search',
-				status: 'running',
-				startedAt: 100
 			}
 		]);
 	});
@@ -139,7 +120,7 @@ describe('chat client helpers', () => {
 		]);
 	});
 
-	it('keeps completed client tools completed across stale snapshots', () => {
+	it('threads previous message state through snapshot normalization', () => {
 		const messages = uiMessagesFromServerSnapshot(
 			[
 				{
@@ -157,7 +138,16 @@ describe('chat client helpers', () => {
 					id: 'message-1',
 					role: 'assistant',
 					text: '',
-					thoughts: [],
+					thoughts: [
+						{
+							contentIndex: 0,
+							text: 'Still thinking',
+							status: 'thinking',
+							redacted: false,
+							expanded: true,
+							startedAt: 1000
+						}
+					],
 					tools: [
 						{
 							contentIndex: 0,
@@ -173,6 +163,16 @@ describe('chat client helpers', () => {
 			3000
 		);
 
+		expect(messages[0].thoughts).toEqual([
+			{
+				contentIndex: 0,
+				text: 'Still thinking',
+				status: 'thinking',
+				redacted: false,
+				expanded: true,
+				startedAt: 1000
+			}
+		]);
 		expect(messages[0].tools).toEqual([
 			{
 				contentIndex: 0,
@@ -181,92 +181,6 @@ describe('chat client helpers', () => {
 				status: 'completed',
 				startedAt: 1000,
 				durationMs: 1500
-			}
-		]);
-	});
-
-	it('keeps running client tools running across stale snapshots', () => {
-		const messages = uiMessagesFromServerSnapshot(
-			[
-				{
-					role: 'assistant',
-					display: {
-						text: '',
-						thoughts: [],
-						tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }]
-					}
-				}
-			],
-			[
-				{
-					role: 'assistant',
-					text: '',
-					thoughts: [],
-					tools: [
-						{
-							contentIndex: 0,
-							id: 'call-1',
-							name: 'mcp_search',
-							status: 'running',
-							startedAt: 1000
-						}
-					]
-				}
-			],
-			3000
-		);
-
-		expect(messages[0].tools).toEqual([
-			{
-				contentIndex: 0,
-				id: 'call-1',
-				name: 'mcp_search',
-				status: 'running',
-				startedAt: 1000
-			}
-		]);
-	});
-
-	it('keeps client-only running tools across pre-persistence snapshots', () => {
-		const messages = uiMessagesFromServerSnapshot(
-			[
-				{
-					id: 'message-1',
-					role: 'assistant',
-					display: {
-						text: '',
-						thoughts: [],
-						tools: []
-					}
-				}
-			],
-			[
-				{
-					id: 'message-1',
-					role: 'assistant',
-					text: '',
-					thoughts: [],
-					tools: [
-						{
-							contentIndex: 0,
-							id: 'call-1',
-							name: 'mcp_search',
-							status: 'running',
-							startedAt: 1000
-						}
-					]
-				}
-			],
-			3000
-		);
-
-		expect(messages[0].tools).toEqual([
-			{
-				contentIndex: 0,
-				id: 'call-1',
-				name: 'mcp_search',
-				status: 'running',
-				startedAt: 1000
 			}
 		]);
 	});

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	applyToolEventToDisplay,
+	mergeClientSnapshotThoughtDisplays,
+	mergeClientSnapshotTools,
 	normalizeChatMessageDisplay,
 	overlayStoredDisplay,
 	type ChatMessageDisplay
@@ -214,6 +216,136 @@ describe('chat display helpers', () => {
 				name: 'mcp_search',
 				status: 'running',
 				startedAt: 1000
+			}
+		]);
+	});
+
+	it('keeps completed client tools completed across stale snapshots', () => {
+		const tools = mergeClientSnapshotTools(
+			[
+				{
+					contentIndex: 0,
+					id: 'call-1',
+					name: 'mcp_search',
+					status: 'completed',
+					startedAt: 1000,
+					durationMs: 1500
+				}
+			],
+			[{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }],
+			3000
+		);
+
+		expect(tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 1500
+			}
+		]);
+	});
+
+	it('keeps running client tools running across stale snapshots', () => {
+		const tools = mergeClientSnapshotTools(
+			[{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'running', startedAt: 1000 }],
+			[{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }],
+			3000
+		);
+
+		expect(tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'running',
+				startedAt: 1000
+			}
+		]);
+	});
+
+	it('keeps client-only running tools across pre-persistence snapshots', () => {
+		const tools = mergeClientSnapshotTools(
+			[{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'running', startedAt: 1000 }],
+			[],
+			3000
+		);
+
+		expect(tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'running',
+				startedAt: 1000
+			}
+		]);
+	});
+
+	it('keeps incoming snapshot tool order and appends client-only tools', () => {
+		const tools = mergeClientSnapshotTools(
+			[
+				{ contentIndex: 5, id: 'call-client', name: 'mcp_local', status: 'running', startedAt: 1000 },
+				{ contentIndex: 0, id: 'call-a', name: 'mcp_a', status: 'completed', durationMs: 500 }
+			],
+			[
+				{ contentIndex: 1, id: 'call-b', name: 'mcp_b', status: 'pending' },
+				{ contentIndex: 0, id: 'call-a', name: 'mcp_a', status: 'pending' }
+			],
+			3000
+		);
+
+		expect(tools.map((tool) => tool.id)).toEqual(['call-b', 'call-a', 'call-client']);
+		expect(tools[1]).toMatchObject({ id: 'call-a', status: 'completed', durationMs: 500 });
+		expect(tools[2]).toMatchObject({ id: 'call-client', status: 'running', startedAt: 1000 });
+	});
+
+	it('keeps omitted thinking thoughts across stale snapshots', () => {
+		const thoughts = mergeClientSnapshotThoughtDisplays(
+			[{ contentIndex: 0, text: 'Still working', status: 'thinking', durationMs: 500 }],
+			[]
+		);
+
+		expect(thoughts).toEqual([
+			{
+				contentIndex: 0,
+				text: 'Still working',
+				status: 'thinking',
+				durationMs: 500
+			}
+		]);
+	});
+
+	it('keeps thinking thoughts active when snapshots lack completion duration', () => {
+		const thoughts = mergeClientSnapshotThoughtDisplays(
+			[{ contentIndex: 0, text: 'Previous', status: 'thinking', durationMs: 500 }],
+			[{ contentIndex: 0, text: 'Incoming', status: 'thought' }]
+		);
+
+		expect(thoughts).toEqual([
+			{
+				contentIndex: 0,
+				text: 'Incoming',
+				status: 'thinking',
+				durationMs: 500
+			}
+		]);
+	});
+
+	it('accepts completed thought snapshots when they include duration', () => {
+		const thoughts = mergeClientSnapshotThoughtDisplays(
+			[{ contentIndex: 0, text: 'Previous', status: 'thinking', durationMs: 500 }],
+			[{ contentIndex: 0, text: 'Done', status: 'thought', durationMs: 1200 }]
+		);
+
+		expect(thoughts).toEqual([
+			{
+				contentIndex: 0,
+				text: 'Done',
+				status: 'thought',
+				durationMs: 1200
 			}
 		]);
 	});

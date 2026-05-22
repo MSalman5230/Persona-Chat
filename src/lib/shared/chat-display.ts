@@ -1,3 +1,5 @@
+import { isRecord } from './json';
+
 export type ChatToolStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type ChatThoughtStatus = 'thinking' | 'thought';
 
@@ -25,13 +27,10 @@ export type ChatMessageDisplay = {
 	tools: ChatToolDisplay[];
 };
 
-// Display helpers are split by boundary:
-// - normalize* accepts persisted/server DTOs and strips unknown shape.
-// - overlayStoredDisplay hydrates agent content with stored display state.
-// - applyToolEventToDisplay and mergeClientSnapshotTools merge live client/server updates.
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === 'object' && !Array.isArray(value);
-}
+// Tool merge policy by boundary:
+// Live SSE event: event status wins, and duration is computed from now.
+// Stored hydration: stored pending/running/failed overlays agent display; unknown means completed.
+// Client snapshot: status is monotonic, terminal states stick, and client-only live tools survive.
 
 function eventString(payload: Record<string, unknown>, key: string): string | undefined {
 	const value = payload[key];
@@ -190,6 +189,21 @@ function clientSnapshotToolStatus(
 	if (previousStatus === 'running' && incomingStatus === 'pending') return previousStatus;
 	if (previousStatus === 'completed' || previousStatus === 'failed') return previousStatus;
 	return incomingStatus;
+}
+
+function mergeClientSnapshotThought(
+	previous: ChatThoughtDisplay | undefined,
+	incoming: ChatThoughtDisplay
+): ChatThoughtDisplay {
+	if (previous?.status === 'thinking' && incoming.status === 'thought' && incoming.durationMs === undefined) {
+		return {
+			...incoming,
+			status: 'thinking',
+			...(previous.durationMs !== undefined ? { durationMs: previous.durationMs } : {})
+		};
+	}
+
+	return incoming;
 }
 
 function toolEventDisplay(event: unknown): ChatToolDisplay | undefined {
@@ -353,4 +367,22 @@ export function mergeClientSnapshotTools(
 	);
 
 	return [...mergedIncoming, ...clientOnlyTools];
+}
+
+export function mergeClientSnapshotThoughtDisplays(
+	existingThoughts: unknown,
+	incomingThoughts: unknown
+): ChatThoughtDisplay[] {
+	const existing = normalizeChatThoughtDisplays(existingThoughts);
+	const incoming = normalizeChatThoughtDisplays(incomingThoughts);
+	const previousThoughtsByIndex = byContentIndex(existing);
+	const incomingIndexes = new Set(incoming.map((thought) => thought.contentIndex));
+	const mergedIncoming = incoming.map((thought) =>
+		mergeClientSnapshotThought(previousThoughtsByIndex.get(thought.contentIndex), thought)
+	);
+	const clientOnlyThinking = existing.filter(
+		(thought) => thought.status === 'thinking' && !incomingIndexes.has(thought.contentIndex)
+	);
+
+	return [...mergedIncoming, ...clientOnlyThinking];
 }
