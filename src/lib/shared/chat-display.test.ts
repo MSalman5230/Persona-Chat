@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyToolEvent, normalizeChatMessageDisplay, type ChatMessageDisplay } from './chat-display';
+import {
+	applyToolEvent,
+	mergeStoredChatMessageDisplayState,
+	normalizeChatMessageDisplay,
+	type ChatMessageDisplay
+} from './chat-display';
 
 const emptyDisplay: ChatMessageDisplay = {
 	role: 'assistant',
@@ -96,5 +101,32 @@ describe('chat display helpers', () => {
 				durationMs: 1500
 			}
 		]);
+	});
+
+	it('uses pending as the canonical unknown tool status fallback', () => {
+		expect(
+			normalizeChatMessageDisplay({
+				role: 'assistant',
+				text: '',
+				thoughts: [],
+				tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'weird' }]
+			}).tools[0]?.status
+		).toBe('pending');
+	});
+
+	it('uses completed as the persisted stored-state unknown tool status fallback', () => {
+		const merged = mergeStoredChatMessageDisplayState(
+			{
+				role: 'assistant',
+				text: '',
+				thoughts: [],
+				tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }]
+			},
+			{
+				tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'weird' }]
+			}
+		);
+
+		expect(merged.tools[0]?.status).toBe('completed');
 	});
 });

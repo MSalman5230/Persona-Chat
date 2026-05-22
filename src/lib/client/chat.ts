@@ -1,6 +1,5 @@
 import {
 	applyToolEvent,
-	mergeStoredChatMessageDisplayState,
 	normalizeChatMessageDisplay,
 	type ChatToolDisplay
 } from '$lib/shared/chat-display';
@@ -136,32 +135,28 @@ export function normalizeServerTools(
 	existingTools: UiTool[] = [],
 	now = Date.now()
 ): UiTool[] {
-	const display = normalizeChatMessageDisplay({
+	const incomingTools = normalizeChatMessageDisplay({
 		role: 'assistant',
 		text: '',
 		thoughts: [],
 		tools: Array.isArray(tools) ? tools : []
-	});
-	const merged =
-		existingTools.length > 0
-			? mergeStoredChatMessageDisplayState(display, {
-					role: 'assistant',
-					text: '',
-					thoughts: [],
-					tools: existingTools
-				})
-			: display;
+	}).tools;
 	const previousById = new Map(existingTools.map((tool) => [tool.id, tool]));
 
-	return merged.tools.map((tool) => {
+	return incomingTools.map((tool) => {
 		const previous = previousById.get(tool.id);
+		const status =
+			previous?.status === 'running' && tool.status === 'pending' ? 'running' : tool.status;
 		const durationMs = tool.durationMs ?? previous?.durationMs;
 		const startedAt =
 			tool.startedAt ??
-			(tool.status === 'running' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : undefined);
+			(status === 'running'
+				? (previous?.startedAt ?? now - (durationMs ?? 0))
+				: previous?.startedAt);
 
 		return {
 			...tool,
+			status,
 			...(startedAt !== undefined ? { startedAt } : {}),
 			...(durationMs !== undefined ? { durationMs } : {})
 		};

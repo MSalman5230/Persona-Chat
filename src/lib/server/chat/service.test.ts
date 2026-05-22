@@ -194,6 +194,57 @@ describe('chat service display helpers', () => {
 		]);
 	});
 
+	it('defaults missing or invalid persisted tool statuses to completed while hydrating', () => {
+		const display = hydrateChatMessageDisplay(
+			{
+				role: 'assistant',
+				content: [
+					{ type: 'toolCall', id: 'call-1', name: 'search', arguments: {} },
+					{ type: 'toolCall', id: 'call-2', name: 'lookup', arguments: {} },
+					{ type: 'text', text: 'Done.' }
+				]
+			},
+			{
+				tools: [
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'search',
+						startedAt: 1000,
+						durationMs: 1500
+					},
+					{
+						contentIndex: 1,
+						id: 'call-2',
+						name: 'lookup',
+						status: 'unknown',
+						startedAt: 3000,
+						durationMs: 250
+					}
+				]
+			}
+		);
+
+		expect(display.tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'search',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 1500
+			},
+			{
+				contentIndex: 1,
+				id: 'call-2',
+				name: 'lookup',
+				status: 'completed',
+				startedAt: 3000,
+				durationMs: 250
+			}
+		]);
+	});
+
 	it('does not expose redacted thinking signatures in normalized events', () => {
 		const message = {
 			role: 'assistant',

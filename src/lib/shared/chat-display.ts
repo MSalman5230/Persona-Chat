@@ -37,12 +37,12 @@ export function roundedDurationMs(value: unknown): number | undefined {
 	return duration === undefined ? undefined : Math.round(duration);
 }
 
-function toolStatusFromValue(value: unknown): ChatToolStatus {
+function toolStatusFromValue(value: unknown, fallback: ChatToolStatus): ChatToolStatus {
 	if (value === 'running' || value === 'completed' || value === 'failed' || value === 'pending') {
 		return value;
 	}
 
-	return 'pending';
+	return fallback;
 }
 
 function normalizeChatThoughtDisplay(value: unknown): ChatThoughtDisplay | undefined {
@@ -60,7 +60,10 @@ function normalizeChatThoughtDisplay(value: unknown): ChatThoughtDisplay | undef
 	};
 }
 
-function normalizeChatToolDisplay(value: unknown): ChatToolDisplay | undefined {
+function normalizeChatToolDisplay(
+	value: unknown,
+	statusFallback: ChatToolStatus
+): ChatToolDisplay | undefined {
 	if (!isRecord(value) || typeof value.contentIndex !== 'number') return undefined;
 	if (typeof value.id !== 'string' || typeof value.name !== 'string') return undefined;
 
@@ -71,14 +74,18 @@ function normalizeChatToolDisplay(value: unknown): ChatToolDisplay | undefined {
 		contentIndex: value.contentIndex,
 		id: value.id,
 		name: value.name,
-		status: toolStatusFromValue(value.status),
+		status: toolStatusFromValue(value.status, statusFallback),
 		...(startedAt !== undefined ? { startedAt } : {}),
 		...(durationMs !== undefined ? { durationMs } : {})
 	};
 }
 
-export function normalizeChatMessageDisplay(value: unknown): ChatMessageDisplay {
+export function normalizeChatMessageDisplay(
+	value: unknown,
+	options: { toolStatusFallback?: ChatToolStatus } = {}
+): ChatMessageDisplay {
 	const display = isRecord(value) ? value : {};
+	const toolStatusFallback = options.toolStatusFallback ?? 'pending';
 	const thoughts = Array.isArray(display.thoughts)
 		? display.thoughts.flatMap((thought): ChatThoughtDisplay[] => {
 				const normalized = normalizeChatThoughtDisplay(thought);
@@ -87,7 +94,7 @@ export function normalizeChatMessageDisplay(value: unknown): ChatMessageDisplay 
 		: [];
 	const tools = Array.isArray(display.tools)
 		? display.tools.flatMap((tool): ChatToolDisplay[] => {
-				const normalized = normalizeChatToolDisplay(tool);
+				const normalized = normalizeChatToolDisplay(tool, toolStatusFallback);
 				return normalized ? [normalized] : [];
 			})
 		: [];
@@ -104,7 +111,7 @@ export function mergeStoredChatMessageDisplayState(
 	display: ChatMessageDisplay,
 	storedDisplay: unknown
 ): ChatMessageDisplay {
-	const stored = normalizeChatMessageDisplay(storedDisplay);
+	const stored = normalizeChatMessageDisplay(storedDisplay, { toolStatusFallback: 'completed' });
 	const storedThoughts = new Map(stored.thoughts.map((thought) => [thought.contentIndex, thought]));
 	const storedToolsById = new Map(stored.tools.map((tool) => [tool.id, tool]));
 	const storedToolsByIndex = new Map(stored.tools.map((tool) => [tool.contentIndex, tool]));

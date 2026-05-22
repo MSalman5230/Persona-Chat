@@ -80,6 +80,39 @@ describe('chat client helpers', () => {
 		]);
 	});
 
+	it('lets terminal server tool status override stale client status', () => {
+		expect(
+			normalizeServerTools(
+				[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'completed' }],
+				[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'pending' }],
+				500
+			)
+		).toEqual([
+			{
+				contentIndex: 0,
+				id: 'tool-1',
+				name: 'mcp_search',
+				status: 'completed'
+			}
+		]);
+
+		expect(
+			normalizeServerTools(
+				[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'failed' }],
+				[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'running', startedAt: 100 }],
+				500
+			)
+		).toEqual([
+			{
+				contentIndex: 0,
+				id: 'tool-1',
+				name: 'mcp_search',
+				status: 'failed',
+				startedAt: 100
+			}
+		]);
+	});
+
 	it('builds UI messages from display payloads', () => {
 		const message = uiMessageFromServer(
 			{
