@@ -1,5 +1,5 @@
 import {
-	mergeClientSnapshotDisplay,
+	mergeClientSnapshotTools,
 	normalizeChatThoughtDisplays,
 	type ChatThoughtDisplay,
 	type ChatToolDisplay
@@ -122,11 +122,7 @@ export function normalizeServerTools(
 	existingTools: UiTool[] = [],
 	now = Date.now()
 ): UiTool[] {
-	return mergeClientSnapshotDisplay(
-		{ role: 'assistant', text: '', thoughts: [], tools: existingTools },
-		{ tools },
-		now
-	).tools;
+	return mergeClientSnapshotTools(existingTools, tools, now);
 }
 
 export function uiMessageFromServer(

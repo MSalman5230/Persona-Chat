@@ -330,14 +330,7 @@ export function mergeClientSnapshotDisplay<T extends ChatMessageDisplay>(
 ): T {
 	const incomingRecord = isRecord(incomingDisplay) ? incomingDisplay : {};
 	const incoming = normalizeChatMessageDisplay(incomingDisplay);
-	const previousToolsByKey = byToolKey(existingDisplay.tools);
-	const tools = incoming.tools.map((tool) =>
-		mergeClientSnapshotTool(
-			previousToolsByKey.get(tool.id) ?? previousToolsByKey.get(String(tool.contentIndex)),
-			tool,
-			now
-		)
-	);
+	const tools = mergeClientSnapshotTools(existingDisplay.tools, incoming.tools, now);
 
 	return {
 		...existingDisplay,
@@ -346,4 +339,21 @@ export function mergeClientSnapshotDisplay<T extends ChatMessageDisplay>(
 		thoughts: incoming.thoughts,
 		tools
 	} as T;
+}
+
+export function mergeClientSnapshotTools(
+	existingTools: unknown,
+	incomingTools: unknown,
+	now = Date.now()
+): ChatToolDisplay[] {
+	const existing = normalizeChatToolDisplays(existingTools);
+	const incoming = normalizeChatToolDisplays(incomingTools);
+	const previousToolsByKey = byToolKey(existing);
+	return incoming.map((tool) =>
+		mergeClientSnapshotTool(
+			previousToolsByKey.get(tool.id) ?? previousToolsByKey.get(String(tool.contentIndex)),
+			tool,
+			now
+		)
+	);
 }
