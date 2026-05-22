@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mergeToolIntoAssistant, type UiMessage } from '$lib/client/chat';
-import type { ChatMessageDisplay } from '$lib/shared/chat-display';
+import { applyToolEventToDisplay, type ChatMessageDisplay } from '$lib/shared/chat-display';
 import type { ChatMessageInput } from '$lib/server/repositories/chat';
 
 import { mergeToolEventIntoStoredMessage } from './runs';
@@ -62,20 +61,15 @@ describe('chat run helpers', () => {
 			piMessage: { role: 'assistant', content: [] },
 			display: initialDisplay
 		};
-		let clientDisplay: UiMessage = {
-			role: 'assistant',
-			text: '',
-			thoughts: [],
-			tools: []
-		};
+		let sharedDisplay = initialDisplay;
 		let storedMessage = initialMessage;
 
 		for (const [index, event] of events.entries()) {
-			clientDisplay = mergeToolIntoAssistant(clientDisplay, event, times[index]);
+			sharedDisplay = applyToolEventToDisplay(sharedDisplay, event, times[index]);
 			storedMessage = mergeToolEventIntoStoredMessage(storedMessage, event, times[index]);
 		}
 
-		expect(storedMessage.display?.tools).toEqual(clientDisplay.tools);
+		expect(storedMessage.display?.tools).toEqual(sharedDisplay.tools);
 	});
 
 	it('returns the same stored message reference when the tool name is missing', () => {

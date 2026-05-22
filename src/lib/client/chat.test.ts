@@ -227,6 +227,50 @@ describe('chat client helpers', () => {
 		]);
 	});
 
+	it('keeps client-only running tools across pre-persistence snapshots', () => {
+		const messages = uiMessagesFromServerSnapshot(
+			[
+				{
+					id: 'message-1',
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: []
+					}
+				}
+			],
+			[
+				{
+					id: 'message-1',
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-1',
+							name: 'mcp_search',
+							status: 'running',
+							startedAt: 1000
+						}
+					]
+				}
+			],
+			3000
+		);
+
+		expect(messages[0].tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'running',
+				startedAt: 1000
+			}
+		]);
+	});
+
 	it('matches snapshot messages by id before falling back to index', () => {
 		const messages = uiMessagesFromServerSnapshot(
 			[

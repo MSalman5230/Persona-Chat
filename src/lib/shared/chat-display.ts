@@ -25,8 +25,10 @@ export type ChatMessageDisplay = {
 	tools: ChatToolDisplay[];
 };
 
-// Display helpers are split by policy: normalize stored/server DTOs, overlay stored hydration
-// state, and apply live tool events.
+// Display helpers are split by boundary:
+// - normalize* accepts persisted/server DTOs and strips unknown shape.
+// - overlayStoredDisplay hydrates agent content with stored display state.
+// - applyToolEventToDisplay and mergeClientSnapshotTools merge live client/server updates.
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -165,10 +167,15 @@ function byContentIndex<T extends { contentIndex: number }>(items: T[]): Map<num
 function byToolKey(items: ChatToolDisplay[]): Map<string, ChatToolDisplay> {
 	const keyed = new Map<string, ChatToolDisplay>();
 	for (const tool of items) {
-		keyed.set(tool.id || String(tool.contentIndex), tool);
-		keyed.set(String(tool.contentIndex), tool);
+		for (const key of toolKeys(tool)) {
+			keyed.set(key, tool);
+		}
 	}
 	return keyed;
+}
+
+function toolKeys(tool: ChatToolDisplay): string[] {
+	return [tool.id || String(tool.contentIndex), String(tool.contentIndex)];
 }
 
 function storedToolStatus(value: unknown): ChatToolStatus {
@@ -333,11 +340,17 @@ export function mergeClientSnapshotTools(
 	const existing = normalizeChatToolDisplays(existingTools);
 	const incoming = normalizeChatToolDisplays(incomingTools);
 	const previousToolsByKey = byToolKey(existing);
-	return incoming.map((tool) =>
+	const incomingKeys = new Set(incoming.flatMap(toolKeys));
+	const mergedIncoming = incoming.map((tool) =>
 		mergeClientSnapshotTool(
 			previousToolsByKey.get(tool.id) ?? previousToolsByKey.get(String(tool.contentIndex)),
 			tool,
 			now
 		)
 	);
+	const clientOnlyTools = existing.filter(
+		(tool) => !toolKeys(tool).some((key) => incomingKeys.has(key))
+	);
+
+	return [...mergedIncoming, ...clientOnlyTools];
 }
