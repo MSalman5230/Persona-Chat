@@ -1,0 +1,4 @@
+interface:
+  display_name: "Thermo-Nuclear Repo Review"
+  short_description: "Strict whole-repository maintainability and architecture audit."
+  default_prompt: "Use $thermo-nuclear-repo-code-quality-review to review this repository's existing code on the current checkout. Focus on structural maintainability, simplification opportunities, boundaries, file size, type contracts, and test gaps."
