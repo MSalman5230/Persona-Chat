@@ -25,20 +25,6 @@ export type ChatMessageDisplay = {
 	tools: ChatToolDisplay[];
 };
 
-export type ChatDisplayMergeContext =
-	| { mode: 'live-event'; event: unknown; now?: number }
-	| { mode: 'stored-overlay'; incoming: unknown }
-	| { mode: 'client-snapshot-merge'; incoming: unknown; now?: number };
-
-export type ChatThoughtDisplayMergeContext = Extract<
-	ChatDisplayMergeContext,
-	{ mode: 'stored-overlay' | 'client-snapshot-merge' }
->;
-
-export type ChatToolDisplayMergeContext =
-	| Extract<ChatDisplayMergeContext, { mode: 'stored-overlay' | 'client-snapshot-merge' }>
-	| Extract<ChatDisplayMergeContext, { mode: 'live-event' }>;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -163,7 +149,6 @@ export function normalizeChatMessageDisplay(
 	const record = isRecord(display) ? display : {};
 
 	return {
-		...record,
 		role: typeof record.role === 'string' ? record.role : (fallback.role ?? ''),
 		text: typeof record.text === 'string' ? record.text : (fallback.text ?? ''),
 		thoughts: normalizeChatThoughtDisplays(record.thoughts),
@@ -198,193 +183,167 @@ function clientSnapshotToolStatus(
 	return incomingStatus;
 }
 
-export function mergeChatThoughtDisplay(
-	existing: ChatThoughtDisplay | undefined,
-	incoming: unknown,
-	context: ChatThoughtDisplayMergeContext
-): ChatThoughtDisplay | undefined {
-	const normalizedIncoming = normalizeChatThoughtDisplay(incoming);
+function toolEventDisplay(event: unknown): ChatToolDisplay | undefined {
+	if (!isRecord(event)) return undefined;
 
-	if (context.mode === 'client-snapshot-merge') return normalizedIncoming;
-	if (!existing) return undefined;
+	const name = eventString(event, 'toolName') ?? eventString(event, 'name');
+	if (!name) return undefined;
 
-	const status = normalizedIncoming?.status === 'thinking' ? 'thinking' : 'thought';
-	return {
-		...existing,
-		status,
-		...(normalizedIncoming?.durationMs !== undefined
-			? { durationMs: normalizedIncoming.durationMs }
-			: {})
-	};
-}
+	const id = eventString(event, 'toolCallId') ?? name;
+	const status: ChatToolStatus =
+		event.type === 'tool_execution_end' ? (event.isError === true ? 'failed' : 'completed') : 'running';
 
-export function mergeChatDisplayThoughts(
-	existingThoughts: unknown,
-	incomingThoughts: unknown,
-	context: ChatThoughtDisplayMergeContext
-): ChatThoughtDisplay[] {
-	const existing = normalizeChatThoughtDisplays(existingThoughts);
-
-	if (context.mode === 'client-snapshot-merge') {
-		return normalizeChatThoughtDisplays(incomingThoughts).flatMap((thought) => {
-			const merged = mergeChatThoughtDisplay(undefined, thought, context);
-			return merged ? [merged] : [];
-		});
-	}
-
-	const incomingByIndex = byContentIndex(normalizeChatThoughtDisplays(incomingThoughts));
-	return existing.flatMap((thought) => {
-		const merged = mergeChatThoughtDisplay(thought, incomingByIndex.get(thought.contentIndex), context);
-		return merged ? [merged] : [];
+	return createChatToolDisplay({
+		contentIndex: 0,
+		id,
+		name,
+		status
 	});
 }
 
-export function mergeChatToolDisplay(
-	existing: ChatToolDisplay | undefined,
-	incoming: ChatToolDisplay,
-	context: ChatToolDisplayMergeContext
-): ChatToolDisplay {
-	if (context.mode === 'stored-overlay') {
-		return {
-			contentIndex: existing?.contentIndex ?? incoming.contentIndex,
-			id: existing?.id ?? incoming.id,
-			name: existing?.name ?? incoming.name,
-			status: storedToolStatus(incoming.status),
-			...(incoming.startedAt !== undefined ? { startedAt: incoming.startedAt } : {}),
-			...(incoming.durationMs !== undefined ? { durationMs: incoming.durationMs } : {})
-		};
-	}
-
-	if (context.mode === 'client-snapshot-merge') {
-		const status = clientSnapshotToolStatus(existing?.status, incoming.status);
-		const durationMs = incoming.durationMs ?? existing?.durationMs;
-		const now = context.now ?? Date.now();
-		const startedAt =
-			status === 'running'
-				? (existing?.startedAt ?? incoming.startedAt ?? now - (durationMs ?? 0))
-				: (incoming.startedAt ?? existing?.startedAt);
-
-		return {
-			contentIndex: incoming.contentIndex,
-			id: incoming.id,
-			name: incoming.name,
-			status,
-			...(startedAt !== undefined ? { startedAt } : {}),
-			...(durationMs !== undefined ? { durationMs } : {})
-		};
-	}
-
-	const status = incoming.status;
-	const now = context.now ?? Date.now();
-	const startedAt = existing?.startedAt ?? now;
+function applyToolEventToTools(
+	tools: ChatToolDisplay[],
+	eventTool: ChatToolDisplay,
+	now: number
+): ChatToolDisplay[] {
+	const existingIndex = tools.findIndex((tool) => tool.id === eventTool.id);
+	const previous = existingIndex >= 0 ? tools[existingIndex] : undefined;
+	const startedAt = previous?.startedAt ?? now;
 	const durationMs =
-		status === 'running' ? normalizeDisplayDurationMs(existing?.durationMs) : Math.max(0, now - startedAt);
+		eventTool.status === 'running'
+			? normalizeDisplayDurationMs(previous?.durationMs)
+			: Math.max(0, now - startedAt);
+	const nextTool: ChatToolDisplay = {
+		contentIndex: previous?.contentIndex ?? tools.length,
+		id: eventTool.id,
+		name: eventTool.name,
+		status: eventTool.status,
+		startedAt,
+		...(durationMs !== undefined ? { durationMs } : {})
+	};
+
+	return existingIndex >= 0
+		? tools.map((tool, index) => (index === existingIndex ? nextTool : tool))
+		: [...tools, nextTool];
+}
+
+function overlayStoredThought(
+	thought: ChatThoughtDisplay,
+	stored: ChatThoughtDisplay | undefined
+): ChatThoughtDisplay {
+	const status = stored?.status === 'thinking' ? 'thinking' : 'thought';
+	return {
+		...thought,
+		status,
+		...(stored?.durationMs !== undefined ? { durationMs: stored.durationMs } : {})
+	};
+}
+
+function overlayStoredTool(
+	tool: ChatToolDisplay | undefined,
+	stored: ChatToolDisplay
+): ChatToolDisplay {
+	return {
+		contentIndex: tool?.contentIndex ?? stored.contentIndex,
+		id: tool?.id ?? stored.id,
+		name: tool?.name ?? stored.name,
+		status: storedToolStatus(stored.status),
+		...(stored.startedAt !== undefined ? { startedAt: stored.startedAt } : {}),
+		...(stored.durationMs !== undefined ? { durationMs: stored.durationMs } : {})
+	};
+}
+
+function mergeClientSnapshotTool(
+	previous: ChatToolDisplay | undefined,
+	incoming: ChatToolDisplay,
+	now: number
+): ChatToolDisplay {
+	const status = clientSnapshotToolStatus(previous?.status, incoming.status);
+	const durationMs = incoming.durationMs ?? previous?.durationMs;
+	const startedAt =
+		status === 'running'
+			? (previous?.startedAt ?? incoming.startedAt ?? now - (durationMs ?? 0))
+			: (incoming.startedAt ?? previous?.startedAt);
 
 	return {
-		contentIndex: existing?.contentIndex ?? incoming.contentIndex,
+		contentIndex: incoming.contentIndex,
 		id: incoming.id,
 		name: incoming.name,
 		status,
-		startedAt,
+		...(startedAt !== undefined ? { startedAt } : {}),
 		...(durationMs !== undefined ? { durationMs } : {})
 	};
 }
 
-export function mergeChatDisplayTools(
-	existingTools: unknown,
-	incomingTools: unknown,
-	context: ChatToolDisplayMergeContext
-): ChatToolDisplay[] {
-	const existing = normalizeChatToolDisplays(existingTools);
+export function applyToolEventToDisplay<T extends ChatMessageDisplay>(
+	display: T,
+	event: unknown,
+	now = Date.now()
+): T {
+	const eventTool = toolEventDisplay(event);
+	if (!eventTool) return display;
 
-	if (context.mode === 'live-event') {
-		if (!isRecord(context.event)) return existing;
-
-		const toolName = eventString(context.event, 'toolName') ?? eventString(context.event, 'name');
-		if (!toolName) return existing;
-
-		const toolCallId = eventString(context.event, 'toolCallId') ?? toolName;
-		const status: ChatToolStatus =
-			context.event.type === 'tool_execution_end'
-				? context.event.isError === true
-					? 'failed'
-					: 'completed'
-				: 'running';
-		const existingIndex = existing.findIndex((tool) => tool.id === toolCallId);
-		const previous = existingIndex >= 0 ? existing[existingIndex] : undefined;
-		const incoming = createChatToolDisplay({
-			contentIndex: previous?.contentIndex ?? existing.length,
-			id: toolCallId,
-			name: toolName,
-			status
-		});
-		const nextTool = mergeChatToolDisplay(previous, incoming, context);
-
-		return existingIndex >= 0
-			? existing.map((tool, index) => (index === existingIndex ? nextTool : tool))
-			: [...existing, nextTool];
-	}
-
-	const incoming = normalizeChatToolDisplays(
-		incomingTools,
-		context.mode === 'stored-overlay' ? 'completed' : 'pending'
-	);
-
-	if (context.mode === 'client-snapshot-merge') {
-		const previousByKey = byToolKey(existing);
-		return incoming.map((tool) =>
-			mergeChatToolDisplay(
-				previousByKey.get(tool.id) ?? previousByKey.get(String(tool.contentIndex)),
-				tool,
-				context
-			)
-		);
-	}
-
-	const incomingByIndex = byContentIndex(incoming);
-	const hydratedToolIndexes = new Set(existing.map((tool) => tool.contentIndex));
-	const merged = existing.map((tool) => {
-		const incomingTool =
-			incomingByIndex.get(tool.contentIndex) ??
-			createChatToolDisplay({
-				contentIndex: tool.contentIndex,
-				id: tool.id,
-				name: tool.name,
-				status: 'completed'
-			});
-		return mergeChatToolDisplay(tool, incomingTool, context);
-	});
-	const storedOnly = incoming.filter((tool) => !hydratedToolIndexes.has(tool.contentIndex));
-	return [...merged, ...storedOnly];
+	const tools = applyToolEventToTools(display.tools, eventTool, now);
+	return { ...display, tools } as T;
 }
 
-export function mergeChatMessageDisplay<T extends ChatMessageDisplay>(
-	display: T,
-	context: ChatDisplayMergeContext
+export function overlayStoredDisplay<T extends ChatMessageDisplay>(
+	hydratedDisplay: T,
+	storedDisplay: unknown
 ): T {
-	if (context.mode === 'live-event') {
-		if (!isRecord(context.event)) return display;
-		const toolName = eventString(context.event, 'toolName') ?? eventString(context.event, 'name');
-		if (!toolName) return display;
-		const tools = mergeChatDisplayTools(display.tools, undefined, context);
-		if (tools === display.tools) return display;
-		return { ...display, tools } as T;
-	}
-
-	const incomingRecord = isRecord(context.incoming) ? context.incoming : {};
-	const incomingDisplay = normalizeChatMessageDisplay(context.incoming);
-	const thoughts = mergeChatDisplayThoughts(display.thoughts, incomingDisplay.thoughts, context);
-	const tools = mergeChatDisplayTools(display.tools, incomingDisplay.tools, context);
+	const storedRecord = isRecord(storedDisplay) ? storedDisplay : {};
+	const storedThoughts = normalizeChatThoughtDisplays(storedRecord.thoughts);
+	const storedTools = normalizeChatToolDisplays(storedRecord.tools, 'completed');
+	const storedThoughtsByIndex = byContentIndex(storedThoughts);
+	const storedToolsByIndex = byContentIndex(storedTools);
+	const hydratedToolIndexes = new Set(hydratedDisplay.tools.map((tool) => tool.contentIndex));
+	const thoughts = hydratedDisplay.thoughts.map((thought) =>
+		overlayStoredThought(thought, storedThoughtsByIndex.get(thought.contentIndex))
+	);
+	const tools = [
+		...hydratedDisplay.tools.map((tool) =>
+			overlayStoredTool(
+				tool,
+				storedToolsByIndex.get(tool.contentIndex) ??
+					createChatToolDisplay({
+						contentIndex: tool.contentIndex,
+						id: tool.id,
+						name: tool.name,
+						status: 'completed'
+					})
+			)
+		),
+		...storedTools.filter((tool) => !hydratedToolIndexes.has(tool.contentIndex))
+	];
 
 	return {
-		...display,
-		...(context.mode === 'client-snapshot-merge'
-			? {
-					role: typeof incomingRecord.role === 'string' ? incomingDisplay.role : display.role,
-					text: typeof incomingRecord.text === 'string' ? incomingDisplay.text : display.text
-				}
-			: {}),
+		...hydratedDisplay,
 		thoughts,
+		tools
+	} as T;
+}
+
+export function mergeClientSnapshotDisplay<T extends ChatMessageDisplay>(
+	existingDisplay: T,
+	incomingDisplay: unknown,
+	now = Date.now()
+): T {
+	const incomingRecord = isRecord(incomingDisplay) ? incomingDisplay : {};
+	const incoming = normalizeChatMessageDisplay(incomingDisplay);
+	const previousToolsByKey = byToolKey(existingDisplay.tools);
+	const tools = incoming.tools.map((tool) =>
+		mergeClientSnapshotTool(
+			previousToolsByKey.get(tool.id) ?? previousToolsByKey.get(String(tool.contentIndex)),
+			tool,
+			now
+		)
+	);
+
+	return {
+		...existingDisplay,
+		...(typeof incomingRecord.role === 'string' ? { role: incoming.role } : {}),
+		...(typeof incomingRecord.text === 'string' ? { text: incoming.text } : {}),
+		thoughts: incoming.thoughts,
 		tools
 	} as T;
 }

@@ -4,7 +4,6 @@ import {
 	clampTemperature,
 	chatThinkingSelectionFromServer,
 	formatDuration,
-	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
 	normalizeServerTools,
@@ -14,6 +13,7 @@ import {
 	uiMessageFromServer,
 	type UiMessage
 } from './chat';
+import { applyToolEventToDisplay } from '$lib/shared/chat-display';
 
 describe('chat client helpers', () => {
 	it('clamps temperature to supported one-decimal bounds', () => {
@@ -102,12 +102,12 @@ describe('chat client helpers', () => {
 
 	it('merges streaming tool events into an assistant message', () => {
 		const message: UiMessage = { role: 'assistant', text: '', thoughts: [], tools: [] };
-		const running = mergeToolIntoAssistant(
+		const running = applyToolEventToDisplay(
 			message,
 			{ type: 'tool_execution_start', toolName: 'mcp_web_search', toolCallId: 'call-1' },
 			1000
 		);
-		const completed = mergeToolIntoAssistant(
+		const completed = applyToolEventToDisplay(
 			running,
 			{ type: 'tool_execution_end', toolName: 'mcp_web_search', toolCallId: 'call-1' },
 			2500

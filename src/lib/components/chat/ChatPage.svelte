@@ -5,7 +5,6 @@
 		chatThinkingSelectionFromServer,
 		clampTemperature,
 		isRecord,
-		mergeToolIntoAssistant,
 		modelOptionsForProvider,
 		presetIdForPrompt,
 		responseErrorMessage,
@@ -20,6 +19,7 @@
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { applyToolEventToDisplay } from '$lib/shared/chat-display';
 	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
 	import ChatSidebar from '$lib/components/chat/ChatSidebar.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -486,7 +486,7 @@
 		const lastAssistantIndex = messages.findLastIndex((item) => item.role === 'assistant');
 		if (lastAssistantIndex < 0) return;
 
-		messages[lastAssistantIndex] = mergeToolIntoAssistant(messages[lastAssistantIndex], payload);
+		messages[lastAssistantIndex] = applyToolEventToDisplay(messages[lastAssistantIndex], payload);
 	}
 
 	function activeRunFromPayload(payload: unknown): ActiveRun | null {

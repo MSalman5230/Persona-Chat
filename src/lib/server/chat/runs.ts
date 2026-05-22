@@ -5,7 +5,7 @@ import {
 	upsertAgentMessages
 } from '$lib/server/chat/service';
 import {
-	mergeChatMessageDisplay,
+	applyToolEventToDisplay,
 	normalizeChatMessageDisplay
 } from '$lib/shared/chat-display';
 import {
@@ -157,10 +157,7 @@ async function persistRunMessage(
 	thoughtTimings?: Parameters<typeof normalizeAgentMessageForStorage>[1]
 ) {
 	const stored = normalizeAgentMessageForStorage(message, thoughtTimings);
-	const input: ChatMessageInput = {
-		...stored,
-		display: stored.display as unknown as Record<string, unknown>
-	};
+	const input: ChatMessageInput = stored;
 	liveRun.messageSnapshots.set(sequence, input);
 	await upsertChatMessage(sessionId, sequence, input);
 }
@@ -178,12 +175,12 @@ export function mergeToolEventIntoStoredMessage(
 		role: message.role,
 		text: message.contentText
 	});
-	const nextDisplay = mergeChatMessageDisplay(display, { mode: 'live-event', event: payload, now });
+	const nextDisplay = applyToolEventToDisplay(display, payload, now);
 	if (nextDisplay === display) return message;
 
 	return {
 		...message,
-		display: nextDisplay as unknown as Record<string, unknown>
+		display: nextDisplay
 	};
 }
 

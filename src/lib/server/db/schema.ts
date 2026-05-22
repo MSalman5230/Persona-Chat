@@ -12,6 +12,8 @@ import {
 	uniqueIndex,
 	uuid
 } from 'drizzle-orm/pg-core';
+import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
+import type { ChatMessageDisplay } from '$lib/shared/chat-display';
 
 export const mcpTransport = pgEnum('mcp_transport', ['stdio', 'streamable_http', 'sse']);
 export const mcpStatus = pgEnum('mcp_status', ['unknown', 'ok', 'error']);
@@ -155,8 +157,8 @@ export const chatMessages = pgTable(
 		sequence: integer('sequence').notNull(),
 		role: text('role').notNull(),
 		contentText: text('content_text').notNull().default(''),
-		piMessage: jsonb('pi_message').$type<Record<string, unknown>>().notNull(),
-		display: jsonb('display').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+		piMessage: jsonb('pi_message').$type<PersistedAgentMessage>().notNull(),
+		display: jsonb('display').$type<ChatMessageDisplay>().notNull().default(sql`'{}'::jsonb`),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => ({

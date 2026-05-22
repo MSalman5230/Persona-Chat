@@ -3,8 +3,8 @@ import { isRecord } from '$lib/server/json';
 import {
 	createChatThoughtDisplay,
 	createChatToolDisplay,
-	mergeChatMessageDisplay,
-	normalizeDisplayDurationMs
+	normalizeDisplayDurationMs,
+	overlayStoredDisplay
 } from '$lib/shared/chat-display';
 import type {
 	ChatMessageDisplay,
@@ -120,10 +120,7 @@ export function hydrateChatMessageDisplay(
 	message: AgentMessage,
 	storedDisplay: unknown
 ): ChatMessageDisplay {
-	return mergeChatMessageDisplay(buildChatMessageDisplay(message), {
-		mode: 'stored-overlay',
-		incoming: storedDisplay
-	});
+	return overlayStoredDisplay(buildChatMessageDisplay(message), storedDisplay);
 }
 
 export function normalizeAgentMessageForStorage(
@@ -135,7 +132,7 @@ export function normalizeAgentMessageForStorage(
 	return {
 		role: message.role,
 		contentText: display.text,
-		piMessage: message as unknown as Record<string, unknown>,
+		piMessage: message,
 		display
 	};
 }

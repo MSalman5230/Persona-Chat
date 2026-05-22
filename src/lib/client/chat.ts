@@ -1,8 +1,6 @@
 import {
-	mergeChatDisplayThoughts,
-	mergeChatDisplayTools,
-	mergeChatMessageDisplay,
-	normalizeDisplayDurationMs,
+	mergeClientSnapshotDisplay,
+	normalizeChatThoughtDisplays,
 	type ChatThoughtDisplay,
 	type ChatToolDisplay
 } from '$lib/shared/chat-display';
@@ -87,10 +85,6 @@ export function roleFromServer(role: unknown): UiMessage['role'] {
 	return 'user';
 }
 
-export function durationFromServer(value: unknown): number | undefined {
-	return normalizeDisplayDurationMs(value);
-}
-
 export function normalizeServerThoughts(
 	thoughts: unknown,
 	existingThoughts: UiThought[] = [],
@@ -100,11 +94,7 @@ export function normalizeServerThoughts(
 		existingThoughts.map((thought) => [thought.contentIndex, thought])
 	);
 
-	return mergeChatDisplayThoughts(existingThoughts, thoughts, {
-		mode: 'client-snapshot-merge',
-		incoming: thoughts,
-		now
-	}).map((incoming): UiThought => {
+	return normalizeChatThoughtDisplays(thoughts).map((incoming): UiThought => {
 		const previous = previousByIndex.get(incoming.contentIndex);
 		const status = incoming.status;
 		const durationMs = incoming.durationMs;
@@ -132,11 +122,11 @@ export function normalizeServerTools(
 	existingTools: UiTool[] = [],
 	now = Date.now()
 ): UiTool[] {
-	return mergeChatDisplayTools(existingTools, tools, {
-		mode: 'client-snapshot-merge',
-		incoming: tools,
+	return mergeClientSnapshotDisplay(
+		{ role: 'assistant', text: '', thoughts: [], tools: existingTools },
+		{ tools },
 		now
-	});
+	).tools;
 }
 
 export function uiMessageFromServer(
@@ -219,14 +209,6 @@ export function shouldShowAssistantPlaceholder(item: UiMessage, isStreaming: boo
 		item.tools.length === 0 &&
 		isStreaming
 	);
-}
-
-export function mergeToolIntoAssistant(
-	current: UiMessage,
-	payload: Record<string, unknown>,
-	now = Date.now()
-): UiMessage {
-	return mergeChatMessageDisplay(current, { mode: 'live-event', event: payload, now });
 }
 
 export function modelOptionsForProvider(provider: ChatProviderOption | undefined): ModelOption[] {
