@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { ChatMessageInput } from '$lib/server/repositories/chat';
+import { applyToolEvent, type ChatMessageDisplay } from '$lib/shared/chat-display';
 import { mergeToolEventIntoStoredMessage } from './runs';
 
 describe('chat run helpers', () => {
@@ -37,5 +39,33 @@ describe('chat run helpers', () => {
 				durationMs: 1500
 			}
 		]);
+	});
+
+	it('matches canonical tool event state while merging stored run events', () => {
+		const events = [
+			{ type: 'tool_execution_start', toolName: 'mcp_search', toolCallId: 'call-1' },
+			{ type: 'tool_execution_update', toolName: 'mcp_search', toolCallId: 'call-1' },
+			{ type: 'tool_execution_end', toolName: 'mcp_search', toolCallId: 'call-1' }
+		];
+		const times = [1000, 1500, 2750];
+		let message: ChatMessageInput = {
+			role: 'assistant',
+			contentText: '',
+			piMessage: { role: 'assistant', content: [] },
+			display: {
+				role: 'assistant',
+				text: '',
+				thoughts: [],
+				tools: []
+			} as unknown as Record<string, unknown>
+		};
+		let display: ChatMessageDisplay = { role: 'assistant', text: '', thoughts: [], tools: [] };
+
+		for (const [index, event] of events.entries()) {
+			message = mergeToolEventIntoStoredMessage(message, event, times[index]);
+			display = applyToolEvent(display, event, times[index]);
+		}
+
+		expect(message.display).toEqual(display);
 	});
 });

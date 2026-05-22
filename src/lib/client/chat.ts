@@ -1,18 +1,31 @@
+import {
+	applyToolEvent,
+	mergeChatMessageDisplay,
+	normalizeChatMessageDisplay,
+	normalizeChatThoughts,
+	roundedDurationMs,
+	type ChatMessageDisplay,
+	type ChatThoughtDisplay,
+	type ChatToolDisplay
+} from '$lib/shared/chat-display';
+
 export type UiThought = {
-	contentIndex: number;
-	text: string;
-	status: 'thinking' | 'thought';
-	durationMs?: number;
+	contentIndex: ChatThoughtDisplay['contentIndex'];
+	text: ChatThoughtDisplay['text'];
+	status: ChatThoughtDisplay['status'];
+	durationMs?: ChatThoughtDisplay['durationMs'];
 	redacted: boolean;
 	expanded: boolean;
-	startedAt?: number;
+	startedAt?: ChatThoughtDisplay['startedAt'];
 };
 
-export type UiTool = {
+export type UiTool = ChatToolDisplay;
+
+export type UiThoughtGroup = {
 	contentIndex: number;
-	id: string;
-	name: string;
-	status: 'pending' | 'running' | 'completed' | 'failed';
+	thoughts: UiThought[];
+	status: UiThought['status'];
+	expanded: boolean;
 	startedAt?: number;
 	durationMs?: number;
 };
@@ -22,7 +35,11 @@ export type UiMessage = {
 	text: string;
 	thoughts: UiThought[];
 	tools: UiTool[];
+	sequence?: number;
+	sourceSequences?: number[];
 	toolName?: string;
+	toolCallId?: string;
+	isError?: boolean;
 };
 
 export type ModelOption = { id: string; name: string };
@@ -88,9 +105,7 @@ export function roleFromServer(role: unknown): UiMessage['role'] {
 }
 
 export function durationFromServer(value: unknown): number | undefined {
-	return typeof value === 'number' && Number.isFinite(value) && value >= 0
-		? Math.round(value)
-		: undefined;
+	return roundedDurationMs(value);
 }
 
 export function normalizeServerThoughts(
@@ -104,30 +119,28 @@ export function normalizeServerThoughts(
 		existingThoughts.map((thought) => [thought.contentIndex, thought])
 	);
 
-	return thoughts.flatMap((thought): UiThought[] => {
-		if (!isRecord(thought) || typeof thought.contentIndex !== 'number') return [];
-
+	return normalizeChatThoughts(thoughts).map((thought): UiThought => {
 		const previous = previousByIndex.get(thought.contentIndex);
-		const status = thought.status === 'thinking' ? 'thinking' : 'thought';
-		const durationMs = durationFromServer(thought.durationMs);
+		const status = thought.status;
+		const durationMs = thought.durationMs;
 		const wasThinking = previous?.status === 'thinking';
 		const expanded =
 			status === 'thinking' ? true : wasThinking ? false : (previous?.expanded ?? false);
 		const startedAt =
-			status === 'thinking' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : undefined;
+			status === 'thinking'
+				? (previous?.startedAt ?? thought.startedAt ?? now - (durationMs ?? 0))
+				: undefined;
 		const redacted = thought.redacted === true;
 
-		return [
-			{
-				contentIndex: thought.contentIndex,
-				text: redacted ? '' : typeof thought.text === 'string' ? thought.text : '',
-				status,
-				...(durationMs !== undefined ? { durationMs } : {}),
-				redacted,
-				expanded,
-				...(startedAt !== undefined ? { startedAt } : {})
-			}
-		];
+		return {
+			contentIndex: thought.contentIndex,
+			text: thought.text,
+			status,
+			...(durationMs !== undefined ? { durationMs } : {}),
+			redacted,
+			expanded,
+			...(startedAt !== undefined ? { startedAt } : {})
+		};
 	});
 }
 
@@ -138,43 +151,18 @@ export function normalizeServerTools(
 ): UiTool[] {
 	if (!Array.isArray(tools)) return [];
 
-	const previousByKey = new Map(
-		existingTools.map((tool) => [tool.id || String(tool.contentIndex), tool])
+	const display = mergeChatMessageDisplay(
+		{ role: 'assistant', text: '', thoughts: [], tools },
+		{ role: 'assistant', text: '', thoughts: [], tools: existingTools }
 	);
 
-	return tools.flatMap((tool): UiTool[] => {
-		if (!isRecord(tool) || typeof tool.contentIndex !== 'number') return [];
-		if (typeof tool.id !== 'string' || typeof tool.name !== 'string') return [];
-
-		const previous = previousByKey.get(tool.id) ?? previousByKey.get(String(tool.contentIndex));
-		const incomingStatus =
-			tool.status === 'running' ||
-			tool.status === 'completed' ||
-			tool.status === 'failed' ||
-			tool.status === 'pending'
-				? tool.status
-				: 'pending';
-		const status =
-			previous?.status === 'running' && incomingStatus === 'pending'
-				? previous.status
-				: previous?.status === 'completed' || previous?.status === 'failed'
-					? previous.status
-					: incomingStatus;
-		const durationMs = durationFromServer(tool.durationMs) ?? previous?.durationMs;
-		const startedAt =
-			status === 'running' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : previous?.startedAt;
-
-		return [
-			{
-				contentIndex: tool.contentIndex,
-				id: tool.id,
-				name: tool.name,
-				status,
-				...(startedAt !== undefined ? { startedAt } : {}),
-				...(durationMs !== undefined ? { durationMs } : {})
-			}
-		];
-	});
+	return display.tools.map((tool) => ({
+		...tool,
+		startedAt:
+			tool.status === 'running'
+				? (tool.startedAt ?? now - (tool.durationMs ?? 0))
+				: tool.startedAt
+	}));
 }
 
 export function uiMessageFromServer(
@@ -195,8 +183,22 @@ export function uiMessageFromServer(
 		text,
 		thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts, now),
 		tools: normalizeServerTools(display?.tools, previous?.tools, now),
-		...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {})
+		...(typeof payload.sequence === 'number'
+			? { sequence: payload.sequence, sourceSequences: [payload.sequence] }
+			: {}),
+		...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {}),
+		...(typeof payload.toolCallId === 'string' ? { toolCallId: payload.toolCallId } : {}),
+		...(typeof payload.isError === 'boolean' ? { isError: payload.isError } : {})
 	};
+}
+
+function displayFromUiMessage(message: UiMessage): ChatMessageDisplay {
+	return normalizeChatMessageDisplay({
+		role: message.role,
+		text: message.text,
+		thoughts: message.thoughts,
+		tools: message.tools
+	});
 }
 
 export function thoughtDurationMs(thought: UiThought, now = Date.now()): number | undefined {
@@ -233,6 +235,50 @@ export function thoughtLabel(thought: UiThought, now = Date.now()): string {
 	return duration ? `Thought for ${duration}` : 'Thought';
 }
 
+export function thoughtGroupForMessage(message: UiMessage): UiThoughtGroup | null {
+	if (message.thoughts.length === 0) return null;
+
+	const hasActiveThought = message.thoughts.some((thought) => thought.status === 'thinking');
+	const activeStartedAt = message.thoughts
+		.filter((thought) => thought.status === 'thinking' && thought.startedAt !== undefined)
+		.map((thought) => thought.startedAt as number);
+	const completedDurations = message.thoughts
+		.map((thought) => thought.durationMs)
+		.filter((duration): duration is number => duration !== undefined);
+	const durationMs =
+		completedDurations.length === 0
+			? undefined
+			: completedDurations.reduce((total, duration) => total + duration, 0);
+
+	return {
+		contentIndex: message.thoughts[0].contentIndex,
+		thoughts: message.thoughts,
+		status: hasActiveThought ? 'thinking' : 'thought',
+		expanded: message.thoughts.some((thought) => thought.expanded),
+		...(hasActiveThought && activeStartedAt.length > 0
+			? { startedAt: Math.min(...activeStartedAt) }
+			: {}),
+		...(!hasActiveThought && durationMs !== undefined ? { durationMs } : {})
+	};
+}
+
+export function thoughtGroupDurationMs(
+	group: UiThoughtGroup,
+	now = Date.now()
+): number | undefined {
+	if (group.status === 'thinking' && group.startedAt !== undefined) {
+		return Math.max(0, now - group.startedAt);
+	}
+
+	return group.durationMs;
+}
+
+export function thoughtGroupLabel(group: UiThoughtGroup, now = Date.now()): string {
+	const duration = formatDuration(thoughtGroupDurationMs(group, now));
+	if (group.status === 'thinking') return duration ? `Thinking... ${duration}` : 'Thinking...';
+	return duration ? `Thought for ${duration}` : 'Thought';
+}
+
 export function formatToolName(name: string): string {
 	return name.replace(/^mcp_/, '').replace(/_/g, ' ');
 }
@@ -264,34 +310,82 @@ export function mergeToolIntoAssistant(
 	payload: Record<string, unknown>,
 	now = Date.now()
 ): UiMessage {
-	if (typeof payload.toolName !== 'string') return current;
+	const display = applyToolEvent(displayFromUiMessage(current), payload, now);
+	return { ...current, tools: display.tools };
+}
 
-	const toolCallId = typeof payload.toolCallId === 'string' ? payload.toolCallId : payload.toolName;
-	const existingIndex = current.tools.findIndex((tool) => tool.id === toolCallId);
-	const previous = existingIndex >= 0 ? current.tools[existingIndex] : undefined;
-	const status =
-		payload.type === 'tool_execution_end'
-			? payload.isError === true
-				? 'failed'
-				: 'completed'
-			: 'running';
-	const startedAt = previous?.startedAt ?? now;
-	const durationMs =
-		status === 'running' ? previous?.durationMs : Math.max(0, now - (previous?.startedAt ?? startedAt));
-	const nextTool: UiTool = {
-		contentIndex: previous?.contentIndex ?? current.tools.length,
-		id: toolCallId,
-		name: payload.toolName,
-		status,
-		startedAt,
-		...(durationMs !== undefined ? { durationMs } : {})
+function nextMergedContentIndex(message: UiMessage): number {
+	const indexes = [...message.thoughts, ...message.tools].map((item) => item.contentIndex);
+	return indexes.length === 0 ? 0 : Math.max(...indexes) + 1;
+}
+
+function reindexThoughts(thoughts: UiThought[], offset: number): UiThought[] {
+	return thoughts.map((thought) => ({
+		...thought,
+		contentIndex: thought.contentIndex + offset
+	}));
+}
+
+function mergeSourceSequences(first: UiMessage, second: UiMessage): number[] | undefined {
+	const sequences = [
+		...(first.sourceSequences ?? (first.sequence !== undefined ? [first.sequence] : [])),
+		...(second.sourceSequences ?? (second.sequence !== undefined ? [second.sequence] : []))
+	];
+	if (sequences.length === 0) return undefined;
+	return [...new Set(sequences)];
+}
+
+function mergeAssistantMessages(first: UiMessage, second: UiMessage): UiMessage {
+	const text = [first.text, second.text].filter((item) => item.trim().length > 0).join('\n\n');
+	const thoughtOffset = nextMergedContentIndex(first);
+	const sourceSequences = mergeSourceSequences(first, second);
+	const toolsById = new Map(first.tools.map((tool) => [tool.id, tool]));
+
+	for (const tool of second.tools) {
+		toolsById.set(tool.id, tool);
+	}
+
+	return {
+		role: 'assistant',
+		text,
+		thoughts: [...first.thoughts, ...reindexThoughts(second.thoughts, thoughtOffset)],
+		tools: [...toolsById.values()],
+		...(sourceSequences ? { sourceSequences } : {})
 	};
-	const tools =
-		existingIndex >= 0
-			? current.tools.map((tool, index) => (index === existingIndex ? nextTool : tool))
-			: [...current.tools, nextTool];
+}
 
-	return { ...current, tools };
+export function collapseMessagesForDisplay(messages: UiMessage[]): UiMessage[] {
+	const result: UiMessage[] = [];
+
+	for (const message of messages) {
+		if (message.role === 'tool') {
+			const previous = result[result.length - 1];
+			if (previous?.role === 'assistant' && message.toolName) {
+				result[result.length - 1] = mergeToolIntoAssistant(previous, {
+					type: 'tool_execution_end',
+					toolName: message.toolName,
+					...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
+					...(message.isError !== undefined ? { isError: message.isError } : {})
+				});
+			}
+			continue;
+		}
+
+		const previous = result[result.length - 1];
+		if (message.role === 'assistant' && previous?.role === 'assistant') {
+			result[result.length - 1] = mergeAssistantMessages(previous, message);
+			continue;
+		}
+
+		result.push({
+			...message,
+			...(message.sequence !== undefined && !message.sourceSequences
+				? { sourceSequences: [message.sequence] }
+				: {})
+		});
+	}
+
+	return result;
 }
 
 export function modelOptionsForProvider(provider: ChatProviderOption | undefined): ModelOption[] {

@@ -15,6 +15,11 @@ import {
 } from '$lib/server/repositories/chat';
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import type { ThoughtTimingsByAssistant } from '$lib/server/chat/display';
+import {
+	applyToolEvent,
+	mergeChatMessageDisplay,
+	normalizeChatMessageDisplay
+} from '$lib/shared/chat-display';
 
 export type ChatRunInput = {
 	sessionId?: string | null;
@@ -153,22 +158,16 @@ async function persistRunMessage(
 	thoughtTimings?: Parameters<typeof normalizeAgentMessageForStorage>[1]
 ) {
 	const stored = normalizeAgentMessageForStorage(message, thoughtTimings);
+	const display = mergeChatMessageDisplay(
+		stored.display,
+		liveRun.messageSnapshots.get(sequence)?.display
+	);
 	const input: ChatMessageInput = {
 		...stored,
-		display: stored.display as unknown as Record<string, unknown>
+		display: display as unknown as Record<string, unknown>
 	};
 	liveRun.messageSnapshots.set(sequence, input);
 	await upsertChatMessage(sessionId, sequence, input);
-}
-
-function eventString(payload: Record<string, unknown>, key: string): string | undefined {
-	const value = payload[key];
-	return typeof value === 'string' ? value : undefined;
-}
-
-function eventBoolean(payload: Record<string, unknown>, key: string): boolean | undefined {
-	const value = payload[key];
-	return typeof value === 'boolean' ? value : undefined;
 }
 
 function isUniqueViolation(cause: unknown): boolean {
@@ -180,47 +179,15 @@ export function mergeToolEventIntoStoredMessage(
 	payload: Record<string, unknown>,
 	now = Date.now()
 ): ChatMessageInput {
-	const toolName = eventString(payload, 'toolName');
-	if (!toolName) return message;
-
-	const toolCallId = eventString(payload, 'toolCallId') ?? toolName;
-	const status =
-		payload.type === 'tool_execution_end'
-			? eventBoolean(payload, 'isError') === true
-				? 'failed'
-				: 'completed'
-			: 'running';
-	const display = { ...(message.display ?? {}) };
-	const existingTools = Array.isArray(display.tools)
-		? (display.tools as Record<string, unknown>[])
-		: [];
-	const existingIndex = existingTools.findIndex((tool) => tool.id === toolCallId);
-	const previous = existingIndex >= 0 ? existingTools[existingIndex] : undefined;
-	const startedAt =
-		typeof previous?.startedAt === 'number' && Number.isFinite(previous.startedAt)
-			? previous.startedAt
-			: now;
-	const durationMs = status === 'running' ? previous?.durationMs : Math.max(0, now - startedAt);
-	const nextTool = {
-		contentIndex:
-			typeof previous?.contentIndex === 'number' ? previous.contentIndex : existingTools.length,
-		id: toolCallId,
-		name: toolName,
-		status,
-		startedAt,
-		...(typeof durationMs === 'number' ? { durationMs } : {})
-	};
-	const tools =
-		existingIndex >= 0
-			? existingTools.map((tool, index) => (index === existingIndex ? nextTool : tool))
-			: [...existingTools, nextTool];
+	const display = normalizeChatMessageDisplay(message.display, {
+		role: message.role,
+		text: message.contentText
+	});
+	const nextDisplay = applyToolEvent(display, payload, now);
 
 	return {
 		...message,
-		display: {
-			...display,
-			tools
-		}
+		display: nextDisplay as unknown as Record<string, unknown>
 	};
 }
 
@@ -313,6 +280,27 @@ async function executeChatRun(
 
 			const timings = messageIsAssistant ? thoughtTimings.get(assistantIndex) : undefined;
 			const normalized = normalizeAgentEvent(event, timings);
+			const isMessageEvent =
+				record.type === 'message_start' ||
+				record.type === 'message_update' ||
+				record.type === 'message_end';
+			const isToolEvent =
+				record.type === 'tool_execution_start' ||
+				record.type === 'tool_execution_update' ||
+				record.type === 'tool_execution_end';
+			const normalizedEvent = {
+				...normalized,
+				...(message && isMessageEvent
+					? {
+							sequence: currentSequence,
+							message:
+								normalized.message && typeof normalized.message === 'object'
+									? { ...normalized.message, sequence: currentSequence }
+									: normalized.message
+						}
+					: {}),
+				...(isToolEvent ? { assistantSequence: liveRun.lastAssistantSequence } : {})
+			};
 
 			if (
 				message &&
@@ -334,18 +322,22 @@ async function executeChatRun(
 				record.type === 'tool_execution_update' ||
 				record.type === 'tool_execution_end'
 			) {
-				await persistToolEvent(liveRun, turn.chatSession.id, normalized);
+				await persistToolEvent(liveRun, turn.chatSession.id, normalizedEvent);
 			}
 
-			publish(liveRun, 'event', normalized);
+			publish(liveRun, 'event', normalizedEvent);
 		});
 
 		await turn.runtime.session.prompt(input.message, { source: 'rpc' });
+		const preservedDisplaysBySequence = new Map(
+			[...liveRun.messageSnapshots].map(([sequence, message]) => [sequence, message.display])
+		);
 		await upsertAgentMessages(
 			turn.chatSession.id,
 			turn.runtime.session.messages as never,
 			turn.historyCount,
-			thoughtTimings
+			thoughtTimings,
+			preservedDisplaysBySequence
 		);
 		await updateChatRunStatus(liveRun.run.id, 'completed');
 		await publishSnapshot(liveRun, null);

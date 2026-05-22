@@ -3,7 +3,8 @@
 	import {
 		formatToolName,
 		shouldShowAssistantPlaceholder,
-		thoughtLabel,
+		thoughtGroupForMessage,
+		thoughtGroupLabel,
 		toolStatusLabel,
 		type UiMessage
 	} from '$lib/client/chat';
@@ -55,56 +56,61 @@
 			{#each messages as item, index (`${index}-${item.role}`)}
 				<article class={['message-row', item.role === 'user' ? 'justify-end' : 'justify-start']}>
 					<div class={['message-block', item.role]}>
-						{#if item.role === 'assistant' && item.thoughts.length > 0}
-							<div class="thought-stack">
-								{#each item.thoughts as thought (thought.contentIndex)}
-									<div class={['thought-block', thought.status]}>
+						{#if item.role === 'assistant'}
+							{#if item.tools.length > 0}
+								<div class="tool-stack" aria-label="Tool activity">
+									{#each item.tools as tool (tool.id)}
+										<div class={['tool-row', tool.status]}>
+											<span class="material-symbols-outlined tool-icon" aria-hidden="true">
+												{tool.status === 'running' ? 'progress_activity' : tool.status === 'failed' ? 'error' : 'check_circle'}
+											</span>
+											<span class="tool-label">{toolStatusLabel(tool, now)}</span>
+										</div>
+									{/each}
+								</div>
+							{/if}
+
+							{@const thoughtGroup = thoughtGroupForMessage(item)}
+							{#if thoughtGroup}
+								<div class="thought-stack">
+									<div class={['thought-block', thoughtGroup.status]}>
 										<button
 											type="button"
 											class="thought-toggle"
-											aria-expanded={thought.expanded}
-											aria-controls={`thought-${index}-${thought.contentIndex}`}
-											onclick={() => onToggleThought(index, thought.contentIndex)}
+											aria-expanded={thoughtGroup.expanded}
+											aria-controls={`thought-${index}-${thoughtGroup.contentIndex}`}
+											onclick={() => onToggleThought(index, thoughtGroup.contentIndex)}
 										>
 											<span
-												class={['material-symbols-outlined thought-chevron', thought.expanded ? 'expanded' : '']}
+												class={['material-symbols-outlined thought-chevron', thoughtGroup.expanded ? 'expanded' : '']}
 												aria-hidden="true"
 											>
 												expand_more
 											</span>
-											<span>{thoughtLabel(thought, now)}</span>
+											<span>{thoughtGroupLabel(thoughtGroup, now)}</span>
 										</button>
 
-										{#if thought.expanded}
+										{#if thoughtGroup.expanded}
 											<div
-												id={`thought-${index}-${thought.contentIndex}`}
+												id={`thought-${index}-${thoughtGroup.contentIndex}`}
 												class="thought-body"
 											>
-												{#if thought.redacted}
-													<span class="thought-redacted">Thought redacted by provider</span>
-												{:else if thought.text.trim()}
-													{thought.text}
-												{:else if thought.status === 'thinking'}
-													<span class="thinking-cursor" aria-hidden="true"></span>
-												{/if}
+												{#each thoughtGroup.thoughts as thought (thought.contentIndex)}
+													<div class="thought-segment">
+														{#if thought.redacted}
+															<span class="thought-redacted">Thought redacted by provider</span>
+														{:else if thought.text.trim()}
+															{thought.text}
+														{:else if thought.status === 'thinking'}
+															<span class="thinking-cursor" aria-hidden="true"></span>
+														{/if}
+													</div>
+												{/each}
 											</div>
 										{/if}
 									</div>
-								{/each}
-							</div>
-						{/if}
-
-						{#if item.role === 'assistant' && item.tools.length > 0}
-							<div class="tool-stack" aria-label="Tool activity">
-								{#each item.tools as tool (tool.id)}
-									<div class={['tool-row', tool.status]}>
-										<span class="material-symbols-outlined tool-icon" aria-hidden="true">
-											{tool.status === 'running' ? 'progress_activity' : tool.status === 'failed' ? 'error' : 'check_circle'}
-										</span>
-										<span class="tool-label">{toolStatusLabel(tool, now)}</span>
-									</div>
-								{/each}
-							</div>
+								</div>
+							{/if}
 						{/if}
 
 						{#if shouldShowAssistantPlaceholder(item, isStreaming)}
@@ -337,6 +343,12 @@
 		color: var(--color-on-surface-variant);
 		font-size: 14px;
 		line-height: 20px;
+	}
+
+	.thought-segment + .thought-segment {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--color-border-subtle);
 	}
 
 	.tool-stack {

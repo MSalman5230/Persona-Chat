@@ -143,6 +143,41 @@ describe('chat service display helpers', () => {
 		});
 	});
 
+	it('keeps stored-only tool event state while hydrating snapshots', () => {
+		const display = hydrateChatMessageDisplay(
+			{
+				role: 'assistant',
+				content: [{ type: 'text', text: 'Partial answer.' }]
+			},
+			{
+				role: 'assistant',
+				text: 'Partial answer.',
+				thoughts: [],
+				tools: [
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'mcp_search',
+						status: 'completed',
+						startedAt: 1000,
+						durationMs: 500
+					}
+				]
+			}
+		);
+
+		expect(display.tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 500
+			}
+		]);
+	});
+
 	it('does not expose redacted thinking signatures in normalized events', () => {
 		const message = {
 			role: 'assistant',

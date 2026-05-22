@@ -6,8 +6,10 @@ import {
 	listChatMessages,
 	updateChatSession,
 	upsertChatMessages,
+	type ChatMessageInput,
 	type ChatMessageRow
 } from '$lib/server/repositories/chat';
+import { mergeChatMessageDisplay } from '$lib/shared/chat-display';
 import {
 	hydrateChatMessageDisplay,
 	normalizeAgentMessageForStorage,
@@ -89,7 +91,8 @@ export async function upsertAgentMessages(
 	sessionId: string,
 	messages: AgentMessage[],
 	historyCount: number,
-	thoughtTimings?: ThoughtTimingsByAssistant
+	thoughtTimings?: ThoughtTimingsByAssistant,
+	preservedDisplaysBySequence?: Map<number, Record<string, unknown> | undefined>
 ): Promise<void> {
 	const newMessages = messages.slice(historyCount);
 	let assistantIndex = -1;
@@ -97,9 +100,19 @@ export async function upsertAgentMessages(
 	await upsertChatMessages(
 		sessionId,
 		historyCount + 1,
-		newMessages.map((message) => {
+		newMessages.map((message, index): ChatMessageInput => {
 			const timings = message.role === 'assistant' ? thoughtTimings?.get(++assistantIndex) : undefined;
-			return normalizeAgentMessageForStorage(message, timings);
+			const stored = normalizeAgentMessageForStorage(message, timings);
+			const sequence = historyCount + index + 1;
+			const preservedDisplay = preservedDisplaysBySequence?.get(sequence);
+			const display = preservedDisplay
+				? mergeChatMessageDisplay(stored.display, preservedDisplay)
+				: stored.display;
+
+			return {
+				...stored,
+				display: display as unknown as Record<string, unknown>
+			};
 		})
 	);
 }
@@ -110,10 +123,13 @@ export function serializeChatMessage(message: ChatMessageRow): Record<string, un
 
 	return {
 		id: message.id,
+		sequence: message.sequence,
 		role: message.role,
 		text: display.text,
 		display,
 		...(typeof piMessage.toolName === 'string' ? { toolName: piMessage.toolName } : {}),
+		...(typeof piMessage.toolCallId === 'string' ? { toolCallId: piMessage.toolCallId } : {}),
+		...(typeof piMessage.isError === 'boolean' ? { isError: piMessage.isError } : {}),
 		createdAt: message.createdAt
 	};
 }

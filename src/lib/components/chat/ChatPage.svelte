@@ -4,6 +4,7 @@
 		CHAT_THINKING_OPTIONS,
 		chatThinkingSelectionFromServer,
 		clampTemperature,
+		collapseMessagesForDisplay,
 		isRecord,
 		mergeToolIntoAssistant,
 		modelOptionsForProvider,
@@ -125,6 +126,7 @@
 	const hasActiveTool = $derived(
 		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
 	);
+	const visibleMessages = $derived(collapseMessagesForDisplay(messages));
 	const currentTemperature = $derived(temperatureAuto ? null : clampTemperature(temperatureValue));
 	const selectedSystemPromptPreset = $derived(
 		systemPromptPresets.find((preset) => preset.id === selectedSystemPromptPresetId)
@@ -215,16 +217,52 @@
 	}
 
 	function replaceLastAssistantMessage(payload: Record<string, unknown>) {
-		const index = messages.length - 1;
-		if (index < 0) return;
-		messages[index] = uiMessageFromServer(payload, messages[index]);
+		const sequence = typeof payload.sequence === 'number' ? payload.sequence : undefined;
+		const existingIndex =
+			sequence !== undefined
+				? messages.findIndex((item) => item.sequence === sequence)
+				: messages.findLastIndex((item) => item.role === 'assistant');
+
+		if (existingIndex >= 0) {
+			messages[existingIndex] = uiMessageFromServer(payload, messages[existingIndex]);
+			return;
+		}
+
+		messages = [...messages, uiMessageFromServer(payload)];
 	}
 
 	function toggleThought(messageIndex: number, contentIndex: number) {
-		const thought = messages[messageIndex]?.thoughts.find(
-			(item) => item.contentIndex === contentIndex
-		);
-		if (thought) thought.expanded = !thought.expanded;
+		const visibleMessage = visibleMessages[messageIndex];
+		if (!visibleMessage?.thoughts.some((thought) => thought.contentIndex === contentIndex)) return;
+
+		const expanded = visibleMessage.thoughts.some((thought) => thought.expanded);
+		const sourceSequences = new Set(visibleMessage.sourceSequences ?? []);
+
+		if (sourceSequences.size === 0) {
+			let visibleIndex = -1;
+			for (const item of messages) {
+				if (item.role === 'tool') continue;
+				visibleIndex += 1;
+				if (visibleIndex !== messageIndex || item.role !== 'assistant') continue;
+				for (const thought of item.thoughts) {
+					thought.expanded = !expanded;
+				}
+				return;
+			}
+		}
+
+		for (const item of messages) {
+			if (item.role !== 'assistant') continue;
+			if (
+				sourceSequences.size > 0 &&
+				(item.sequence === undefined || !sourceSequences.has(item.sequence))
+			) {
+				continue;
+			}
+			for (const thought of item.thoughts) {
+				thought.expanded = !expanded;
+			}
+		}
 	}
 
 	function openSettingsSidebar() {
@@ -483,8 +521,13 @@
 	}
 
 	function mergeToolIntoLastAssistant(payload: Record<string, unknown>) {
-		const lastAssistantIndex = messages.findLastIndex((item) => item.role === 'assistant');
-		if (lastAssistantIndex < 0) return;
+		const assistantSequence =
+			typeof payload.assistantSequence === 'number' ? payload.assistantSequence : undefined;
+		const lastAssistantIndex =
+			assistantSequence !== undefined
+				? messages.findIndex((item) => item.sequence === assistantSequence)
+				: messages.findLastIndex((item) => item.role === 'assistant');
+		if (lastAssistantIndex < 0 || messages[lastAssistantIndex]?.role !== 'assistant') return;
 
 		messages[lastAssistantIndex] = mergeToolIntoAssistant(messages[lastAssistantIndex], payload);
 	}
@@ -727,7 +770,7 @@
 			<MessageList
 				{hasProviders}
 				loadError={data.loadError}
-				{messages}
+				messages={visibleMessages}
 				{errorText}
 				{isStreaming}
 				{now}
