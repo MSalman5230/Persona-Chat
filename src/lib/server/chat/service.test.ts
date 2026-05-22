@@ -143,6 +143,57 @@ describe('chat service display helpers', () => {
 		});
 	});
 
+	it('preserves stored tool status and timing metadata while hydrating snapshots', () => {
+		const display = hydrateChatMessageDisplay(
+			{
+				role: 'assistant',
+				content: [
+					{ type: 'toolCall', id: 'call-1', name: 'search', arguments: {} },
+					{ type: 'text', text: 'Done.' }
+				]
+			},
+			{
+				tools: [
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'search',
+						status: 'completed',
+						startedAt: 1000,
+						durationMs: 1500
+					},
+					{
+						contentIndex: 1,
+						id: 'call-2',
+						name: 'lookup',
+						status: 'failed',
+						startedAt: 3000,
+						durationMs: 250
+					}
+				]
+			}
+		);
+
+		expect(display.tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'search',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 1500
+			},
+			{
+				contentIndex: 1,
+				id: 'call-2',
+				name: 'lookup',
+				status: 'failed',
+				startedAt: 3000,
+				durationMs: 250
+			}
+		]);
+	});
+
 	it('does not expose redacted thinking signatures in normalized events', () => {
 		const message = {
 			role: 'assistant',

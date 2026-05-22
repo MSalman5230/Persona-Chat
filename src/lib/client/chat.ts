@@ -1,3 +1,10 @@
+import {
+	applyToolEvent,
+	mergeStoredChatMessageDisplayState,
+	normalizeChatMessageDisplay,
+	type ChatToolDisplay
+} from '$lib/shared/chat-display';
+
 export type UiThought = {
 	contentIndex: number;
 	text: string;
@@ -8,14 +15,7 @@ export type UiThought = {
 	startedAt?: number;
 };
 
-export type UiTool = {
-	contentIndex: number;
-	id: string;
-	name: string;
-	status: 'pending' | 'running' | 'completed' | 'failed';
-	startedAt?: number;
-	durationMs?: number;
-};
+export type UiTool = ChatToolDisplay;
 
 export type UiMessage = {
 	role: 'user' | 'assistant' | 'tool' | 'system';
@@ -136,44 +136,35 @@ export function normalizeServerTools(
 	existingTools: UiTool[] = [],
 	now = Date.now()
 ): UiTool[] {
-	if (!Array.isArray(tools)) return [];
+	const display = normalizeChatMessageDisplay({
+		role: 'assistant',
+		text: '',
+		thoughts: [],
+		tools: Array.isArray(tools) ? tools : []
+	});
+	const merged =
+		existingTools.length > 0
+			? mergeStoredChatMessageDisplayState(display, {
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: existingTools
+				})
+			: display;
+	const previousById = new Map(existingTools.map((tool) => [tool.id, tool]));
 
-	const previousByKey = new Map(
-		existingTools.map((tool) => [tool.id || String(tool.contentIndex), tool])
-	);
-
-	return tools.flatMap((tool): UiTool[] => {
-		if (!isRecord(tool) || typeof tool.contentIndex !== 'number') return [];
-		if (typeof tool.id !== 'string' || typeof tool.name !== 'string') return [];
-
-		const previous = previousByKey.get(tool.id) ?? previousByKey.get(String(tool.contentIndex));
-		const incomingStatus =
-			tool.status === 'running' ||
-			tool.status === 'completed' ||
-			tool.status === 'failed' ||
-			tool.status === 'pending'
-				? tool.status
-				: 'pending';
-		const status =
-			previous?.status === 'running' && incomingStatus === 'pending'
-				? previous.status
-				: previous?.status === 'completed' || previous?.status === 'failed'
-					? previous.status
-					: incomingStatus;
-		const durationMs = durationFromServer(tool.durationMs) ?? previous?.durationMs;
+	return merged.tools.map((tool) => {
+		const previous = previousById.get(tool.id);
+		const durationMs = tool.durationMs ?? previous?.durationMs;
 		const startedAt =
-			status === 'running' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : previous?.startedAt;
+			tool.startedAt ??
+			(tool.status === 'running' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : undefined);
 
-		return [
-			{
-				contentIndex: tool.contentIndex,
-				id: tool.id,
-				name: tool.name,
-				status,
-				...(startedAt !== undefined ? { startedAt } : {}),
-				...(durationMs !== undefined ? { durationMs } : {})
-			}
-		];
+		return {
+			...tool,
+			...(startedAt !== undefined ? { startedAt } : {}),
+			...(durationMs !== undefined ? { durationMs } : {})
+		};
 	});
 }
 
@@ -264,34 +255,16 @@ export function mergeToolIntoAssistant(
 	payload: Record<string, unknown>,
 	now = Date.now()
 ): UiMessage {
-	if (typeof payload.toolName !== 'string') return current;
-
-	const toolCallId = typeof payload.toolCallId === 'string' ? payload.toolCallId : payload.toolName;
-	const existingIndex = current.tools.findIndex((tool) => tool.id === toolCallId);
-	const previous = existingIndex >= 0 ? current.tools[existingIndex] : undefined;
-	const status =
-		payload.type === 'tool_execution_end'
-			? payload.isError === true
-				? 'failed'
-				: 'completed'
-			: 'running';
-	const startedAt = previous?.startedAt ?? now;
-	const durationMs =
-		status === 'running' ? previous?.durationMs : Math.max(0, now - (previous?.startedAt ?? startedAt));
-	const nextTool: UiTool = {
-		contentIndex: previous?.contentIndex ?? current.tools.length,
-		id: toolCallId,
-		name: payload.toolName,
-		status,
-		startedAt,
-		...(durationMs !== undefined ? { durationMs } : {})
+	const display = {
+		role: current.role,
+		text: current.text,
+		thoughts: current.thoughts,
+		tools: current.tools
 	};
-	const tools =
-		existingIndex >= 0
-			? current.tools.map((tool, index) => (index === existingIndex ? nextTool : tool))
-			: [...current.tools, nextTool];
+	const nextDisplay = applyToolEvent(display, payload, now);
+	if (nextDisplay === display) return current;
 
-	return { ...current, tools };
+	return { ...current, tools: nextDisplay.tools };
 }
 
 export function modelOptionsForProvider(provider: ChatProviderOption | undefined): ModelOption[] {

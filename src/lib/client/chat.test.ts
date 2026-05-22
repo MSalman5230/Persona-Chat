@@ -107,8 +107,13 @@ describe('chat client helpers', () => {
 			{ type: 'tool_execution_start', toolName: 'mcp_web_search', toolCallId: 'call-1' },
 			1000
 		);
-		const completed = mergeToolIntoAssistant(
+		const updated = mergeToolIntoAssistant(
 			running,
+			{ type: 'tool_execution_update', toolName: 'mcp_web_search', toolCallId: 'call-1' },
+			1500
+		);
+		const completed = mergeToolIntoAssistant(
+			updated,
 			{ type: 'tool_execution_end', toolName: 'mcp_web_search', toolCallId: 'call-1' },
 			2500
 		);
@@ -121,6 +126,26 @@ describe('chat client helpers', () => {
 				status: 'completed',
 				startedAt: 1000,
 				durationMs: 1500
+			}
+		]);
+	});
+
+	it('uses canonical failure and id fallback semantics for live tool events', () => {
+		const message: UiMessage = { role: 'assistant', text: '', thoughts: [], tools: [] };
+		const failed = mergeToolIntoAssistant(
+			message,
+			{ type: 'tool_execution_end', toolName: 'mcp_web_search', isError: true },
+			1000
+		);
+
+		expect(failed.tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'mcp_web_search',
+				name: 'mcp_web_search',
+				status: 'failed',
+				startedAt: 1000,
+				durationMs: 0
 			}
 		]);
 	});

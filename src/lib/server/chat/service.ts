@@ -6,6 +6,7 @@ import {
 	listChatMessages,
 	updateChatSession,
 	upsertChatMessages,
+	type ChatMessageInput,
 	type ChatMessageRow
 } from '$lib/server/repositories/chat';
 import {
@@ -89,7 +90,8 @@ export async function upsertAgentMessages(
 	sessionId: string,
 	messages: AgentMessage[],
 	historyCount: number,
-	thoughtTimings?: ThoughtTimingsByAssistant
+	thoughtTimings?: ThoughtTimingsByAssistant,
+	existingMessages?: Map<number, ChatMessageInput>
 ): Promise<void> {
 	const newMessages = messages.slice(historyCount);
 	let assistantIndex = -1;
@@ -97,9 +99,10 @@ export async function upsertAgentMessages(
 	await upsertChatMessages(
 		sessionId,
 		historyCount + 1,
-		newMessages.map((message) => {
+		newMessages.map((message, index) => {
 			const timings = message.role === 'assistant' ? thoughtTimings?.get(++assistantIndex) : undefined;
-			return normalizeAgentMessageForStorage(message, timings);
+			const sequence = historyCount + 1 + index;
+			return normalizeAgentMessageForStorage(message, timings, existingMessages?.get(sequence)?.display);
 		})
 	);
 }

@@ -1,4 +1,5 @@
 import { normalizeAgentEvent, normalizeAgentMessageForStorage } from '$lib/server/chat/display';
+import { applyToolEvent, normalizeChatMessageDisplay } from '$lib/shared/chat-display';
 import {
 	prepareChatTurn,
 	serializeChatMessages,
@@ -151,24 +152,16 @@ async function persistRunMessage(
 	sequence: number,
 	message: PersistedAgentMessage,
 	thoughtTimings?: Parameters<typeof normalizeAgentMessageForStorage>[1]
-) {
-	const stored = normalizeAgentMessageForStorage(message, thoughtTimings);
+): Promise<ChatMessageInput> {
+	const previousDisplay = liveRun.messageSnapshots.get(sequence)?.display;
+	const stored = normalizeAgentMessageForStorage(message, thoughtTimings, previousDisplay);
 	const input: ChatMessageInput = {
 		...stored,
 		display: stored.display as unknown as Record<string, unknown>
 	};
 	liveRun.messageSnapshots.set(sequence, input);
 	await upsertChatMessage(sessionId, sequence, input);
-}
-
-function eventString(payload: Record<string, unknown>, key: string): string | undefined {
-	const value = payload[key];
-	return typeof value === 'string' ? value : undefined;
-}
-
-function eventBoolean(payload: Record<string, unknown>, key: string): boolean | undefined {
-	const value = payload[key];
-	return typeof value === 'boolean' ? value : undefined;
+	return input;
 }
 
 function isUniqueViolation(cause: unknown): boolean {
@@ -180,47 +173,13 @@ export function mergeToolEventIntoStoredMessage(
 	payload: Record<string, unknown>,
 	now = Date.now()
 ): ChatMessageInput {
-	const toolName = eventString(payload, 'toolName');
-	if (!toolName) return message;
-
-	const toolCallId = eventString(payload, 'toolCallId') ?? toolName;
-	const status =
-		payload.type === 'tool_execution_end'
-			? eventBoolean(payload, 'isError') === true
-				? 'failed'
-				: 'completed'
-			: 'running';
-	const display = { ...(message.display ?? {}) };
-	const existingTools = Array.isArray(display.tools)
-		? (display.tools as Record<string, unknown>[])
-		: [];
-	const existingIndex = existingTools.findIndex((tool) => tool.id === toolCallId);
-	const previous = existingIndex >= 0 ? existingTools[existingIndex] : undefined;
-	const startedAt =
-		typeof previous?.startedAt === 'number' && Number.isFinite(previous.startedAt)
-			? previous.startedAt
-			: now;
-	const durationMs = status === 'running' ? previous?.durationMs : Math.max(0, now - startedAt);
-	const nextTool = {
-		contentIndex:
-			typeof previous?.contentIndex === 'number' ? previous.contentIndex : existingTools.length,
-		id: toolCallId,
-		name: toolName,
-		status,
-		startedAt,
-		...(typeof durationMs === 'number' ? { durationMs } : {})
-	};
-	const tools =
-		existingIndex >= 0
-			? existingTools.map((tool, index) => (index === existingIndex ? nextTool : tool))
-			: [...existingTools, nextTool];
+	const display = normalizeChatMessageDisplay(message.display);
+	const nextDisplay = applyToolEvent(display, payload, now);
+	if (nextDisplay === display) return message;
 
 	return {
 		...message,
-		display: {
-			...display,
-			tools
-		}
+		display: nextDisplay as unknown as Record<string, unknown>
 	};
 }
 
@@ -312,7 +271,7 @@ async function executeChatRun(
 			}
 
 			const timings = messageIsAssistant ? thoughtTimings.get(assistantIndex) : undefined;
-			const normalized = normalizeAgentEvent(event, timings);
+			let normalized = normalizeAgentEvent(event, timings);
 
 			if (
 				message &&
@@ -320,13 +279,27 @@ async function executeChatRun(
 					record.type === 'message_update' ||
 					record.type === 'message_end')
 			) {
-				await persistRunMessage(
+				const persisted = await persistRunMessage(
 					liveRun,
 					turn.chatSession.id,
 					currentSequence,
 					message,
 					timings
 				);
+				if (
+					normalized.message &&
+					typeof normalized.message === 'object' &&
+					!Array.isArray(normalized.message)
+				) {
+					normalized = {
+						...normalized,
+						message: {
+							...normalized.message,
+							text: persisted.contentText,
+							display: persisted.display
+						}
+					};
+				}
 			}
 
 			if (
@@ -345,7 +318,8 @@ async function executeChatRun(
 			turn.chatSession.id,
 			turn.runtime.session.messages as never,
 			turn.historyCount,
-			thoughtTimings
+			thoughtTimings,
+			liveRun.messageSnapshots
 		);
 		await updateChatRunStatus(liveRun.run.id, 'completed');
 		await publishSnapshot(liveRun, null);
