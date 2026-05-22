@@ -1,7 +1,6 @@
 import { createServerAgentSession } from '$lib/server/agent/runtime';
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import {
-	appendChatMessages,
 	createChatSession,
 	getChatSession,
 	listChatMessages,
@@ -84,24 +83,6 @@ export async function prepareChatTurn(input: {
 		runtime,
 		historyCount: history.length
 	};
-}
-
-export async function persistAgentMessages(
-	sessionId: string,
-	messages: AgentMessage[],
-	historyCount: number,
-	thoughtTimings?: ThoughtTimingsByAssistant
-): Promise<void> {
-	const newMessages = messages.slice(historyCount);
-	let assistantIndex = -1;
-
-	await appendChatMessages(
-		sessionId,
-		newMessages.map((message) => {
-			const timings = message.role === 'assistant' ? thoughtTimings?.get(++assistantIndex) : undefined;
-			return normalizeAgentMessageForStorage(message, timings);
-		})
-	);
 }
 
 export async function upsertAgentMessages(

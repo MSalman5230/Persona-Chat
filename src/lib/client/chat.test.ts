@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
 	clampTemperature,
 	chatThinkingSelectionFromServer,
-	consumeSseChunk,
 	formatDuration,
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
@@ -132,20 +131,6 @@ describe('chat client helpers', () => {
 		expect(formatDuration(65_000)).toBe('1m 05s');
 		expect(thoughtLabel({ contentIndex: 0, text: '', status: 'thinking', redacted: false, expanded: true, startedAt: 0 }, 2000)).toBe('Thinking... 2s');
 		expect(toolStatusLabel({ contentIndex: 0, id: 'x', name: 'mcp_file_search', status: 'running', startedAt: 0 }, 2000)).toBe('Using file search 2s');
-	});
-
-	it('parses complete SSE events and returns the partial buffer', () => {
-		const events: Array<[string, string]> = [];
-		const rest = consumeSseChunk(
-			'event: session\ndata: {"id":"1"}\n\nevent: event\ndata: {"type":"message_update"}\n\npartial',
-			(event, data) => events.push([event, data])
-		);
-
-		expect(rest).toBe('partial');
-		expect(events).toEqual([
-			['session', '{"id":"1"}'],
-			['event', '{"type":"message_update"}']
-		]);
 	});
 
 	it('limits chat model options to the default and favorites', () => {
