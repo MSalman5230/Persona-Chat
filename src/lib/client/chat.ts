@@ -1,6 +1,7 @@
 import {
 	applyToolEvent,
 	normalizeChatMessageDisplay,
+	reconcileToolStatus,
 	type ChatToolDisplay
 } from '$lib/shared/chat-display';
 
@@ -145,8 +146,7 @@ export function normalizeServerTools(
 
 	return incomingTools.map((tool) => {
 		const previous = previousById.get(tool.id);
-		const status =
-			previous?.status === 'running' && tool.status === 'pending' ? 'running' : tool.status;
+		const status = reconcileToolStatus(tool.status, previous?.status);
 		const durationMs = tool.durationMs ?? previous?.durationMs;
 		const startedAt =
 			tool.startedAt ??

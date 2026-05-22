@@ -4,6 +4,7 @@ import {
 	applyToolEvent,
 	mergeStoredChatMessageDisplayState,
 	normalizeChatMessageDisplay,
+	reconcileToolStatus,
 	type ChatMessageDisplay
 } from './chat-display';
 
@@ -128,5 +129,14 @@ describe('chat display helpers', () => {
 		);
 
 		expect(merged.tools[0]?.status).toBe('completed');
+	});
+
+	it('reconciles tool statuses without regressing terminal or running local state on pending echoes', () => {
+		expect(reconcileToolStatus('completed', 'running')).toBe('completed');
+		expect(reconcileToolStatus('failed', 'pending')).toBe('failed');
+		expect(reconcileToolStatus('pending', 'completed')).toBe('completed');
+		expect(reconcileToolStatus('pending', 'failed')).toBe('failed');
+		expect(reconcileToolStatus('pending', 'running')).toBe('running');
+		expect(reconcileToolStatus('running', 'pending')).toBe('running');
 	});
 });

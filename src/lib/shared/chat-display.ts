@@ -24,6 +24,22 @@ export type ChatMessageDisplay = {
 	tools: ChatToolDisplay[];
 };
 
+function isTerminalToolStatus(status: ChatToolStatus): boolean {
+	return status === 'completed' || status === 'failed';
+}
+
+export function reconcileToolStatus(
+	incomingStatus: ChatToolStatus,
+	previousStatus?: ChatToolStatus
+): ChatToolStatus {
+	if (isTerminalToolStatus(incomingStatus)) return incomingStatus;
+	if (incomingStatus === 'pending' && previousStatus && previousStatus !== 'pending') {
+		return previousStatus;
+	}
+
+	return incomingStatus;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return !!value && typeof value === 'object' && !Array.isArray(value);
 }

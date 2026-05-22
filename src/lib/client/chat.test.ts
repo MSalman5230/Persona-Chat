@@ -113,6 +113,60 @@ describe('chat client helpers', () => {
 		]);
 	});
 
+	it('keeps terminal tools terminal across pending server echoes', () => {
+		expect(
+			normalizeServerTools(
+				[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'pending' }],
+				[
+					{
+						contentIndex: 0,
+						id: 'tool-1',
+						name: 'mcp_search',
+						status: 'completed',
+						startedAt: 100,
+						durationMs: 400
+					}
+				],
+				1000
+			)
+		).toEqual([
+			{
+				contentIndex: 0,
+				id: 'tool-1',
+				name: 'mcp_search',
+				status: 'completed',
+				startedAt: 100,
+				durationMs: 400
+			}
+		]);
+
+		expect(
+			normalizeServerTools(
+				[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'pending' }],
+				[
+					{
+						contentIndex: 0,
+						id: 'tool-1',
+						name: 'mcp_search',
+						status: 'failed',
+						startedAt: 100,
+						durationMs: 400
+					}
+				],
+				1000
+			)
+		).toEqual([
+			{
+				contentIndex: 0,
+				id: 'tool-1',
+				name: 'mcp_search',
+				status: 'failed',
+				startedAt: 100,
+				durationMs: 400
+			}
+		]);
+	});
+
 	it('builds UI messages from display payloads', () => {
 		const message = uiMessageFromServer(
 			{
