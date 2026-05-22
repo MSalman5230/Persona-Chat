@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { SettingsModelOption, SupportedProviderOption } from '$lib/client/settings';
+	import SelectField from '$lib/components/common/SelectField.svelte';
 
 	const CUSTOM_PROVIDER_ID = '__custom__';
 
@@ -22,6 +23,13 @@
 	}: Props = $props();
 
 	const isCustomProvider = $derived(selectedProviderId === CUSTOM_PROVIDER_ID);
+	const providerSelectOptions = $derived([
+		...supportedProviders.map((provider) => ({ value: provider.id, label: provider.name })),
+		{ value: CUSTOM_PROVIDER_ID, label: 'Custom provider' }
+	]);
+	const defaultModelSelectOptions = $derived(
+		selectedSupportedModels.map((model) => ({ value: model.id, label: model.name }))
+	);
 </script>
 
 <form class="h-fit rounded-lg border border-border-subtle bg-surface-container-low p-4" method="POST" action="?/saveProvider">
@@ -34,16 +42,11 @@
 
 		<label class="space-y-1">
 			<span class="font-label-md text-label-md uppercase text-text-muted">Provider</span>
-			<select
-				class="settings-field"
+			<SelectField
 				value={selectedProviderId}
-				onchange={(event) => onSelectProvider((event.currentTarget as HTMLSelectElement).value)}
-			>
-				{#each supportedProviders as provider (provider.id)}
-					<option value={provider.id}>{provider.name}</option>
-				{/each}
-				<option value={CUSTOM_PROVIDER_ID}>Custom provider</option>
-			</select>
+				options={providerSelectOptions}
+				onChange={onSelectProvider}
+			/>
 		</label>
 
 		{#if isCustomProvider}
@@ -74,16 +77,12 @@
 		{:else}
 			<label class="space-y-1">
 				<span class="font-label-md text-label-md uppercase text-text-muted">Default Model</span>
-				<select
-					class="settings-field"
+				<SelectField
 					name="defaultModel"
 					value={selectedDefaultModel}
-					onchange={(event) => onSelectDefaultModel((event.currentTarget as HTMLSelectElement).value)}
-				>
-					{#each selectedSupportedModels as model (model.id)}
-						<option value={model.id}>{model.name}</option>
-					{/each}
-				</select>
+					options={defaultModelSelectOptions}
+					onChange={onSelectDefaultModel}
+				/>
 			</label>
 		{/if}
 

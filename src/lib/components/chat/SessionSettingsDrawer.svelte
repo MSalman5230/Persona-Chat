@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ChatThinkingSelection, SystemPromptPresetOption } from '$lib/client/chat';
+	import SelectField from '$lib/components/common/SelectField.svelte';
 
 	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -60,6 +61,16 @@
 	function optionLabel(value: ChatThinkingSelection): string {
 		return value === 'auto' ? 'Auto' : value;
 	}
+
+	const presetSelectOptions = $derived(
+		systemPromptPresets.map((preset) => ({
+			value: preset.id,
+			label: `${preset.isDefault ? 'Default - ' : ''}${preset.name}`
+		}))
+	);
+	const thinkingSelectOptions = $derived(
+		thinkingOptions.map((option) => ({ value: option, label: optionLabel(option) }))
+	);
 </script>
 
 <button
@@ -145,21 +156,14 @@
 							</button>
 						</div>
 					</div>
-					<select
+					<SelectField
 						id="system-prompt-preset"
-						class="h-10 w-full rounded-lg border border-border-subtle bg-surface-container px-3 font-body-sm text-body-sm text-text-primary outline-none transition-colors focus:border-outline"
 						value={selectedSystemPromptPresetId}
-						onchange={(event) =>
-							onSelectSystemPromptPreset((event.currentTarget as HTMLSelectElement).value)}
-						aria-label="System prompt preset"
-					>
-						<option value="">Custom</option>
-						{#each systemPromptPresets as preset (preset.id)}
-							<option value={preset.id}>
-								{preset.isDefault ? 'Default - ' : ''}{preset.name}
-							</option>
-						{/each}
-					</select>
+						options={presetSelectOptions}
+						placeholder="Custom"
+						ariaLabel="System prompt preset"
+						onChange={onSelectSystemPromptPreset}
+					/>
 				</div>
 
 				<label class="block space-y-2">
@@ -176,17 +180,12 @@
 
 			<label class="block space-y-2">
 				<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
-				<select
-					class="h-10 w-full rounded-lg border border-border-subtle bg-surface-container px-3 font-body-sm text-body-sm text-text-primary outline-none transition-colors focus:border-outline"
+				<SelectField
 					value={selectedThinking}
-					onchange={(event) =>
-						onThinkingChange((event.currentTarget as HTMLSelectElement).value as ChatThinkingSelection)}
-					aria-label="Thinking"
-				>
-					{#each thinkingOptions as option (option)}
-						<option value={option}>{optionLabel(option)}</option>
-					{/each}
-				</select>
+					options={thinkingSelectOptions}
+					ariaLabel="Thinking"
+					onChange={(value) => onThinkingChange(value as ChatThinkingSelection)}
+				/>
 			</label>
 
 			<div class="space-y-4">

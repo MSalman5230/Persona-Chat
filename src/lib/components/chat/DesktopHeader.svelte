@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import type { ChatProviderOption, ChatThinkingSelection, ModelOption } from '$lib/client/chat';
+	import SelectField from '$lib/components/common/SelectField.svelte';
 
 	interface Props {
 		providerOptions: ChatProviderOption[];
@@ -33,42 +34,42 @@
 	function optionLabel(value: ChatThinkingSelection): string {
 		return value === 'auto' ? 'Auto' : value;
 	}
+
+	const providerSelectOptions = $derived(
+		providerOptions.map((provider) => ({ value: provider.id, label: provider.name }))
+	);
+	const modelSelectOptions = $derived(
+		selectedModelOptions.map((model) => ({ value: model.id, label: model.name }))
+	);
+	const thinkingSelectOptions = $derived(
+		thinkingOptions.map((option) => ({ value: option, label: optionLabel(option) }))
+	);
 </script>
 
 <header class="sticky top-0 z-30 hidden h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-gutter backdrop-blur-md md:flex">
 	<div class="flex items-center gap-2">
-		<select
-			class="rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant"
+		<SelectField
+			class="w-auto max-w-44"
 			value={selectedProviderId}
-			onchange={(event) => onSelectProvider((event.currentTarget as HTMLSelectElement).value)}
-			aria-label="Provider"
-		>
-			{#each providerOptions as provider (provider.id)}
-				<option value={provider.id}>{provider.name}</option>
-			{/each}
-		</select>
-		<select
-			class="w-56 rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant disabled:opacity-50"
+			options={providerSelectOptions}
+			ariaLabel="Provider"
+			onChange={onSelectProvider}
+		/>
+		<SelectField
+			class="w-56"
 			value={selectedModel}
-			onchange={(event) => onSelectModel((event.currentTarget as HTMLSelectElement).value)}
-			aria-label="Model"
+			options={modelSelectOptions}
+			ariaLabel="Model"
 			disabled={selectedModelOptions.length === 0}
-		>
-			{#each selectedModelOptions as model (model.id)}
-				<option value={model.id}>{model.name}</option>
-			{/each}
-		</select>
-		<select
-			class="rounded border border-border-subtle bg-surface-container-high px-2.5 py-1 text-[13px] font-medium text-text-primary outline-none transition-colors hover:bg-surface-variant"
+			onChange={onSelectModel}
+		/>
+		<SelectField
+			class="w-auto"
 			value={selectedThinking}
-			onchange={(event) =>
-				onSelectThinking((event.currentTarget as HTMLSelectElement).value as ChatThinkingSelection)}
-			aria-label="Thinking"
-		>
-			{#each thinkingOptions as option (option)}
-				<option value={option}>{optionLabel(option)}</option>
-			{/each}
-		</select>
+			options={thinkingSelectOptions}
+			ariaLabel="Thinking"
+			onChange={(value) => onSelectThinking(value as ChatThinkingSelection)}
+		/>
 	</div>
 	<div class="flex items-center gap-1">
 		<button

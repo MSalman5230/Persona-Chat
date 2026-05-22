@@ -1,5 +1,6 @@
 <script lang="ts">
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import SelectField from '$lib/components/common/SelectField.svelte';
 	import {
 		defaultModelValue,
 		hasModel,
@@ -17,6 +18,12 @@
 	let { provider, supportedProviders }: Props = $props();
 	const catalogBacked = $derived(isCatalogBackedProvider(provider, supportedProviders));
 	const modelOptions = $derived(providerModelOptions(provider, supportedProviders));
+	const defaultModelSelectOptions = $derived([
+		...(provider.defaultModel && !hasModel(modelOptions, provider.defaultModel)
+			? [{ value: provider.defaultModel, label: provider.defaultModel }]
+			: []),
+		...modelOptions.map((model) => ({ value: model.id, label: model.name }))
+	]);
 
 	let deleteForm: HTMLFormElement | null = null;
 	let deleteConfirmationOpen = $state(false);
@@ -93,14 +100,11 @@
 		</label>
 		<label class="space-y-1">
 			<span class="font-label-md text-label-md uppercase text-text-muted">Default Model</span>
-			<select class="settings-field" name="defaultModel" value={defaultModelValue(provider, modelOptions)}>
-				{#if provider.defaultModel && !hasModel(modelOptions, provider.defaultModel)}
-					<option value={provider.defaultModel}>{provider.defaultModel}</option>
-				{/if}
-				{#each modelOptions as model (model.id)}
-					<option value={model.id}>{model.name}</option>
-				{/each}
-			</select>
+			<SelectField
+				name="defaultModel"
+				value={defaultModelValue(provider, modelOptions)}
+				options={defaultModelSelectOptions}
+			/>
 		</label>
 		<div class="space-y-2 sm:col-span-2">
 			<span class="font-label-md text-label-md uppercase text-text-muted">Models</span>
