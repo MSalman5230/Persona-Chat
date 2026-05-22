@@ -7,11 +7,11 @@ import {
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
-	normalizeServerTools,
 	thoughtLabel,
 	thinkingLevelForRequest,
 	toolStatusLabel,
 	uiMessageFromServer,
+	uiMessagesFromServerSnapshot,
 	type UiMessage
 } from './chat';
 
@@ -62,24 +62,6 @@ describe('chat client helpers', () => {
 		]);
 	});
 
-	it('keeps running tools running across pending server echoes', () => {
-		const tools = normalizeServerTools(
-			[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'pending' }],
-			[{ contentIndex: 0, id: 'tool-1', name: 'mcp_search', status: 'running', startedAt: 100 }],
-			500
-		);
-
-		expect(tools).toEqual([
-			{
-				contentIndex: 0,
-				id: 'tool-1',
-				name: 'mcp_search',
-				status: 'running',
-				startedAt: 100
-			}
-		]);
-	});
-
 	it('builds UI messages from display payloads', () => {
 		const message = uiMessageFromServer(
 			{
@@ -95,9 +77,22 @@ describe('chat client helpers', () => {
 		);
 
 		expect(message.role).toBe('assistant');
+		expect(message.id).toBeUndefined();
 		expect(message.text).toBe('hello');
 		expect(message.thoughts).toHaveLength(1);
 		expect(message.tools).toHaveLength(1);
+	});
+
+	it('preserves message ids across streaming payloads without ids', () => {
+		const message = uiMessageFromServer(
+			{
+				role: 'assistant',
+				display: { text: 'updated', thoughts: [], tools: [] }
+			},
+			{ id: 'message-1', role: 'assistant', text: '', thoughts: [], tools: [] }
+		);
+
+		expect(message.id).toBe('message-1');
 	});
 
 	it('merges streaming tool events into an assistant message', () => {
@@ -123,6 +118,148 @@ describe('chat client helpers', () => {
 				durationMs: 1500
 			}
 		]);
+	});
+
+	it('threads previous message state through snapshot normalization', () => {
+		const messages = uiMessagesFromServerSnapshot(
+			[
+				{
+					id: 'message-1',
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }]
+					}
+				}
+			],
+			[
+				{
+					id: 'message-1',
+					role: 'assistant',
+					text: '',
+					thoughts: [
+						{
+							contentIndex: 0,
+							text: 'Still thinking',
+							status: 'thinking',
+							redacted: false,
+							expanded: true,
+							startedAt: 1000
+						}
+					],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-1',
+							name: 'mcp_search',
+							status: 'completed',
+							startedAt: 1000,
+							durationMs: 1500
+						}
+					]
+				}
+			],
+			3000
+		);
+
+		expect(messages[0].thoughts).toEqual([
+			{
+				contentIndex: 0,
+				text: 'Still thinking',
+				status: 'thinking',
+				redacted: false,
+				expanded: true,
+				startedAt: 1000
+			}
+		]);
+		expect(messages[0].tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 1500
+			}
+		]);
+	});
+
+	it('matches snapshot messages by id before falling back to index', () => {
+		const messages = uiMessagesFromServerSnapshot(
+			[
+				{
+					id: 'message-b',
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: [{ contentIndex: 0, id: 'call-b', name: 'mcp_search', status: 'pending' }]
+					}
+				},
+				{
+					role: 'assistant',
+					display: {
+						text: '',
+						thoughts: [],
+						tools: [{ contentIndex: 0, id: 'call-index', name: 'mcp_lookup', status: 'pending' }]
+					}
+				}
+			],
+			[
+				{
+					id: 'message-a',
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: []
+				},
+				{
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-index',
+							name: 'mcp_lookup',
+							status: 'running',
+							startedAt: 2000
+						}
+					]
+				},
+				{
+					id: 'message-b',
+					role: 'assistant',
+					text: '',
+					thoughts: [],
+					tools: [
+						{
+							contentIndex: 0,
+							id: 'call-b',
+							name: 'mcp_search',
+							status: 'completed',
+							startedAt: 1000,
+							durationMs: 1500
+						}
+					]
+				}
+			],
+			3000
+		);
+
+		expect(messages[0].tools[0]).toMatchObject({
+			id: 'call-b',
+			status: 'completed',
+			startedAt: 1000,
+			durationMs: 1500
+		});
+		expect(messages[1].id).toBeUndefined();
+		expect(messages[1].tools[0]).toMatchObject({
+			id: 'call-index',
+			status: 'running',
+			startedAt: 2000
+		});
 	});
 
 	it('formats durations, thought labels, and tool labels', () => {

@@ -1,5 +1,4 @@
 import { createServerAgentSession } from '$lib/server/agent/runtime';
-import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import {
 	createChatSession,
 	getChatSession,
@@ -32,7 +31,7 @@ export async function prepareChatTurn(input: {
 }) {
 	const existing = input.sessionId ? await getChatSession(input.sessionId) : undefined;
 	const historyRows = existing ? await listChatMessages(existing.id) : [];
-	const history = historyRows.map((row) => row.piMessage as unknown as AgentMessage);
+	const history = historyRows.map((row) => row.piMessage);
 	const systemPrompt = input.systemPrompt ?? existing?.systemPrompt ?? '';
 	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
 	const thinkingLevel =
@@ -105,15 +104,14 @@ export async function upsertAgentMessages(
 }
 
 export function serializeChatMessage(message: ChatMessageRow): Record<string, unknown> {
-	const piMessage = message.piMessage as unknown as PersistedAgentMessage;
-	const display = hydrateChatMessageDisplay(piMessage, message.display);
+	const display = hydrateChatMessageDisplay(message.piMessage, message.display);
 
 	return {
 		id: message.id,
 		role: message.role,
 		text: display.text,
 		display,
-		...(typeof piMessage.toolName === 'string' ? { toolName: piMessage.toolName } : {}),
+		...(typeof message.piMessage.toolName === 'string' ? { toolName: message.piMessage.toolName } : {}),
 		createdAt: message.createdAt
 	};
 }

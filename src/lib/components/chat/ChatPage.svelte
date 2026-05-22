@@ -13,6 +13,7 @@
 		temperatureFromServer,
 		thinkingLevelForRequest,
 		uiMessageFromServer,
+		uiMessagesFromServerSnapshot,
 		type ChatThinkingSelection,
 		type ChatProviderOption,
 		type SystemPromptPresetOption,
@@ -537,9 +538,7 @@
 
 		if (eventName === 'snapshot') {
 			if (Array.isArray(payload.messages)) {
-				messages = payload.messages
-					.filter((item): item is Record<string, unknown> => isRecord(item))
-					.map((item) => uiMessageFromServer(item));
+				messages = uiMessagesFromServerSnapshot(payload.messages, messages);
 			}
 			setActiveRun(activeRunFromPayload(payload.activeRun));
 		}

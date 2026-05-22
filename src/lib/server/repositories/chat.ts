@@ -2,6 +2,8 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '$lib/server/db';
 import { chatMessages, chatRuns, chatSessions } from '$lib/server/db/schema';
+import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
+import type { ChatMessageDisplay } from '$lib/shared/chat-display';
 
 export type ChatSessionRow = typeof chatSessions.$inferSelect;
 export type ChatMessageRow = typeof chatMessages.$inferSelect;
@@ -11,9 +13,18 @@ export type ChatRunStatus = 'running' | 'completed' | 'failed' | 'interrupted';
 export type ChatMessageInput = {
 	role: string;
 	contentText: string;
-	piMessage: Record<string, unknown>;
-	display?: Record<string, unknown>;
+	piMessage: PersistedAgentMessage;
+	display?: ChatMessageDisplay;
 };
+
+function fallbackDisplay(message: ChatMessageInput): ChatMessageDisplay {
+	return {
+		role: message.role,
+		text: message.contentText,
+		thoughts: [],
+		tools: []
+	};
+}
 
 export async function listChatSessions(): Promise<ChatSessionRow[]> {
 	return db.select().from(chatSessions).orderBy(desc(chatSessions.updatedAt)).limit(30);
@@ -91,7 +102,7 @@ export async function upsertChatMessage(
 			role: message.role,
 			contentText: message.contentText,
 			piMessage: message.piMessage,
-			display: message.display ?? {}
+			display: message.display ?? fallbackDisplay(message)
 		})
 		.onConflictDoUpdate({
 			target: [chatMessages.sessionId, chatMessages.sequence],
@@ -99,7 +110,7 @@ export async function upsertChatMessage(
 				role: message.role,
 				contentText: message.contentText,
 				piMessage: message.piMessage,
-				display: message.display ?? {}
+				display: message.display ?? fallbackDisplay(message)
 			}
 		});
 	await db.update(chatSessions).set({ updatedAt: new Date() }).where(eq(chatSessions.id, sessionId));

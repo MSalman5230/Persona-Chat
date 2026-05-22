@@ -143,6 +143,39 @@ describe('chat service display helpers', () => {
 		});
 	});
 
+	it('hydrates stored-only tool display from placeholder assistant messages', () => {
+		const display = hydrateChatMessageDisplay(
+			{
+				role: 'assistant',
+				content: []
+			},
+			{
+				role: 'assistant',
+				text: '',
+				thoughts: [],
+				tools: [
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'mcp_search',
+						status: 'running',
+						startedAt: 1000
+					}
+				]
+			}
+		);
+
+		expect(display.tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'running',
+				startedAt: 1000
+			}
+		]);
+	});
+
 	it('does not expose redacted thinking signatures in normalized events', () => {
 		const message = {
 			role: 'assistant',

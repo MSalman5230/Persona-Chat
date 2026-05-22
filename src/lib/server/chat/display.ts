@@ -1,5 +1,23 @@
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import { isRecord } from '$lib/server/json';
+import {
+	createChatThoughtDisplay,
+	createChatToolDisplay,
+	normalizeDisplayDurationMs,
+	overlayStoredDisplay
+} from '$lib/shared/chat-display';
+import type {
+	ChatMessageDisplay,
+	ChatThoughtDisplay,
+	ChatToolDisplay
+} from '$lib/shared/chat-display';
+
+export type {
+	ChatMessageDisplay,
+	ChatThoughtDisplay,
+	ChatToolDisplay,
+	ChatToolStatus
+} from '$lib/shared/chat-display';
 
 export type AgentMessage = PersistedAgentMessage;
 
@@ -11,29 +29,6 @@ type AgentContentBlock = {
 	thinking?: string;
 	redacted?: boolean;
 	[key: string]: unknown;
-};
-
-export type ChatThoughtDisplay = {
-	contentIndex: number;
-	text: string;
-	status: 'thinking' | 'thought';
-	durationMs?: number;
-	redacted?: boolean;
-};
-
-export type ChatToolDisplay = {
-	contentIndex: number;
-	id: string;
-	name: string;
-	status: 'pending' | 'running' | 'completed' | 'failed';
-	durationMs?: number;
-};
-
-export type ChatMessageDisplay = {
-	role: string;
-	text: string;
-	thoughts: ChatThoughtDisplay[];
-	tools: ChatToolDisplay[];
 };
 
 export type ThoughtTiming = {
@@ -65,13 +60,8 @@ function messageText(message: AgentMessage): string {
 	return '';
 }
 
-function roundedDurationMs(value: unknown): number | undefined {
-	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined;
-	return Math.round(value);
-}
-
 function durationFromTiming(timing: ThoughtTiming | undefined): number | undefined {
-	const storedDuration = roundedDurationMs(timing?.durationMs);
+	const storedDuration = normalizeDisplayDurationMs(timing?.durationMs);
 	if (storedDuration !== undefined) return storedDuration;
 	if (typeof timing?.startedAt !== 'number') return undefined;
 	const end = typeof timing.endedAt === 'number' ? timing.endedAt : Date.now();
@@ -80,32 +70,6 @@ function durationFromTiming(timing: ThoughtTiming | undefined): number | undefin
 
 function thoughtStatusFromTiming(timing: ThoughtTiming | undefined): ChatThoughtDisplay['status'] {
 	return timing?.startedAt !== undefined && timing.endedAt === undefined ? 'thinking' : 'thought';
-}
-
-function storedThoughtsByIndex(storedDisplay: unknown): Map<number, Record<string, unknown>> {
-	const thoughts = isRecord(storedDisplay) ? storedDisplay.thoughts : undefined;
-	const result = new Map<number, Record<string, unknown>>();
-	if (!Array.isArray(thoughts)) return result;
-
-	for (const thought of thoughts) {
-		if (!isRecord(thought) || typeof thought.contentIndex !== 'number') continue;
-		result.set(thought.contentIndex, thought);
-	}
-
-	return result;
-}
-
-function storedToolsByIndex(storedDisplay: unknown): Map<number, Record<string, unknown>> {
-	const tools = isRecord(storedDisplay) ? storedDisplay.tools : undefined;
-	const result = new Map<number, Record<string, unknown>>();
-	if (!Array.isArray(tools)) return result;
-
-	for (const tool of tools) {
-		if (!isRecord(tool) || typeof tool.contentIndex !== 'number') continue;
-		result.set(tool.contentIndex, tool);
-	}
-
-	return result;
 }
 
 export function buildChatMessageDisplay(
@@ -120,13 +84,13 @@ export function buildChatMessageDisplay(
 			const redacted = block.redacted === true;
 			const durationMs = durationFromTiming(timing);
 
-			return {
+			return createChatThoughtDisplay({
 				contentIndex,
 				text: redacted ? '' : (block.thinking ?? ''),
 				status: thoughtStatusFromTiming(timing),
-				...(durationMs !== undefined ? { durationMs } : {}),
-				...(redacted ? { redacted: true } : {})
-			};
+				durationMs,
+				redacted
+			});
 		})
 		.filter((thought): thought is ChatThoughtDisplay => thought !== undefined);
 	const tools = blocks
@@ -135,12 +99,12 @@ export function buildChatMessageDisplay(
 				return undefined;
 			}
 
-			return {
+			return createChatToolDisplay({
 				contentIndex,
 				id: block.id,
 				name: block.name,
 				status: 'pending'
-			};
+			});
 		})
 		.filter((tool): tool is ChatToolDisplay => tool !== undefined);
 
@@ -156,40 +120,7 @@ export function hydrateChatMessageDisplay(
 	message: AgentMessage,
 	storedDisplay: unknown
 ): ChatMessageDisplay {
-	const display = buildChatMessageDisplay(message);
-	const storedThoughts = storedThoughtsByIndex(storedDisplay);
-	const storedTools = storedToolsByIndex(storedDisplay);
-
-	return {
-		...display,
-		thoughts: display.thoughts.map((thought) => {
-			const storedThought = storedThoughts.get(thought.contentIndex);
-			const status = storedThought?.status === 'thinking' ? 'thinking' : 'thought';
-			const durationMs = roundedDurationMs(storedThought?.durationMs);
-
-			return {
-				...thought,
-				status,
-				...(durationMs !== undefined ? { durationMs } : {})
-			};
-		}),
-		tools: display.tools.map((tool) => {
-			const storedTool = storedTools.get(tool.contentIndex);
-			const status =
-				storedTool?.status === 'pending' ||
-				storedTool?.status === 'running' ||
-				storedTool?.status === 'failed'
-					? storedTool.status
-					: 'completed';
-			const durationMs = roundedDurationMs(storedTool?.durationMs);
-
-			return {
-				...tool,
-				status,
-				...(durationMs !== undefined ? { durationMs } : {})
-			};
-		})
-	};
+	return overlayStoredDisplay(buildChatMessageDisplay(message), storedDisplay);
 }
 
 export function normalizeAgentMessageForStorage(
@@ -201,7 +132,7 @@ export function normalizeAgentMessageForStorage(
 	return {
 		role: message.role,
 		contentText: display.text,
-		piMessage: message as unknown as Record<string, unknown>,
+		piMessage: message,
 		display
 	};
 }

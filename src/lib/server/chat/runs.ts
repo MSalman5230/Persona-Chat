@@ -5,6 +5,10 @@ import {
 	upsertAgentMessages
 } from '$lib/server/chat/service';
 import {
+	applyToolEventToDisplay,
+	normalizeChatMessageDisplay
+} from '$lib/shared/chat-display';
+import {
 	createChatRun,
 	getActiveChatRunForSession,
 	listChatMessages,
@@ -153,22 +157,9 @@ async function persistRunMessage(
 	thoughtTimings?: Parameters<typeof normalizeAgentMessageForStorage>[1]
 ) {
 	const stored = normalizeAgentMessageForStorage(message, thoughtTimings);
-	const input: ChatMessageInput = {
-		...stored,
-		display: stored.display as unknown as Record<string, unknown>
-	};
+	const input: ChatMessageInput = stored;
 	liveRun.messageSnapshots.set(sequence, input);
 	await upsertChatMessage(sessionId, sequence, input);
-}
-
-function eventString(payload: Record<string, unknown>, key: string): string | undefined {
-	const value = payload[key];
-	return typeof value === 'string' ? value : undefined;
-}
-
-function eventBoolean(payload: Record<string, unknown>, key: string): boolean | undefined {
-	const value = payload[key];
-	return typeof value === 'boolean' ? value : undefined;
 }
 
 function isUniqueViolation(cause: unknown): boolean {
@@ -180,47 +171,16 @@ export function mergeToolEventIntoStoredMessage(
 	payload: Record<string, unknown>,
 	now = Date.now()
 ): ChatMessageInput {
-	const toolName = eventString(payload, 'toolName');
-	if (!toolName) return message;
-
-	const toolCallId = eventString(payload, 'toolCallId') ?? toolName;
-	const status =
-		payload.type === 'tool_execution_end'
-			? eventBoolean(payload, 'isError') === true
-				? 'failed'
-				: 'completed'
-			: 'running';
-	const display = { ...(message.display ?? {}) };
-	const existingTools = Array.isArray(display.tools)
-		? (display.tools as Record<string, unknown>[])
-		: [];
-	const existingIndex = existingTools.findIndex((tool) => tool.id === toolCallId);
-	const previous = existingIndex >= 0 ? existingTools[existingIndex] : undefined;
-	const startedAt =
-		typeof previous?.startedAt === 'number' && Number.isFinite(previous.startedAt)
-			? previous.startedAt
-			: now;
-	const durationMs = status === 'running' ? previous?.durationMs : Math.max(0, now - startedAt);
-	const nextTool = {
-		contentIndex:
-			typeof previous?.contentIndex === 'number' ? previous.contentIndex : existingTools.length,
-		id: toolCallId,
-		name: toolName,
-		status,
-		startedAt,
-		...(typeof durationMs === 'number' ? { durationMs } : {})
-	};
-	const tools =
-		existingIndex >= 0
-			? existingTools.map((tool, index) => (index === existingIndex ? nextTool : tool))
-			: [...existingTools, nextTool];
+	const display = normalizeChatMessageDisplay(message.display, {
+		role: message.role,
+		text: message.contentText
+	});
+	const nextDisplay = applyToolEventToDisplay(display, payload, now);
+	if (nextDisplay === display) return message;
 
 	return {
 		...message,
-		display: {
-			...display,
-			tools
-		}
+		display: nextDisplay
 	};
 }
 
