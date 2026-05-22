@@ -1,21 +1,23 @@
-export type UiThought = {
+import {
+	applyToolEventToDisplay,
+	mergeToolSnapshotStatus,
+	normalizeChatThoughtDisplay,
+	normalizeChatToolDisplay,
+	normalizeDisplayDurationMs,
+	normalizeDisplayTimestamp,
+	type ChatThoughtDisplay,
+	type ChatToolDisplay
+} from '$lib/shared/chat-display';
+
+export type UiThought = Omit<ChatThoughtDisplay, 'redacted'> & {
 	contentIndex: number;
 	text: string;
-	status: 'thinking' | 'thought';
-	durationMs?: number;
 	redacted: boolean;
 	expanded: boolean;
 	startedAt?: number;
 };
 
-export type UiTool = {
-	contentIndex: number;
-	id: string;
-	name: string;
-	status: 'pending' | 'running' | 'completed' | 'failed';
-	startedAt?: number;
-	durationMs?: number;
-};
+export type UiTool = ChatToolDisplay;
 
 export type UiMessage = {
 	role: 'user' | 'assistant' | 'tool' | 'system';
@@ -88,9 +90,7 @@ export function roleFromServer(role: unknown): UiMessage['role'] {
 }
 
 export function durationFromServer(value: unknown): number | undefined {
-	return typeof value === 'number' && Number.isFinite(value) && value >= 0
-		? Math.round(value)
-		: undefined;
+	return normalizeDisplayDurationMs(value);
 }
 
 export function normalizeServerThoughts(
@@ -105,22 +105,23 @@ export function normalizeServerThoughts(
 	);
 
 	return thoughts.flatMap((thought): UiThought[] => {
-		if (!isRecord(thought) || typeof thought.contentIndex !== 'number') return [];
+		const incoming = normalizeChatThoughtDisplay(thought);
+		if (!incoming) return [];
 
-		const previous = previousByIndex.get(thought.contentIndex);
-		const status = thought.status === 'thinking' ? 'thinking' : 'thought';
-		const durationMs = durationFromServer(thought.durationMs);
+		const previous = previousByIndex.get(incoming.contentIndex);
+		const status = incoming.status;
+		const durationMs = incoming.durationMs;
 		const wasThinking = previous?.status === 'thinking';
 		const expanded =
 			status === 'thinking' ? true : wasThinking ? false : (previous?.expanded ?? false);
 		const startedAt =
 			status === 'thinking' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : undefined;
-		const redacted = thought.redacted === true;
+		const redacted = incoming.redacted === true;
 
 		return [
 			{
-				contentIndex: thought.contentIndex,
-				text: redacted ? '' : typeof thought.text === 'string' ? thought.text : '',
+				contentIndex: incoming.contentIndex,
+				text: incoming.text,
 				status,
 				...(durationMs !== undefined ? { durationMs } : {}),
 				redacted,
@@ -143,32 +144,24 @@ export function normalizeServerTools(
 	);
 
 	return tools.flatMap((tool): UiTool[] => {
-		if (!isRecord(tool) || typeof tool.contentIndex !== 'number') return [];
-		if (typeof tool.id !== 'string' || typeof tool.name !== 'string') return [];
+		const incoming = normalizeChatToolDisplay(tool);
+		if (!incoming) return [];
 
-		const previous = previousByKey.get(tool.id) ?? previousByKey.get(String(tool.contentIndex));
-		const incomingStatus =
-			tool.status === 'running' ||
-			tool.status === 'completed' ||
-			tool.status === 'failed' ||
-			tool.status === 'pending'
-				? tool.status
-				: 'pending';
-		const status =
-			previous?.status === 'running' && incomingStatus === 'pending'
-				? previous.status
-				: previous?.status === 'completed' || previous?.status === 'failed'
-					? previous.status
-					: incomingStatus;
-		const durationMs = durationFromServer(tool.durationMs) ?? previous?.durationMs;
+		const previous =
+			previousByKey.get(incoming.id) ?? previousByKey.get(String(incoming.contentIndex));
+		const status = mergeToolSnapshotStatus(previous?.status, incoming.status);
+		const durationMs = incoming.durationMs ?? previous?.durationMs;
+		const incomingStartedAt = normalizeDisplayTimestamp(incoming.startedAt);
 		const startedAt =
-			status === 'running' ? (previous?.startedAt ?? now - (durationMs ?? 0)) : previous?.startedAt;
+			status === 'running'
+				? (previous?.startedAt ?? incomingStartedAt ?? now - (durationMs ?? 0))
+				: (incomingStartedAt ?? previous?.startedAt);
 
 		return [
 			{
-				contentIndex: tool.contentIndex,
-				id: tool.id,
-				name: tool.name,
+				contentIndex: incoming.contentIndex,
+				id: incoming.id,
+				name: incoming.name,
 				status,
 				...(startedAt !== undefined ? { startedAt } : {}),
 				...(durationMs !== undefined ? { durationMs } : {})
@@ -264,34 +257,7 @@ export function mergeToolIntoAssistant(
 	payload: Record<string, unknown>,
 	now = Date.now()
 ): UiMessage {
-	if (typeof payload.toolName !== 'string') return current;
-
-	const toolCallId = typeof payload.toolCallId === 'string' ? payload.toolCallId : payload.toolName;
-	const existingIndex = current.tools.findIndex((tool) => tool.id === toolCallId);
-	const previous = existingIndex >= 0 ? current.tools[existingIndex] : undefined;
-	const status =
-		payload.type === 'tool_execution_end'
-			? payload.isError === true
-				? 'failed'
-				: 'completed'
-			: 'running';
-	const startedAt = previous?.startedAt ?? now;
-	const durationMs =
-		status === 'running' ? previous?.durationMs : Math.max(0, now - (previous?.startedAt ?? startedAt));
-	const nextTool: UiTool = {
-		contentIndex: previous?.contentIndex ?? current.tools.length,
-		id: toolCallId,
-		name: payload.toolName,
-		status,
-		startedAt,
-		...(durationMs !== undefined ? { durationMs } : {})
-	};
-	const tools =
-		existingIndex >= 0
-			? current.tools.map((tool, index) => (index === existingIndex ? nextTool : tool))
-			: [...current.tools, nextTool];
-
-	return { ...current, tools };
+	return applyToolEventToDisplay(current, payload, now);
 }
 
 export function modelOptionsForProvider(provider: ChatProviderOption | undefined): ModelOption[] {

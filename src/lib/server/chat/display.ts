@@ -1,5 +1,23 @@
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import { isRecord } from '$lib/server/json';
+import {
+	normalizeChatToolDisplays,
+	normalizeDisplayDurationMs,
+	normalizeDisplayTimestamp,
+	normalizeStoredToolStatus
+} from '$lib/shared/chat-display';
+import type {
+	ChatMessageDisplay,
+	ChatThoughtDisplay,
+	ChatToolDisplay
+} from '$lib/shared/chat-display';
+
+export type {
+	ChatMessageDisplay,
+	ChatThoughtDisplay,
+	ChatToolDisplay,
+	ChatToolStatus
+} from '$lib/shared/chat-display';
 
 export type AgentMessage = PersistedAgentMessage;
 
@@ -11,29 +29,6 @@ type AgentContentBlock = {
 	thinking?: string;
 	redacted?: boolean;
 	[key: string]: unknown;
-};
-
-export type ChatThoughtDisplay = {
-	contentIndex: number;
-	text: string;
-	status: 'thinking' | 'thought';
-	durationMs?: number;
-	redacted?: boolean;
-};
-
-export type ChatToolDisplay = {
-	contentIndex: number;
-	id: string;
-	name: string;
-	status: 'pending' | 'running' | 'completed' | 'failed';
-	durationMs?: number;
-};
-
-export type ChatMessageDisplay = {
-	role: string;
-	text: string;
-	thoughts: ChatThoughtDisplay[];
-	tools: ChatToolDisplay[];
 };
 
 export type ThoughtTiming = {
@@ -65,13 +60,8 @@ function messageText(message: AgentMessage): string {
 	return '';
 }
 
-function roundedDurationMs(value: unknown): number | undefined {
-	if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return undefined;
-	return Math.round(value);
-}
-
 function durationFromTiming(timing: ThoughtTiming | undefined): number | undefined {
-	const storedDuration = roundedDurationMs(timing?.durationMs);
+	const storedDuration = normalizeDisplayDurationMs(timing?.durationMs);
 	if (storedDuration !== undefined) return storedDuration;
 	if (typeof timing?.startedAt !== 'number') return undefined;
 	const end = typeof timing.endedAt === 'number' ? timing.endedAt : Date.now();
@@ -159,13 +149,18 @@ export function hydrateChatMessageDisplay(
 	const display = buildChatMessageDisplay(message);
 	const storedThoughts = storedThoughtsByIndex(storedDisplay);
 	const storedTools = storedToolsByIndex(storedDisplay);
+	const hydratedToolIndexes = new Set(display.tools.map((tool) => tool.contentIndex));
+	const storedOnlyTools = normalizeChatToolDisplays(
+		isRecord(storedDisplay) ? storedDisplay.tools : undefined,
+		'completed'
+	).filter((tool) => !hydratedToolIndexes.has(tool.contentIndex));
 
 	return {
 		...display,
 		thoughts: display.thoughts.map((thought) => {
 			const storedThought = storedThoughts.get(thought.contentIndex);
 			const status = storedThought?.status === 'thinking' ? 'thinking' : 'thought';
-			const durationMs = roundedDurationMs(storedThought?.durationMs);
+			const durationMs = normalizeDisplayDurationMs(storedThought?.durationMs);
 
 			return {
 				...thought,
@@ -173,22 +168,22 @@ export function hydrateChatMessageDisplay(
 				...(durationMs !== undefined ? { durationMs } : {})
 			};
 		}),
-		tools: display.tools.map((tool) => {
-			const storedTool = storedTools.get(tool.contentIndex);
-			const status =
-				storedTool?.status === 'pending' ||
-				storedTool?.status === 'running' ||
-				storedTool?.status === 'failed'
-					? storedTool.status
-					: 'completed';
-			const durationMs = roundedDurationMs(storedTool?.durationMs);
+		tools: [
+			...display.tools.map((tool) => {
+				const storedTool = storedTools.get(tool.contentIndex);
+				const status = normalizeStoredToolStatus(storedTool?.status);
+				const startedAt = normalizeDisplayTimestamp(storedTool?.startedAt);
+				const durationMs = normalizeDisplayDurationMs(storedTool?.durationMs);
 
-			return {
-				...tool,
-				status,
-				...(durationMs !== undefined ? { durationMs } : {})
-			};
-		})
+				return {
+					...tool,
+					status,
+					...(startedAt !== undefined ? { startedAt } : {}),
+					...(durationMs !== undefined ? { durationMs } : {})
+				};
+			}),
+			...storedOnlyTools
+		]
 	};
 }
 
