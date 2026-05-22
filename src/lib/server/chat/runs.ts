@@ -17,7 +17,7 @@ import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import type { ThoughtTimingsByAssistant } from '$lib/server/chat/display';
 import {
 	applyToolEvent,
-	mergeChatMessageDisplay,
+	mergeLiveDisplay,
 	normalizeChatMessageDisplay
 } from '$lib/shared/chat-display';
 
@@ -158,7 +158,7 @@ async function persistRunMessage(
 	thoughtTimings?: Parameters<typeof normalizeAgentMessageForStorage>[1]
 ) {
 	const stored = normalizeAgentMessageForStorage(message, thoughtTimings);
-	const display = mergeChatMessageDisplay(
+	const display = mergeLiveDisplay(
 		stored.display,
 		liveRun.messageSnapshots.get(sequence)?.display
 	);

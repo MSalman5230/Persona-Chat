@@ -4,15 +4,16 @@
 		CHAT_THINKING_OPTIONS,
 		chatThinkingSelectionFromServer,
 		clampTemperature,
-		collapseMessagesForDisplay,
 		isRecord,
 		mergeToolIntoAssistant,
 		modelOptionsForProvider,
 		presetIdForPrompt,
+		projectVisibleMessages,
 		responseErrorMessage,
 		sortSystemPromptPresets,
 		temperatureFromServer,
 		thinkingLevelForRequest,
+		toggleThoughtsForVisibleMessage,
 		uiMessageFromServer,
 		type ChatThinkingSelection,
 		type ChatProviderOption,
@@ -126,7 +127,7 @@
 	const hasActiveTool = $derived(
 		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
 	);
-	const visibleMessages = $derived(collapseMessagesForDisplay(messages));
+	const visibleMessages = $derived(projectVisibleMessages(messages));
 	const currentTemperature = $derived(temperatureAuto ? null : clampTemperature(temperatureValue));
 	const selectedSystemPromptPreset = $derived(
 		systemPromptPresets.find((preset) => preset.id === selectedSystemPromptPresetId)
@@ -231,38 +232,8 @@
 		messages = [...messages, uiMessageFromServer(payload)];
 	}
 
-	function toggleThought(messageIndex: number, contentIndex: number) {
-		const visibleMessage = visibleMessages[messageIndex];
-		if (!visibleMessage?.thoughts.some((thought) => thought.contentIndex === contentIndex)) return;
-
-		const expanded = visibleMessage.thoughts.some((thought) => thought.expanded);
-		const sourceSequences = new Set(visibleMessage.sourceSequences ?? []);
-
-		if (sourceSequences.size === 0) {
-			let visibleIndex = -1;
-			for (const item of messages) {
-				if (item.role === 'tool') continue;
-				visibleIndex += 1;
-				if (visibleIndex !== messageIndex || item.role !== 'assistant') continue;
-				for (const thought of item.thoughts) {
-					thought.expanded = !expanded;
-				}
-				return;
-			}
-		}
-
-		for (const item of messages) {
-			if (item.role !== 'assistant') continue;
-			if (
-				sourceSequences.size > 0 &&
-				(item.sequence === undefined || !sourceSequences.has(item.sequence))
-			) {
-				continue;
-			}
-			for (const thought of item.thoughts) {
-				thought.expanded = !expanded;
-			}
-		}
+	function toggleThought(messageId: string, contentIndex: number) {
+		toggleThoughtsForVisibleMessage(messages, visibleMessages, messageId, contentIndex);
 	}
 
 	function openSettingsSidebar() {

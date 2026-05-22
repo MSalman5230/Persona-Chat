@@ -6,18 +6,18 @@
 		thoughtGroupForMessage,
 		thoughtGroupLabel,
 		toolStatusLabel,
-		type UiMessage
+		type VisibleMessage
 	} from '$lib/client/chat';
 	import MarkdownContent from './MarkdownContent.svelte';
 
 	interface Props {
 		hasProviders: boolean;
 		loadError: string | null;
-		messages: UiMessage[];
+		messages: VisibleMessage[];
 		errorText: string;
 		isStreaming: boolean;
 		now: number;
-		onToggleThought: (messageIndex: number, contentIndex: number) => void;
+		onToggleThought: (messageId: string, contentIndex: number) => void;
 	}
 
 	let {
@@ -53,13 +53,13 @@
 				</div>
 			</div>
 		{:else}
-			{#each messages as item, index (`${index}-${item.role}`)}
+			{#each messages as item (item.id)}
 				<article class={['message-row', item.role === 'user' ? 'justify-end' : 'justify-start']}>
 					<div class={['message-block', item.role]}>
 						{#if item.role === 'assistant'}
 							{#if item.tools.length > 0}
 								<div class="tool-stack" aria-label="Tool activity">
-									{#each item.tools as tool (tool.id)}
+									{#each item.tools as tool (tool.displayKey)}
 										<div class={['tool-row', tool.status]}>
 											<span class="material-symbols-outlined tool-icon" aria-hidden="true">
 												{tool.status === 'running' ? 'progress_activity' : tool.status === 'failed' ? 'error' : 'check_circle'}
@@ -78,8 +78,8 @@
 											type="button"
 											class="thought-toggle"
 											aria-expanded={thoughtGroup.expanded}
-											aria-controls={`thought-${index}-${thoughtGroup.contentIndex}`}
-											onclick={() => onToggleThought(index, thoughtGroup.contentIndex)}
+											aria-controls={`thought-${item.id}-${thoughtGroup.contentIndex}`}
+											onclick={() => onToggleThought(item.id, thoughtGroup.contentIndex)}
 										>
 											<span
 												class={['material-symbols-outlined thought-chevron', thoughtGroup.expanded ? 'expanded' : '']}
@@ -92,7 +92,7 @@
 
 										{#if thoughtGroup.expanded}
 											<div
-												id={`thought-${index}-${thoughtGroup.contentIndex}`}
+												id={`thought-${item.id}-${thoughtGroup.contentIndex}`}
 												class="thought-body"
 											>
 												{#each thoughtGroup.thoughts as thought (thought.contentIndex)}

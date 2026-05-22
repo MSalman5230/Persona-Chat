@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	applyToolEvent,
-	mergeChatMessageDisplay,
+	hydrateStoredDisplay,
+	mergeLiveDisplay,
+	mergeToolDisplays,
 	normalizeChatMessageDisplay
 } from './chat-display';
 
@@ -43,7 +45,7 @@ describe('chat display helpers', () => {
 	});
 
 	it('keeps running tools running across stale pending display echoes', () => {
-		const merged = mergeChatMessageDisplay(
+		const merged = mergeLiveDisplay(
 			{
 				role: 'assistant',
 				text: '',
@@ -75,7 +77,7 @@ describe('chat display helpers', () => {
 	});
 
 	it('preserves terminal tool statuses and stored-only live tool rows', () => {
-		const merged = mergeChatMessageDisplay(
+		const merged = mergeLiveDisplay(
 			{
 				role: 'assistant',
 				text: 'Done.',
@@ -121,6 +123,37 @@ describe('chat display helpers', () => {
 				startedAt: 1500,
 				durationMs: 700
 			}
+		]);
+	});
+
+	it('marks missing base tools completed while hydrating stored display', () => {
+		const display = hydrateStoredDisplay(
+			{
+				role: 'assistant',
+				text: 'Done.',
+				thoughts: [],
+				tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }]
+			},
+			{ role: 'assistant', text: 'Done.', thoughts: [], tools: [] }
+		);
+
+		expect(display.tools).toEqual([
+			{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'completed' }
+		]);
+	});
+
+	it('merges tool-only displays without dummy message wrappers', () => {
+		const tools = mergeToolDisplays(
+			[{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'pending' }],
+			[
+				{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'running', startedAt: 1000 },
+				{ contentIndex: 1, id: 'call-2', name: 'mcp_fetch', status: 'completed' }
+			]
+		);
+
+		expect(tools).toEqual([
+			{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'running', startedAt: 1000 },
+			{ contentIndex: 1, id: 'call-2', name: 'mcp_fetch', status: 'completed' }
 		]);
 	});
 

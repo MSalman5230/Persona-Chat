@@ -3,16 +3,17 @@ import { describe, expect, it } from 'vitest';
 import {
 	clampTemperature,
 	chatThinkingSelectionFromServer,
-	collapseMessagesForDisplay,
 	formatDuration,
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
 	normalizeServerTools,
+	projectVisibleMessages,
 	thoughtGroupForMessage,
 	thoughtGroupLabel,
 	thoughtLabel,
 	thinkingLevelForRequest,
+	toggleThoughtsForVisibleMessage,
 	toolStatusLabel,
 	uiMessageFromServer,
 	type UiMessage
@@ -221,7 +222,6 @@ describe('chat client helpers', () => {
 				role: 'assistant',
 				text: 'I will search.',
 				sequence: 2,
-				sourceSequences: [2],
 				thoughts: [
 					{
 						contentIndex: 0,
@@ -254,7 +254,6 @@ describe('chat client helpers', () => {
 				role: 'assistant',
 				text: 'Here is the answer.',
 				sequence: 4,
-				sourceSequences: [4],
 				thoughts: [
 					{
 						contentIndex: 0,
@@ -265,26 +264,44 @@ describe('chat client helpers', () => {
 						expanded: false
 					}
 				],
-				tools: []
+				tools: [
+					{
+						contentIndex: 1,
+						id: 'call-2',
+						name: 'mcp_fetch',
+						status: 'pending'
+					}
+				]
 			}
 		];
 
-		const collapsed = collapseMessagesForDisplay(messages);
+		const collapsed = projectVisibleMessages(messages);
 
 		expect(collapsed).toHaveLength(2);
 		expect(collapsed[1]).toMatchObject({
+			id: 'assistant:2+4',
 			role: 'assistant',
 			text: 'I will search.\n\nHere is the answer.',
+			sourceIndexes: [1, 3],
 			sourceSequences: [2, 4],
 			tools: [
-					{
-						id: 'call-1',
-						name: 'mcp_search',
-						status: 'completed',
-						durationMs: 0
-					}
-				]
-			});
+				{
+					contentIndex: 1,
+					id: 'call-1',
+					name: 'mcp_search',
+					status: 'completed',
+					durationMs: 0,
+					displayKey: 'call-1:1'
+				},
+				{
+					contentIndex: 3,
+					id: 'call-2',
+					name: 'mcp_fetch',
+					status: 'pending',
+					displayKey: 'call-2:3'
+				}
+			]
+		});
 		expect(collapsed[1].thoughts).toEqual([
 			{
 				contentIndex: 0,
@@ -303,6 +320,102 @@ describe('chat client helpers', () => {
 				expanded: false
 			}
 		]);
+	});
+
+	it('keeps repeated collapsed tool calls distinct by display key', () => {
+		const messages: UiMessage[] = [
+			{
+				role: 'assistant',
+				text: 'First tool.',
+				sequence: 1,
+				thoughts: [],
+				tools: [{ contentIndex: 0, id: 'call-1', name: 'mcp_search', status: 'completed' }]
+			},
+			{
+				role: 'assistant',
+				text: 'Second tool.',
+				sequence: 2,
+				thoughts: [],
+				tools: [{ contentIndex: 0, id: 'call-2', name: 'mcp_search', status: 'completed' }]
+			}
+		];
+
+		const collapsed = projectVisibleMessages(messages);
+
+		expect(collapsed).toHaveLength(1);
+		expect(collapsed[0].tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'mcp_search',
+				status: 'completed',
+				displayKey: 'call-1:0'
+			},
+			{
+				contentIndex: 1,
+				id: 'call-2',
+				name: 'mcp_search',
+				status: 'completed',
+				displayKey: 'call-2:1'
+			}
+		]);
+	});
+
+	it('toggles raw assistant thoughts through a visible collapsed message id', () => {
+		const messages: UiMessage[] = [
+			{ role: 'user', text: 'search', thoughts: [], tools: [], sequence: 1 },
+			{
+				role: 'assistant',
+				text: 'I will search.',
+				sequence: 2,
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Find the tool.',
+						status: 'thought',
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: [{ contentIndex: 1, id: 'call-1', name: 'mcp_search', status: 'completed' }]
+			},
+			{
+				role: 'tool',
+				text: '{"huge":"payload"}',
+				thoughts: [],
+				tools: [],
+				toolName: 'mcp_search',
+				toolCallId: 'call-1',
+				sequence: 3
+			},
+			{
+				role: 'assistant',
+				text: 'Here is the answer.',
+				sequence: 4,
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Summarize results.',
+						status: 'thought',
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: []
+			}
+		];
+		const visible = projectVisibleMessages(messages);
+
+		const changed = toggleThoughtsForVisibleMessage(
+			messages,
+			visible,
+			visible[1].id,
+			visible[1].thoughts[0].contentIndex
+		);
+
+		expect(changed).toBe(true);
+		expect(messages[1].thoughts[0].expanded).toBe(true);
+		expect(messages[3].thoughts[0].expanded).toBe(true);
 	});
 
 	it('formats durations, thought labels, and tool labels', () => {

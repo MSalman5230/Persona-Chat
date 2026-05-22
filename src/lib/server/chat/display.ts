@@ -1,7 +1,7 @@
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import { isRecord } from '$lib/server/json';
 import {
-	mergeChatMessageDisplay,
+	hydrateStoredDisplay,
 	roundedDurationMs,
 	type ChatMessageDisplay,
 	type ChatThoughtDisplay,
@@ -112,7 +112,7 @@ export function hydrateChatMessageDisplay(
 	storedDisplay: unknown
 ): ChatMessageDisplay {
 	const display = buildChatMessageDisplay(message);
-	return mergeChatMessageDisplay(display, storedDisplay, { missingToolStatus: 'completed' });
+	return hydrateStoredDisplay(display, storedDisplay);
 }
 
 export function normalizeAgentMessageForStorage(

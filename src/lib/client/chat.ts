@@ -1,6 +1,6 @@
 import {
 	applyToolEvent,
-	mergeChatMessageDisplay,
+	mergeToolDisplays,
 	normalizeChatMessageDisplay,
 	normalizeChatThoughts,
 	roundedDurationMs,
@@ -36,10 +36,20 @@ export type UiMessage = {
 	thoughts: UiThought[];
 	tools: UiTool[];
 	sequence?: number;
-	sourceSequences?: number[];
 	toolName?: string;
 	toolCallId?: string;
 	isError?: boolean;
+};
+
+export type VisibleTool = UiTool & {
+	displayKey: string;
+};
+
+export type VisibleMessage = Omit<UiMessage, 'tools'> & {
+	id: string;
+	sourceIndexes: number[];
+	sourceSequences: number[];
+	tools: VisibleTool[];
 };
 
 export type ModelOption = { id: string; name: string };
@@ -151,12 +161,9 @@ export function normalizeServerTools(
 ): UiTool[] {
 	if (!Array.isArray(tools)) return [];
 
-	const display = mergeChatMessageDisplay(
-		{ role: 'assistant', text: '', thoughts: [], tools },
-		{ role: 'assistant', text: '', thoughts: [], tools: existingTools }
-	);
+	const displayTools = mergeToolDisplays(tools, existingTools);
 
-	return display.tools.map((tool) => ({
+	return displayTools.map((tool) => ({
 		...tool,
 		startedAt:
 			tool.status === 'running'
@@ -183,9 +190,7 @@ export function uiMessageFromServer(
 		text,
 		thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts, now),
 		tools: normalizeServerTools(display?.tools, previous?.tools, now),
-		...(typeof payload.sequence === 'number'
-			? { sequence: payload.sequence, sourceSequences: [payload.sequence] }
-			: {}),
+		...(typeof payload.sequence === 'number' ? { sequence: payload.sequence } : {}),
 		...(typeof payload.toolName === 'string' ? { toolName: payload.toolName } : {}),
 		...(typeof payload.toolCallId === 'string' ? { toolCallId: payload.toolCallId } : {}),
 		...(typeof payload.isError === 'boolean' ? { isError: payload.isError } : {})
@@ -314,7 +319,7 @@ export function mergeToolIntoAssistant(
 	return { ...current, tools: display.tools };
 }
 
-function nextMergedContentIndex(message: UiMessage): number {
+function nextMergedContentIndex(message: Pick<UiMessage, 'thoughts' | 'tools'>): number {
 	const indexes = [...message.thoughts, ...message.tools].map((item) => item.contentIndex);
 	return indexes.length === 0 ? 0 : Math.max(...indexes) + 1;
 }
@@ -326,66 +331,145 @@ function reindexThoughts(thoughts: UiThought[], offset: number): UiThought[] {
 	}));
 }
 
-function mergeSourceSequences(first: UiMessage, second: UiMessage): number[] | undefined {
-	const sequences = [
-		...(first.sourceSequences ?? (first.sequence !== undefined ? [first.sequence] : [])),
-		...(second.sourceSequences ?? (second.sequence !== undefined ? [second.sequence] : []))
-	];
-	if (sequences.length === 0) return undefined;
-	return [...new Set(sequences)];
+function reindexTools(tools: UiTool[], offset: number): UiTool[] {
+	return tools.map((tool) => ({
+		...tool,
+		contentIndex: tool.contentIndex + offset
+	}));
 }
 
-function mergeAssistantMessages(first: UiMessage, second: UiMessage): UiMessage {
-	const text = [first.text, second.text].filter((item) => item.trim().length > 0).join('\n\n');
-	const thoughtOffset = nextMergedContentIndex(first);
-	const sourceSequences = mergeSourceSequences(first, second);
-	const toolsById = new Map(first.tools.map((tool) => [tool.id, tool]));
+function uniqueNumbers(values: number[]): number[] {
+	return [...new Set(values)];
+}
 
-	for (const tool of second.tools) {
-		toolsById.set(tool.id, tool);
-	}
+function visibleToolKey(tool: UiTool): string {
+	return `${tool.id}:${tool.contentIndex}`;
+}
 
+function visibleToolsFrom(tools: UiTool[]): VisibleTool[] {
+	return tools.map((tool) => ({
+		...tool,
+		displayKey: visibleToolKey(tool)
+	}));
+}
+
+function visibleMessageId(
+	role: VisibleMessage['role'],
+	sourceIndexes: number[],
+	sourceSequences: number[]
+): string {
+	const sourceKey =
+		sourceSequences.length > 0 && sourceSequences.length === sourceIndexes.length
+			? sourceSequences.join('+')
+			: `local:${sourceIndexes.join('+')}`;
+	return `${role}:${sourceKey}`;
+}
+
+function withVisibleIdentity(message: Omit<VisibleMessage, 'id'>): VisibleMessage {
 	return {
-		role: 'assistant',
-		text,
-		thoughts: [...first.thoughts, ...reindexThoughts(second.thoughts, thoughtOffset)],
-		tools: [...toolsById.values()],
-		...(sourceSequences ? { sourceSequences } : {})
+		...message,
+		id: visibleMessageId(message.role, message.sourceIndexes, message.sourceSequences)
 	};
 }
 
-export function collapseMessagesForDisplay(messages: UiMessage[]): UiMessage[] {
-	const result: UiMessage[] = [];
+function visibleMessageFromRaw(message: UiMessage, index: number): VisibleMessage {
+	return withVisibleIdentity({
+		...message,
+		sourceIndexes: [index],
+		sourceSequences: message.sequence !== undefined ? [message.sequence] : [],
+		tools: visibleToolsFrom(message.tools)
+	});
+}
 
-	for (const message of messages) {
+function mergeVisibleTools(first: VisibleTool[], second: VisibleTool[]): VisibleTool[] {
+	const toolsByKey = new Map<string, VisibleTool>();
+
+	for (const tool of [...first, ...second]) {
+		toolsByKey.set(tool.displayKey, tool);
+	}
+
+	return [...toolsByKey.values()];
+}
+
+function mergeAssistantMessages(first: VisibleMessage, second: VisibleMessage): VisibleMessage {
+	const text = [first.text, second.text].filter((item) => item.trim().length > 0).join('\n\n');
+	const offset = nextMergedContentIndex(first);
+	const thoughts = [...first.thoughts, ...reindexThoughts(second.thoughts, offset)];
+	const tools = mergeVisibleTools(first.tools, visibleToolsFrom(reindexTools(second.tools, offset)));
+
+	return withVisibleIdentity({
+		...first,
+		role: 'assistant',
+		text,
+		thoughts,
+		tools,
+		sourceIndexes: uniqueNumbers([...first.sourceIndexes, ...second.sourceIndexes]),
+		sourceSequences: uniqueNumbers([...first.sourceSequences, ...second.sourceSequences])
+	});
+}
+
+export function projectVisibleMessages(messages: UiMessage[]): VisibleMessage[] {
+	const result: VisibleMessage[] = [];
+
+	for (const [index, message] of messages.entries()) {
 		if (message.role === 'tool') {
 			const previous = result[result.length - 1];
 			if (previous?.role === 'assistant' && message.toolName) {
-				result[result.length - 1] = mergeToolIntoAssistant(previous, {
+				const merged = mergeToolIntoAssistant(previous, {
 					type: 'tool_execution_end',
 					toolName: message.toolName,
 					...(message.toolCallId ? { toolCallId: message.toolCallId } : {}),
 					...(message.isError !== undefined ? { isError: message.isError } : {})
 				});
+				result[result.length - 1] = withVisibleIdentity({
+					...previous,
+					tools: visibleToolsFrom(merged.tools)
+				});
 			}
 			continue;
 		}
 
+		const visibleMessage = visibleMessageFromRaw(message, index);
 		const previous = result[result.length - 1];
 		if (message.role === 'assistant' && previous?.role === 'assistant') {
-			result[result.length - 1] = mergeAssistantMessages(previous, message);
+			result[result.length - 1] = mergeAssistantMessages(previous, visibleMessage);
 			continue;
 		}
 
-		result.push({
-			...message,
-			...(message.sequence !== undefined && !message.sourceSequences
-				? { sourceSequences: [message.sequence] }
-				: {})
-		});
+		result.push(visibleMessage);
 	}
 
 	return result;
+}
+
+export function toggleThoughtsForVisibleMessage(
+	messages: UiMessage[],
+	visibleMessages: VisibleMessage[],
+	visibleMessageId: string,
+	contentIndex: number
+): boolean {
+	const visibleMessage = visibleMessages.find((item) => item.id === visibleMessageId);
+	if (
+		visibleMessage?.role !== 'assistant' ||
+		!visibleMessage.thoughts.some((thought) => thought.contentIndex === contentIndex)
+	) {
+		return false;
+	}
+
+	const expanded = visibleMessage.thoughts.some((thought) => thought.expanded);
+	let changed = false;
+
+	for (const sourceIndex of visibleMessage.sourceIndexes) {
+		const item = messages[sourceIndex];
+		if (item?.role !== 'assistant') continue;
+
+		for (const thought of item.thoughts) {
+			thought.expanded = !expanded;
+			changed = true;
+		}
+	}
+
+	return changed;
 }
 
 export function modelOptionsForProvider(provider: ChatProviderOption | undefined): ModelOption[] {

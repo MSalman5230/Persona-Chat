@@ -200,7 +200,30 @@ function mergeToolDisplay(
 	};
 }
 
-export function mergeChatMessageDisplay(
+export function mergeToolDisplays(
+	baseToolsInput: unknown,
+	storedToolsInput: unknown,
+	options: MergeChatDisplayOptions = {}
+): ChatToolDisplay[] {
+	const baseTools = normalizeChatTools(baseToolsInput);
+	const storedTools = normalizeChatTools(storedToolsInput);
+	const storedToolsByKey = toolsByKey(storedTools);
+	const mergedTools = baseTools.map((tool) =>
+		mergeToolDisplay(
+			tool,
+			storedToolsByKey.get(tool.id) ?? storedToolsByKey.get(String(tool.contentIndex)),
+			options.missingToolStatus
+		)
+	);
+	const mergedToolKeys = new Set(mergedTools.flatMap(toolKeys));
+	const storedOnlyTools = storedTools.filter((tool) =>
+		toolKeys(tool).every((key) => !mergedToolKeys.has(key))
+	);
+
+	return [...mergedTools, ...storedOnlyTools];
+}
+
+export function mergeLiveDisplay(
 	baseDisplay: unknown,
 	storedDisplay: unknown,
 	options: MergeChatDisplayOptions = {}
@@ -211,18 +234,6 @@ export function mergeChatMessageDisplay(
 		text: base.text
 	});
 	const storedThoughts = thoughtByIndex(stored.thoughts);
-	const storedTools = toolsByKey(stored.tools);
-	const mergedTools = base.tools.map((tool) =>
-		mergeToolDisplay(
-			tool,
-			storedTools.get(tool.id) ?? storedTools.get(String(tool.contentIndex)),
-			options.missingToolStatus
-		)
-	);
-	const mergedToolKeys = new Set(mergedTools.flatMap(toolKeys));
-	const storedOnlyTools = stored.tools.filter((tool) =>
-		toolKeys(tool).every((key) => !mergedToolKeys.has(key))
-	);
 
 	return {
 		role: base.role,
@@ -230,8 +241,12 @@ export function mergeChatMessageDisplay(
 		thoughts: base.thoughts.map((thought) =>
 			mergeThoughtDisplay(thought, storedThoughts.get(thought.contentIndex))
 		),
-		tools: [...mergedTools, ...storedOnlyTools]
+		tools: mergeToolDisplays(base.tools, stored.tools, options)
 	};
+}
+
+export function hydrateStoredDisplay(baseDisplay: unknown, storedDisplay: unknown): ChatMessageDisplay {
+	return mergeLiveDisplay(baseDisplay, storedDisplay, { missingToolStatus: 'completed' });
 }
 
 function eventString(payload: Record<string, unknown>, key: string): string | undefined {

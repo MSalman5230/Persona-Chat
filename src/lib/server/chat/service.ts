@@ -9,7 +9,7 @@ import {
 	type ChatMessageInput,
 	type ChatMessageRow
 } from '$lib/server/repositories/chat';
-import { mergeChatMessageDisplay } from '$lib/shared/chat-display';
+import { mergeLiveDisplay } from '$lib/shared/chat-display';
 import {
 	hydrateChatMessageDisplay,
 	normalizeAgentMessageForStorage,
@@ -106,7 +106,7 @@ export async function upsertAgentMessages(
 			const sequence = historyCount + index + 1;
 			const preservedDisplay = preservedDisplaysBySequence?.get(sequence);
 			const display = preservedDisplay
-				? mergeChatMessageDisplay(stored.display, preservedDisplay)
+				? mergeLiveDisplay(stored.display, preservedDisplay)
 				: stored.display;
 
 			return {
