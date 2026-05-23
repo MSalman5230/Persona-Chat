@@ -184,6 +184,31 @@ export function mergeToolEventIntoStoredMessage(
 	};
 }
 
+export function attachChatRunEventSequenceMetadata(
+	payload: Record<string, unknown>,
+	eventType: unknown,
+	sequence: number,
+	assistantSequence: number
+): Record<string, unknown> {
+	if (
+		eventType === 'message_start' ||
+		eventType === 'message_update' ||
+		eventType === 'message_end'
+	) {
+		return { ...payload, sequence };
+	}
+
+	if (
+		eventType === 'tool_execution_start' ||
+		eventType === 'tool_execution_update' ||
+		eventType === 'tool_execution_end'
+	) {
+		return { ...payload, assistantSequence };
+	}
+
+	return payload;
+}
+
 async function persistToolEvent(
 	liveRun: LiveChatRun,
 	sessionId: string,
@@ -272,7 +297,12 @@ async function executeChatRun(
 			}
 
 			const timings = messageIsAssistant ? thoughtTimings.get(assistantIndex) : undefined;
-			const normalized = normalizeAgentEvent(event, timings);
+			const normalized = attachChatRunEventSequenceMetadata(
+				normalizeAgentEvent(event, timings),
+				record.type,
+				currentSequence,
+				liveRun.lastAssistantSequence
+			);
 
 			if (
 				message &&

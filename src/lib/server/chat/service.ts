@@ -108,6 +108,7 @@ export function serializeChatMessage(message: ChatMessageRow): Record<string, un
 
 	return {
 		id: message.id,
+		sequence: message.sequence,
 		role: message.role,
 		text: display.text,
 		display,

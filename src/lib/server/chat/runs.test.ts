@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { applyToolEventToDisplay, type ChatMessageDisplay } from '$lib/shared/chat-display';
 import type { ChatMessageInput } from '$lib/server/repositories/chat';
 
-import { mergeToolEventIntoStoredMessage } from './runs';
+import { attachChatRunEventSequenceMetadata, mergeToolEventIntoStoredMessage } from './runs';
 
 describe('chat run helpers', () => {
 	it('merges tool execution progress into a stored assistant message', () => {
@@ -92,5 +92,27 @@ describe('chat run helpers', () => {
 		);
 
 		expect(updated).toBe(message);
+	});
+
+	it('attaches stable sequence metadata to streamed message and tool events', () => {
+		expect(
+			attachChatRunEventSequenceMetadata({ type: 'message_update' }, 'message_update', 12, 10)
+		).toEqual({
+			type: 'message_update',
+			sequence: 12
+		});
+
+		expect(
+			attachChatRunEventSequenceMetadata(
+				{ type: 'tool_execution_start', toolName: 'current_datetime' },
+				'tool_execution_start',
+				13,
+				12
+			)
+		).toEqual({
+			type: 'tool_execution_start',
+			toolName: 'current_datetime',
+			assistantSequence: 12
+		});
 	});
 });

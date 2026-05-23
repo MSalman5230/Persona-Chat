@@ -20,13 +20,35 @@ export type UiThought = Omit<ChatThoughtDisplay, 'redacted'> & {
 
 export type UiTool = ChatToolDisplay;
 
+export type UiTurnThought = UiThought & {
+	sourceKey: string;
+	thoughtKey: string;
+};
+
+export type UiTurnTool = UiTool & {
+	sourceKey: string;
+	toolKey: string;
+};
+
 export type UiMessage = {
 	id?: string;
+	sequence?: number;
+	clientKey: string;
 	role: 'user' | 'assistant' | 'tool' | 'system';
 	text: string;
 	thoughts: UiThought[];
 	tools: UiTool[];
 	toolName?: string;
+};
+
+export type UiConversationTurn = {
+	key: string;
+	user?: UiMessage;
+	systemMessages: UiMessage[];
+	assistantMessages: UiMessage[];
+	assistantText: string;
+	thoughts: UiTurnThought[];
+	tools: UiTurnTool[];
 };
 
 export type ModelOption = { id: string; name: string };
@@ -87,6 +109,38 @@ export function roleFromServer(role: unknown): UiMessage['role'] {
 	return 'user';
 }
 
+let localMessageCounter = 0;
+
+function sequenceFromServer(value: unknown): number | undefined {
+	return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function clientKeyFromServer(
+	payload: Record<string, unknown>,
+	previous: UiMessage | undefined,
+	role: UiMessage['role']
+): string {
+	if (previous?.clientKey) return previous.clientKey;
+	if (typeof payload.id === 'string') return `id:${payload.id}`;
+
+	const sequence = sequenceFromServer(payload.sequence);
+	if (sequence !== undefined) return `seq:${sequence}`;
+
+	localMessageCounter += 1;
+	return `local:${role}:${Date.now()}:${localMessageCounter}`;
+}
+
+export function createLocalUiMessage(role: UiMessage['role'], text = ''): UiMessage {
+	localMessageCounter += 1;
+	return {
+		clientKey: `local:${role}:${Date.now()}:${localMessageCounter}`,
+		role,
+		text,
+		thoughts: [],
+		tools: []
+	};
+}
+
 export function normalizeServerThoughts(
 	thoughts: unknown,
 	existingThoughts: UiThought[] = [],
@@ -145,6 +199,8 @@ export function uiMessageFromServer(
 	now = Date.now()
 ): UiMessage {
 	const display = isRecord(payload.display) ? payload.display : undefined;
+	const role = roleFromServer(payload.role);
+	const sequence = sequenceFromServer(payload.sequence) ?? previous?.sequence;
 	const text =
 		typeof display?.text === 'string'
 			? display.text
@@ -154,7 +210,9 @@ export function uiMessageFromServer(
 
 	return {
 		...(typeof payload.id === 'string' ? { id: payload.id } : previous?.id ? { id: previous.id } : {}),
-		role: roleFromServer(payload.role),
+		...(sequence !== undefined ? { sequence } : {}),
+		clientKey: clientKeyFromServer(payload, previous, role),
+		role,
 		text,
 		thoughts: normalizeServerThoughts(display?.thoughts, previous?.thoughts, now),
 		tools: mergeClientSnapshotTools(previous?.tools, display?.tools, now),
@@ -168,6 +226,8 @@ function uiMessageFromServerSnapshot(
 	now = Date.now()
 ): UiMessage {
 	const display = isRecord(payload.display) ? payload.display : undefined;
+	const role = roleFromServer(payload.role);
+	const sequence = sequenceFromServer(payload.sequence) ?? previous?.sequence;
 	const text =
 		typeof display?.text === 'string'
 			? display.text
@@ -177,7 +237,9 @@ function uiMessageFromServerSnapshot(
 
 	return {
 		...(typeof payload.id === 'string' ? { id: payload.id } : previous?.id ? { id: previous.id } : {}),
-		role: roleFromServer(payload.role),
+		...(sequence !== undefined ? { sequence } : {}),
+		clientKey: clientKeyFromServer(payload, previous, role),
+		role,
 		text,
 		thoughts: normalizeSnapshotThoughts(display?.thoughts, previous?.thoughts, now),
 		tools: mergeClientSnapshotTools(previous?.tools, display?.tools, now),
@@ -197,17 +259,62 @@ export function uiMessagesFromServerSnapshot(
 			message.id ? [[message.id, message]] : []
 		)
 	);
+	const previousBySequence = new Map(
+		previousMessages.flatMap((message): [number, UiMessage][] =>
+			message.sequence !== undefined ? [[message.sequence, message]] : []
+		)
+	);
 
 	return payloadMessages.flatMap((payload, index): UiMessage[] => {
 		if (!isRecord(payload)) return [];
 
+		const sequence = sequenceFromServer(payload.sequence);
 		const previous =
 			typeof payload.id === 'string'
-				? (previousById.get(payload.id) ?? previousMessages[index])
-				: previousMessages[index];
+				? (previousById.get(payload.id) ??
+					(sequence !== undefined ? previousBySequence.get(sequence) : undefined) ??
+					previousMessages[index])
+				: (sequence !== undefined ? previousBySequence.get(sequence) : undefined) ??
+					previousMessages[index];
 
 		return [uiMessageFromServerSnapshot(payload, previous, now)];
 	});
+}
+
+function matchingMessageIndex(messages: UiMessage[], payload: Record<string, unknown>): number {
+	const id = typeof payload.id === 'string' ? payload.id : undefined;
+	if (id) {
+		const index = messages.findIndex((message) => message.id === id);
+		if (index >= 0) return index;
+	}
+
+	const sequence = sequenceFromServer(payload.sequence);
+	if (sequence !== undefined) {
+		const index = messages.findIndex((message) => message.sequence === sequence);
+		if (index >= 0) return index;
+	}
+
+	const role = roleFromServer(payload.role);
+	if (role === 'assistant' || role === 'user') {
+		return messages.findLastIndex(
+			(message) => message.role === role && message.id === undefined && message.sequence === undefined
+		);
+	}
+
+	return -1;
+}
+
+export function upsertUiMessageFromServer(
+	messages: UiMessage[],
+	payload: Record<string, unknown>,
+	now = Date.now()
+): UiMessage[] {
+	const index = matchingMessageIndex(messages, payload);
+	const previous = index >= 0 ? messages[index] : undefined;
+	const next = uiMessageFromServer(payload, previous, now);
+
+	if (index < 0) return [...messages, next];
+	return messages.map((message, messageIndex) => (messageIndex === index ? next : message));
 }
 
 export function mergeToolIntoAssistant(
@@ -218,6 +325,100 @@ export function mergeToolIntoAssistant(
 	const display = applyToolEventToDisplay(message, payload, now);
 	if (display === message) return message;
 	return { ...message, tools: display.tools };
+}
+
+export function mergeToolEventIntoMessages(
+	messages: UiMessage[],
+	payload: Record<string, unknown>,
+	now = Date.now()
+): UiMessage[] {
+	const assistantSequence = sequenceFromServer(payload.assistantSequence);
+	const sequenceIndex =
+		assistantSequence === undefined
+			? -1
+			: messages.findIndex(
+					(message) => message.role === 'assistant' && message.sequence === assistantSequence
+				);
+	const index =
+		sequenceIndex >= 0 ? sequenceIndex : messages.findLastIndex((message) => message.role === 'assistant');
+
+	if (index < 0) return messages;
+
+	const next = mergeToolIntoAssistant(messages[index], payload, now);
+	if (next === messages[index]) return messages;
+	return messages.map((message, messageIndex) => (messageIndex === index ? next : message));
+}
+
+function emptyTurn(key: string): UiConversationTurn {
+	return {
+		key,
+		systemMessages: [],
+		assistantMessages: [],
+		assistantText: '',
+		thoughts: [],
+		tools: []
+	};
+}
+
+function appendAssistantToTurn(turn: UiConversationTurn, message: UiMessage): void {
+	turn.assistantMessages.push(message);
+	if (message.text.trim()) {
+		turn.assistantText = turn.assistantText ? `${turn.assistantText}\n\n${message.text}` : message.text;
+	}
+	turn.thoughts.push(
+		...message.thoughts.map((thought) => ({
+			...thought,
+			sourceKey: message.clientKey,
+			thoughtKey: `${message.clientKey}:thought:${thought.contentIndex}`
+		}))
+	);
+	turn.tools.push(
+		...message.tools.map((tool) => ({
+			...tool,
+			sourceKey: message.clientKey,
+			toolKey: `${message.clientKey}:tool:${tool.id || tool.contentIndex}`
+		}))
+	);
+}
+
+export function groupMessagesIntoConversationTurns(messages: UiMessage[]): UiConversationTurn[] {
+	const turns: UiConversationTurn[] = [];
+	let current: UiConversationTurn | undefined;
+
+	for (const message of messages) {
+		if (message.role === 'user') {
+			current = emptyTurn(`turn:${message.clientKey}`);
+			current.user = message;
+			turns.push(current);
+			continue;
+		}
+
+		if (message.role === 'tool') continue;
+
+		current ??= emptyTurn(`turn:${message.clientKey}`);
+		if (!turns.includes(current)) turns.push(current);
+
+		if (message.role === 'assistant') {
+			appendAssistantToTurn(current, message);
+		} else {
+			current.systemMessages.push(message);
+		}
+	}
+
+	return turns;
+}
+
+export function shouldShowAssistantTurnPlaceholder(
+	turn: UiConversationTurn,
+	isStreaming: boolean
+): boolean {
+	return (
+		isStreaming &&
+		turn.assistantMessages.length > 0 &&
+		turn.assistantText.length === 0 &&
+		turn.thoughts.length === 0 &&
+		turn.tools.length === 0
+	);
 }
 
 export function thoughtDurationMs(thought: UiThought, now = Date.now()): number | undefined {
@@ -268,6 +469,10 @@ export function toolStatusLabel(tool: UiTool, now = Date.now()): string {
 	if (tool.status === 'failed') return `Tool failed: ${formatToolName(tool.name)}`;
 	if (tool.status === 'completed') return `Used ${formatToolName(tool.name)}`;
 	return `Queued ${formatToolName(tool.name)}`;
+}
+
+export function toolActivityLabel(tool: UiTool): string {
+	return `tool:${tool.name}`;
 }
 
 export function shouldShowAssistantPlaceholder(item: UiMessage, isStreaming: boolean): boolean {

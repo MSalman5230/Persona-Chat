@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import {
-		formatToolName,
-		shouldShowAssistantPlaceholder,
+		groupMessagesIntoConversationTurns,
+		shouldShowAssistantTurnPlaceholder,
 		thoughtLabel,
-		toolStatusLabel,
+		toolActivityLabel,
 		type UiMessage
 	} from '$lib/client/chat';
 	import MarkdownContent from './MarkdownContent.svelte';
@@ -16,7 +16,7 @@
 		errorText: string;
 		isStreaming: boolean;
 		now: number;
-		onToggleThought: (messageIndex: number, contentIndex: number) => void;
+		onToggleThought: (sourceKey: string, contentIndex: number) => void;
 	}
 
 	let {
@@ -28,6 +28,8 @@
 		now,
 		onToggleThought
 	}: Props = $props();
+
+	let turns = $derived(groupMessagesIntoConversationTurns(messages));
 </script>
 
 <section class="custom-scrollbar flex flex-1 flex-col overflow-y-auto px-4 pb-48 pt-8 md:pb-44">
@@ -52,77 +54,82 @@
 				</div>
 			</div>
 		{:else}
-			{#each messages as item, index (`${index}-${item.role}`)}
-				<article class={['message-row', item.role === 'user' ? 'justify-end' : 'justify-start']}>
-					<div class={['message-block', item.role]}>
-						{#if item.role === 'assistant' && item.thoughts.length > 0}
-							<div class="thought-stack">
-								{#each item.thoughts as thought (thought.contentIndex)}
-									<div class={['thought-block', thought.status]}>
-										<button
-											type="button"
-											class="thought-toggle"
-											aria-expanded={thought.expanded}
-											aria-controls={`thought-${index}-${thought.contentIndex}`}
-											onclick={() => onToggleThought(index, thought.contentIndex)}
-										>
-											<span
-												class={['material-symbols-outlined thought-chevron', thought.expanded ? 'expanded' : '']}
-												aria-hidden="true"
+			{#each turns as turn, turnIndex (turn.key)}
+				{#if turn.user}
+					<article class="message-row justify-end">
+						<div class="message-block user">
+							<div class="message-text">{turn.user.text}</div>
+						</div>
+					</article>
+				{/if}
+
+				{#each turn.systemMessages as item (item.clientKey)}
+					<article class="message-row justify-start">
+						<div class="message-block system">
+							<div class="message-text">{item.text}</div>
+						</div>
+					</article>
+				{/each}
+
+				{#if turn.assistantMessages.length > 0}
+					<article class="message-row justify-start">
+						<div class="message-block assistant">
+							{#if turn.thoughts.length > 0 || turn.tools.length > 0}
+								<div class="activity-stack" aria-label="Thinking and tool activity">
+									{#each turn.thoughts as thought (thought.thoughtKey)}
+										<div class={['thought-block', thought.status]}>
+											<button
+												type="button"
+												class="thought-toggle"
+												aria-expanded={thought.expanded}
+												aria-controls={`thought-${turnIndex}-${thought.thoughtKey}`}
+												onclick={() => onToggleThought(thought.sourceKey, thought.contentIndex)}
 											>
-												expand_more
+												<span
+													class={['material-symbols-outlined thought-chevron', thought.expanded ? 'expanded' : '']}
+													aria-hidden="true"
+												>
+													expand_more
+												</span>
+												<span>{thoughtLabel(thought, now)}</span>
+											</button>
+
+											{#if thought.expanded}
+												<div
+													id={`thought-${turnIndex}-${thought.thoughtKey}`}
+													class="thought-body"
+												>
+													{#if thought.redacted}
+														<span class="thought-redacted">Thought redacted by provider</span>
+													{:else if thought.text.trim()}
+														{thought.text}
+													{:else if thought.status === 'thinking'}
+														<span class="thinking-cursor" aria-hidden="true"></span>
+													{/if}
+												</div>
+											{/if}
+										</div>
+									{/each}
+
+									{#each turn.tools as tool (tool.toolKey)}
+										<div class={['tool-row', tool.status]}>
+											<span class="material-symbols-outlined tool-icon" aria-hidden="true">
+												{tool.status === 'running' ? 'progress_activity' : tool.status === 'failed' ? 'error' : 'check_circle'}
 											</span>
-											<span>{thoughtLabel(thought, now)}</span>
-										</button>
-
-										{#if thought.expanded}
-											<div
-												id={`thought-${index}-${thought.contentIndex}`}
-												class="thought-body"
-											>
-												{#if thought.redacted}
-													<span class="thought-redacted">Thought redacted by provider</span>
-												{:else if thought.text.trim()}
-													{thought.text}
-												{:else if thought.status === 'thinking'}
-													<span class="thinking-cursor" aria-hidden="true"></span>
-												{/if}
-											</div>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-
-						{#if item.role === 'assistant' && item.tools.length > 0}
-							<div class="tool-stack" aria-label="Tool activity">
-								{#each item.tools as tool (tool.id)}
-									<div class={['tool-row', tool.status]}>
-										<span class="material-symbols-outlined tool-icon" aria-hidden="true">
-											{tool.status === 'running' ? 'progress_activity' : tool.status === 'failed' ? 'error' : 'check_circle'}
-										</span>
-										<span class="tool-label">{toolStatusLabel(tool, now)}</span>
-									</div>
-								{/each}
-							</div>
-						{/if}
-
-						{#if shouldShowAssistantPlaceholder(item, isStreaming)}
-							<span class="text-text-muted">...</span>
-						{:else if item.text.length > 0}
-							{#if item.role === 'assistant'}
-								<MarkdownContent class="message-text markdown-content" markdown={item.text} />
-							{:else if item.role === 'tool' && item.toolName}
-								<div class="message-text">
-									<span class="tool-result-label">{formatToolName(item.toolName)}</span>
-									{item.text}
+											<span class="tool-label">{toolActivityLabel(tool)}</span>
+										</div>
+									{/each}
 								</div>
-							{:else}
-								<div class="message-text">{item.text}</div>
 							{/if}
-						{/if}
-					</div>
-				</article>
+
+							{#if shouldShowAssistantTurnPlaceholder(turn, isStreaming && turnIndex === turns.length - 1)}
+								<span class="text-text-muted">...</span>
+							{:else if turn.assistantText.length > 0}
+								<MarkdownContent class="message-text markdown-content" markdown={turn.assistantText} />
+							{/if}
+						</div>
+					</article>
+				{/if}
 			{/each}
 		{/if}
 
@@ -285,7 +292,7 @@
 		color: var(--color-text-primary);
 	}
 
-	.thought-stack {
+	.activity-stack {
 		display: flex;
 		flex-direction: column;
 		gap: 0.5rem;
@@ -337,12 +344,6 @@
 		color: var(--color-on-surface-variant);
 		font-size: 14px;
 		line-height: 20px;
-	}
-
-	.tool-stack {
-		display: flex;
-		flex-direction: column;
-		gap: 0.375rem;
 	}
 
 	.tool-row {

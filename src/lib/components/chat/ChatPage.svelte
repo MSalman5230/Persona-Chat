@@ -4,8 +4,9 @@
 		CHAT_THINKING_OPTIONS,
 		chatThinkingSelectionFromServer,
 		clampTemperature,
+		createLocalUiMessage,
 		isRecord,
-		mergeToolIntoAssistant,
+		mergeToolEventIntoMessages,
 		modelOptionsForProvider,
 		presetIdForPrompt,
 		responseErrorMessage,
@@ -14,6 +15,7 @@
 		thinkingLevelForRequest,
 		uiMessageFromServer,
 		uiMessagesFromServerSnapshot,
+		upsertUiMessageFromServer,
 		type ChatThinkingSelection,
 		type ChatProviderOption,
 		type SystemPromptPresetOption,
@@ -215,13 +217,12 @@
 		settingsErrorText = '';
 	}
 
-	function replaceLastAssistantMessage(payload: Record<string, unknown>) {
-		const index = messages.length - 1;
-		if (index < 0) return;
-		messages[index] = uiMessageFromServer(payload, messages[index]);
+	function upsertStreamedMessage(payload: Record<string, unknown>) {
+		messages = upsertUiMessageFromServer(messages, payload);
 	}
 
-	function toggleThought(messageIndex: number, contentIndex: number) {
+	function toggleThought(sourceKey: string, contentIndex: number) {
+		const messageIndex = messages.findIndex((item) => item.clientKey === sourceKey);
 		const thought = messages[messageIndex]?.thoughts.find(
 			(item) => item.contentIndex === contentIndex
 		);
@@ -483,11 +484,8 @@
 		selectedThinking = value;
 	}
 
-	function mergeToolIntoLastAssistant(payload: Record<string, unknown>) {
-		const lastAssistantIndex = messages.findLastIndex((item) => item.role === 'assistant');
-		if (lastAssistantIndex < 0) return;
-
-		messages[lastAssistantIndex] = mergeToolIntoAssistant(messages[lastAssistantIndex], payload);
+	function mergeToolEvent(payload: Record<string, unknown>) {
+		messages = mergeToolEventIntoMessages(messages, payload);
 	}
 
 	function activeRunFromPayload(payload: unknown): ActiveRun | null {
@@ -546,7 +544,7 @@
 		if (eventName === 'event' && payload.type === 'message_update') {
 			const eventMessage = isRecord(payload.message) ? payload.message : undefined;
 			if (eventMessage?.role === 'assistant') {
-				replaceLastAssistantMessage(eventMessage);
+				upsertStreamedMessage({ ...eventMessage, sequence: payload.sequence });
 			}
 		}
 
@@ -556,13 +554,13 @@
 				payload.type === 'tool_execution_update' ||
 				payload.type === 'tool_execution_end')
 		) {
-			mergeToolIntoLastAssistant(payload);
+			mergeToolEvent(payload);
 		}
 
 		if (eventName === 'event' && payload.type === 'message_end') {
 			const eventMessage = isRecord(payload.message) ? payload.message : undefined;
 			if (eventMessage?.role === 'assistant') {
-				replaceLastAssistantMessage(eventMessage);
+				upsertStreamedMessage({ ...eventMessage, sequence: payload.sequence });
 			}
 		}
 
@@ -629,8 +627,8 @@
 		isStreaming = true;
 		messages = [
 			...messages,
-			{ role: 'user', text: prompt, thoughts: [], tools: [] },
-			{ role: 'assistant', text: '', thoughts: [], tools: [] }
+			createLocalUiMessage('user', prompt),
+			createLocalUiMessage('assistant')
 		];
 
 		await tick();

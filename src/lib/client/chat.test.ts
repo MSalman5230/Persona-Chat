@@ -3,15 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
 	clampTemperature,
 	chatThinkingSelectionFromServer,
+	createLocalUiMessage,
 	formatDuration,
+	groupMessagesIntoConversationTurns,
+	mergeToolEventIntoMessages,
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
 	thoughtLabel,
 	thinkingLevelForRequest,
+	toolActivityLabel,
 	toolStatusLabel,
 	uiMessageFromServer,
 	uiMessagesFromServerSnapshot,
+	upsertUiMessageFromServer,
 	type UiMessage
 } from './chat';
 
@@ -66,6 +71,7 @@ describe('chat client helpers', () => {
 		const message = uiMessageFromServer(
 			{
 				role: 'assistant',
+				sequence: 4,
 				display: {
 					text: 'hello',
 					thoughts: [{ contentIndex: 0, text: 'plan', status: 'thought' }],
@@ -78,6 +84,8 @@ describe('chat client helpers', () => {
 
 		expect(message.role).toBe('assistant');
 		expect(message.id).toBeUndefined();
+		expect(message.sequence).toBe(4);
+		expect(message.clientKey).toBe('seq:4');
 		expect(message.text).toBe('hello');
 		expect(message.thoughts).toHaveLength(1);
 		expect(message.tools).toHaveLength(1);
@@ -89,14 +97,15 @@ describe('chat client helpers', () => {
 				role: 'assistant',
 				display: { text: 'updated', thoughts: [], tools: [] }
 			},
-			{ id: 'message-1', role: 'assistant', text: '', thoughts: [], tools: [] }
+			{ id: 'message-1', clientKey: 'id:message-1', role: 'assistant', text: '', thoughts: [], tools: [] }
 		);
 
 		expect(message.id).toBe('message-1');
+		expect(message.clientKey).toBe('id:message-1');
 	});
 
 	it('merges streaming tool events into an assistant message', () => {
-		const message: UiMessage = { role: 'assistant', text: '', thoughts: [], tools: [] };
+		const message: UiMessage = { clientKey: 'assistant-1', role: 'assistant', text: '', thoughts: [], tools: [] };
 		const running = mergeToolIntoAssistant(
 			message,
 			{ type: 'tool_execution_start', toolName: 'mcp_web_search', toolCallId: 'call-1' },
@@ -136,6 +145,7 @@ describe('chat client helpers', () => {
 			[
 				{
 					id: 'message-1',
+					clientKey: 'id:message-1',
 					role: 'assistant',
 					text: '',
 					thoughts: [
@@ -209,12 +219,14 @@ describe('chat client helpers', () => {
 			[
 				{
 					id: 'message-a',
+					clientKey: 'id:message-a',
 					role: 'assistant',
 					text: '',
 					thoughts: [],
 					tools: []
 				},
 				{
+					clientKey: 'local:assistant:index',
 					role: 'assistant',
 					text: '',
 					thoughts: [],
@@ -230,6 +242,7 @@ describe('chat client helpers', () => {
 				},
 				{
 					id: 'message-b',
+					clientKey: 'id:message-b',
 					role: 'assistant',
 					text: '',
 					thoughts: [],
@@ -262,12 +275,160 @@ describe('chat client helpers', () => {
 		});
 	});
 
+	it('preserves optimistic client keys when snapshots add server identity', () => {
+		const optimistic = createLocalUiMessage('assistant');
+		const messages = uiMessagesFromServerSnapshot(
+			[
+				{
+					id: 'message-2',
+					sequence: 2,
+					role: 'assistant',
+					display: { text: 'hello', thoughts: [], tools: [] }
+				}
+			],
+			[optimistic],
+			3000
+		);
+
+		expect(messages[0]).toMatchObject({
+			id: 'message-2',
+			sequence: 2,
+			clientKey: optimistic.clientKey,
+			text: 'hello'
+		});
+	});
+
+	it('updates assistant messages by sequence instead of the last row', () => {
+		const messages: UiMessage[] = [
+			{ clientKey: 'user-1', sequence: 1, role: 'user', text: 'time?', thoughts: [], tools: [] },
+			{ clientKey: 'assistant-2', sequence: 2, role: 'assistant', text: '', thoughts: [], tools: [] },
+			{
+				clientKey: 'tool-3',
+				sequence: 3,
+				role: 'tool',
+				text: '{"local":"7:15 PM"}',
+				thoughts: [],
+				tools: [],
+				toolName: 'current_datetime'
+			}
+		];
+
+		const updated = upsertUiMessageFromServer(messages, {
+			role: 'assistant',
+			sequence: 2,
+			display: { text: 'I checked the clock.', thoughts: [], tools: [] }
+		});
+
+		expect(updated[1]).toMatchObject({
+			clientKey: 'assistant-2',
+			sequence: 2,
+			text: 'I checked the clock.'
+		});
+		expect(updated[2].text).toBe('{"local":"7:15 PM"}');
+	});
+
+	it('merges tool events into the assistant sequence that requested them', () => {
+		const messages: UiMessage[] = [
+			{ clientKey: 'assistant-2', sequence: 2, role: 'assistant', text: '', thoughts: [], tools: [] },
+			{ clientKey: 'tool-3', sequence: 3, role: 'tool', text: 'tool output', thoughts: [], tools: [] },
+			{ clientKey: 'assistant-4', sequence: 4, role: 'assistant', text: '', thoughts: [], tools: [] }
+		];
+
+		const updated = mergeToolEventIntoMessages(
+			messages,
+			{
+				type: 'tool_execution_start',
+				toolName: 'current_datetime',
+				toolCallId: 'call-1',
+				assistantSequence: 2
+			},
+			1000
+		);
+
+		expect(updated[0].tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'current_datetime',
+				status: 'running',
+				startedAt: 1000
+			}
+		]);
+		expect(updated[2].tools).toEqual([]);
+	});
+
+	it('groups one user message with multiple assistant turns and hides tool output rows', () => {
+		const turns = groupMessagesIntoConversationTurns([
+			{ clientKey: 'user-1', sequence: 1, role: 'user', text: 'time?', thoughts: [], tools: [] },
+			{
+				clientKey: 'assistant-2',
+				sequence: 2,
+				role: 'assistant',
+				text: '',
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Need current time.',
+						status: 'thought',
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: [
+					{
+						contentIndex: 1,
+						id: 'call-1',
+						name: 'current_datetime',
+						status: 'completed',
+						durationMs: 500
+					}
+				]
+			},
+			{
+				clientKey: 'tool-3',
+				sequence: 3,
+				role: 'tool',
+				text: '{"local":"7:15 PM"}',
+				thoughts: [],
+				tools: [],
+				toolName: 'current_datetime'
+			},
+			{
+				clientKey: 'assistant-4',
+				sequence: 4,
+				role: 'assistant',
+				text: 'It is 7:15 PM.',
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Summarize the result.',
+						status: 'thought',
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: []
+			}
+		]);
+
+		expect(turns).toHaveLength(1);
+		expect(turns[0].user?.text).toBe('time?');
+		expect(turns[0].assistantText).toBe('It is 7:15 PM.');
+		expect(turns[0].thoughts.map((thought) => thought.text)).toEqual([
+			'Need current time.',
+			'Summarize the result.'
+		]);
+		expect(turns[0].tools.map(toolActivityLabel)).toEqual(['tool:current_datetime']);
+		expect(JSON.stringify(turns[0])).not.toContain('7:15 PM"}');
+	});
+
 	it('formats durations, thought labels, and tool labels', () => {
 		expect(formatDuration(undefined)).toBe('');
 		expect(formatDuration(900)).toBe('<1s');
 		expect(formatDuration(65_000)).toBe('1m 05s');
 		expect(thoughtLabel({ contentIndex: 0, text: '', status: 'thinking', redacted: false, expanded: true, startedAt: 0 }, 2000)).toBe('Thinking... 2s');
 		expect(toolStatusLabel({ contentIndex: 0, id: 'x', name: 'mcp_file_search', status: 'running', startedAt: 0 }, 2000)).toBe('Using file search 2s');
+		expect(toolActivityLabel({ contentIndex: 0, id: 'x', name: 'current_datetime', status: 'running' })).toBe('tool:current_datetime');
 	});
 
 	it('limits chat model options to the default and favorites', () => {
