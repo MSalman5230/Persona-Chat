@@ -3,9 +3,11 @@ import { env } from '$env/dynamic/private';
 
 import { encryptJson } from '$lib/server/crypto';
 import {
+	resolveProviderConnectionViews,
 	resolveProviderConnectionView,
 	serializeProviderView,
 	type ProviderConnectionRow,
+	type UserProviderContext,
 	type UserProviderPreferenceRow
 } from './providers';
 
@@ -62,6 +64,18 @@ function preferenceRow(
 		createdAt: now,
 		updatedAt: now,
 		...overrides
+	};
+}
+
+function userProviderContext(
+	preferences: UserProviderPreferenceRow[] = []
+): UserProviderContext {
+	return {
+		preferencesByProvider: new Map(
+			preferences.map((preference) => [preference.providerConnectionId, preference])
+		),
+		userDefaultProviderId:
+			preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null
 	};
 }
 
@@ -140,5 +154,67 @@ describe('resolveProviderConnectionView', () => {
 			hasHeaders: true,
 			secretPreview: '••••'
 		});
+	});
+});
+
+describe('resolveProviderConnectionViews', () => {
+	it('marks the visible user default provider as effective default', () => {
+		const globalDefault = providerRow({
+			id: '00000000-0000-4000-8000-000000000011',
+			isDefault: true
+		});
+		const userDefault = providerRow({
+			id: '00000000-0000-4000-8000-000000000022',
+			isDefault: false
+		});
+		const views = resolveProviderConnectionViews(
+			[globalDefault, userDefault],
+			userProviderContext([
+				preferenceRow({
+					providerConnectionId: userDefault.id,
+					isDefault: true
+				})
+			])
+		);
+
+		expect(views.find((view) => view.provider.id === globalDefault.id)?.effective.isDefault).toBe(
+			false
+		);
+		expect(views.find((view) => view.provider.id === userDefault.id)?.effective.isDefault).toBe(
+			true
+		);
+	});
+
+	it('uses the global default provider when the user has no default provider', () => {
+		const globalDefault = providerRow({ isDefault: true });
+		const views = resolveProviderConnectionViews(
+			[globalDefault],
+			userProviderContext([preferenceRow({ isDefault: false })])
+		);
+
+		expect(views[0].effective.isDefault).toBe(true);
+	});
+
+	it('restores the global default when the user default is not in the visible rows', () => {
+		const globalDefault = providerRow({
+			id: '00000000-0000-4000-8000-000000000011',
+			isDefault: true
+		});
+		const hiddenUserDefault = providerRow({
+			id: '00000000-0000-4000-8000-000000000022',
+			enabled: false,
+			isDefault: false
+		});
+		const views = resolveProviderConnectionViews(
+			[globalDefault],
+			userProviderContext([
+				preferenceRow({
+					providerConnectionId: hiddenUserDefault.id,
+					isDefault: true
+				})
+			])
+		);
+
+		expect(views[0].effective.isDefault).toBe(true);
 	});
 });

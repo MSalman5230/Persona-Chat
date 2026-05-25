@@ -2,7 +2,8 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 import { authenticatedUser } from '$lib/server/auth-guard';
-import { booleanFromForm, stringFromForm } from '$lib/server/forms';
+import { booleanFromForm, stringFromForm, stringsFromForm } from '$lib/server/forms';
+import { runtimeResourceFilter } from '$lib/server/resource-policy';
 import {
 	createAgent,
 	deleteAgent,
@@ -12,10 +13,6 @@ import {
 	updateAgentDefault
 } from '$lib/server/repositories/agents';
 import { listMcpServers } from '$lib/server/repositories/mcp';
-
-function stringsFromForm(form: FormData, key: string): string[] {
-	return form.getAll(key).filter((value): value is string => typeof value === 'string');
-}
 
 function agentInputFromForm(form: FormData) {
 	return {
@@ -33,7 +30,7 @@ export const load: PageServerLoad = async (event) => {
 		return {
 			agents: await listAgents(user.id),
 			agentTools: listAvailableAgentTools(),
-			mcpServers: await listMcpServers({ enabledOnly: true }),
+			mcpServers: await listMcpServers(runtimeResourceFilter()),
 			loadError: null
 		};
 	} catch (error) {

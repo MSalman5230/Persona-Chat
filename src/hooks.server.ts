@@ -3,7 +3,7 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { isAuthPath, svelteKitHandler } from 'better-auth/svelte-kit';
 
 import { auth } from '$lib/server/auth';
-import { isAdminRole } from '$lib/server/auth-role';
+import { userHasAdminPermission } from '$lib/server/auth-permissions';
 
 const PUBLIC_PAGE_PATHS = new Set(['/login', '/signup']);
 
@@ -38,7 +38,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		if (session) {
 			event.locals.session = session.session;
 			event.locals.user = session.user;
-			event.locals.isAdmin = isAdminRole(session.user.role);
+			event.locals.isAdmin = await userHasAdminPermission(session.user.role);
 		}
 	}
 

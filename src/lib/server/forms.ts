@@ -13,6 +13,10 @@ export function booleanFromForm(form: FormData, key: string, fallback = false): 
 	return ['1', 'true', 'yes', 'on'].includes(value);
 }
 
+export function stringsFromForm(form: FormData, key: string): string[] {
+	return form.getAll(key).filter((value): value is string => typeof value === 'string');
+}
+
 export function listFromLines(value: string | undefined): string[] {
 	return (value ?? '')
 		.split(/\r?\n|,/)

@@ -4,6 +4,10 @@ import { z } from 'zod';
 import { decryptJson, encryptJson } from '$lib/server/crypto';
 import { db } from '$lib/server/db';
 import { mcpServers, type EncryptedJsonPayload, type McpSecretPayload } from '$lib/server/db/schema';
+import {
+	buildMcpJsonSyncOperations,
+	type ParsedMcpJsonConfig
+} from '$lib/server/mcp/json-config';
 
 const mcpBaseSchema = z.object({
 	name: z.string().min(1),
@@ -37,6 +41,12 @@ export type PublicMcpServer = Omit<McpServerRow, 'secret'> & {
 	hasEnvSecrets: boolean;
 	hasHeaderSecrets: boolean;
 };
+export type McpJsonSyncResult = {
+	upsertCount: number;
+	deleteCount: number;
+};
+
+type McpDatabase = Pick<typeof db, 'delete' | 'insert' | 'select' | 'update'>;
 
 function decryptMcpSecret(secret: EncryptedJsonPayload | null | undefined): McpSecretPayload {
 	return decryptJson<McpSecretPayload>(secret) ?? {};
@@ -94,13 +104,27 @@ export async function listEnabledMcpServers(): Promise<McpServerRow[]> {
 }
 
 export async function getMcpServer(id: string): Promise<McpServerRow | undefined> {
-	const [row] = await db.select().from(mcpServers).where(eq(mcpServers.id, id)).limit(1);
+	return getMcpServerRow(id);
+}
+
+async function getMcpServerRow(
+	id: string,
+	database: McpDatabase = db
+): Promise<McpServerRow | undefined> {
+	const [row] = await database.select().from(mcpServers).where(eq(mcpServers.id, id)).limit(1);
 	return row;
 }
 
 export async function createMcpServer(input: McpInput): Promise<PublicMcpServer> {
+	return createMcpServerRow(input);
+}
+
+async function createMcpServerRow(
+	input: McpInput,
+	database: McpDatabase = db
+): Promise<PublicMcpServer> {
 	const parsed = mcpInputSchema.parse(input);
-	const [row] = await db
+	const [row] = await database
 		.insert(mcpServers)
 		.values({
 			name: parsed.name,
@@ -118,7 +142,15 @@ export async function createMcpServer(input: McpInput): Promise<PublicMcpServer>
 }
 
 export async function updateMcpServer(id: string, input: McpUpdateInput): Promise<PublicMcpServer> {
-	const current = await getMcpServer(id);
+	return updateMcpServerRow(id, input);
+}
+
+async function updateMcpServerRow(
+	id: string,
+	input: McpUpdateInput,
+	database: McpDatabase = db
+): Promise<PublicMcpServer> {
+	const current = await getMcpServerRow(id, database);
 	if (!current) throw new Error('MCP server not found');
 
 	const parsed = mcpUpdateSchema.parse(input);
@@ -136,7 +168,7 @@ export async function updateMcpServer(id: string, input: McpUpdateInput): Promis
 				: null;
 	}
 
-	const [row] = await db
+	const [row] = await database
 		.update(mcpServers)
 		.set({
 			...(parsed.name !== undefined ? { name: parsed.name } : {}),
@@ -156,7 +188,37 @@ export async function updateMcpServer(id: string, input: McpUpdateInput): Promis
 }
 
 export async function deleteMcpServer(id: string): Promise<void> {
-	await db.delete(mcpServers).where(eq(mcpServers.id, id));
+	await deleteMcpServerRow(id);
+}
+
+async function deleteMcpServerRow(id: string, database: McpDatabase = db): Promise<void> {
+	await database.delete(mcpServers).where(eq(mcpServers.id, id));
+}
+
+export async function syncMcpJsonConfig(
+	config: ParsedMcpJsonConfig
+): Promise<McpJsonSyncResult> {
+	return db.transaction(async (tx) => {
+		const existingRows = await tx.select().from(mcpServers).orderBy(desc(mcpServers.createdAt));
+		const existingServers = existingRows.map(serializeMcp);
+		const { upserts, deletes } = buildMcpJsonSyncOperations(config, existingServers);
+
+		for (const upsert of upserts) {
+			if (upsert.mode === 'update') {
+				await updateMcpServerRow(upsert.id, upsert.payload, tx);
+			} else {
+				await createMcpServerRow(upsert.payload, tx);
+			}
+		}
+		for (const deletedServer of deletes) {
+			await deleteMcpServerRow(deletedServer.id, tx);
+		}
+
+		return {
+			upsertCount: upserts.length,
+			deleteCount: deletes.length
+		};
+	});
 }
 
 export async function markMcpServerStatus(

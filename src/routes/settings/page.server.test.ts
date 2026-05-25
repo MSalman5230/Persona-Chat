@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
 	deleteMcpServer: vi.fn(),
 	getMcpServer: vi.fn(),
 	listMcpServers: vi.fn(),
+	syncMcpJsonConfig: vi.fn(),
 	updateMcpServer: vi.fn(),
 	createProviderConnection: vi.fn(),
 	deleteProviderConnection: vi.fn(),
@@ -39,6 +40,7 @@ vi.mock('$lib/server/repositories/mcp', () => ({
 	deleteMcpServer: mocks.deleteMcpServer,
 	getMcpServer: mocks.getMcpServer,
 	listMcpServers: mocks.listMcpServers,
+	syncMcpJsonConfig: mocks.syncMcpJsonConfig,
 	updateMcpServer: mocks.updateMcpServer
 }));
 
@@ -51,7 +53,50 @@ vi.mock('$lib/server/repositories/providers', () => ({
 	updateProviderConnection: mocks.updateProviderConnection
 }));
 
-import { actions } from './+page.server';
+import { actions, load } from './+page.server';
+
+const supportedProviders = [{ providerId: 'openai', name: 'OpenAI', models: [] }];
+
+function mcpServer(overrides: Record<string, unknown> = {}) {
+	return {
+		id: '00000000-0000-0000-0000-000000000001',
+		name: 'Svelte',
+		slug: 'svelte',
+		transport: 'stdio',
+		command: 'pnpm',
+		args: ['dlx', '@sveltejs/mcp'],
+		cwd: null,
+		url: null,
+		enabled: true,
+		status: 'unknown',
+		lastError: null,
+		lastCheckedAt: null,
+		createdAt: new Date('2026-05-25T00:00:00.000Z'),
+		updatedAt: new Date('2026-05-25T00:00:00.000Z'),
+		hasEnvSecrets: false,
+		hasHeaderSecrets: false,
+		...overrides
+	};
+}
+
+function providerConnection(overrides: Record<string, unknown> = {}) {
+	return {
+		provider: {
+			id: 'provider-1',
+			name: 'OpenAI',
+			providerId: 'openai',
+			defaultModel: 'gpt-5',
+			isDefault: true
+		},
+		preference: null,
+		effective: {
+			defaultModel: 'gpt-5',
+			favoriteModels: ['gpt-5'],
+			isDefault: true
+		},
+		...overrides
+	};
+}
 
 function formRequest(values: Record<string, string>) {
 	const form = new FormData();
@@ -75,58 +120,99 @@ function adminEvent(request: Request) {
 	};
 }
 
+function loadEvent(isAdmin: boolean) {
+	return {
+		locals: {
+			user: { id: isAdmin ? 'admin-1' : 'user-1', role: isAdmin ? 'admin' : 'user' },
+			session: { id: 'session-1' },
+			isAdmin
+		}
+	};
+}
+
+describe('settings page load', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mocks.getSupportedProviders.mockReturnValue(supportedProviders);
+		mocks.listMcpServers.mockResolvedValue([mcpServer()]);
+		mocks.listProviderConnections.mockResolvedValue([providerConnection()]);
+	});
+
+	it('loads all management resources for admins', async () => {
+		const result = await load(loadEvent(true) as never);
+
+		expect(mocks.listMcpServers).toHaveBeenCalledWith({ enabledOnly: false });
+		expect(mocks.listProviderConnections).toHaveBeenCalledWith({
+			userId: 'admin-1',
+			enabledOnly: false
+		});
+		expect(result).toMatchObject({
+			isAdmin: true,
+			mcpServers: [expect.objectContaining({ slug: 'svelte' })],
+			providers: [expect.objectContaining({ provider: expect.objectContaining({ id: 'provider-1' }) })],
+			mcpJson: expect.stringContaining('"svelte"'),
+			loadError: null
+		});
+	});
+
+	it('loads only enabled management resources for non-admins and hides MCP JSON', async () => {
+		const result = await load(loadEvent(false) as never);
+
+		expect(mocks.listMcpServers).toHaveBeenCalledWith({ enabledOnly: true });
+		expect(mocks.listProviderConnections).toHaveBeenCalledWith({
+			userId: 'user-1',
+			enabledOnly: true
+		});
+		expect(result).toMatchObject({
+			isAdmin: false,
+			mcpJson: '',
+			loadError: null
+		});
+	});
+
+	it('keeps MCP JSON hidden for non-admins when loading fails', async () => {
+		mocks.listMcpServers.mockRejectedValueOnce(new Error('Database is sleeping'));
+
+		const result = await load(loadEvent(false) as never);
+
+		expect(result).toMatchObject({
+			isAdmin: false,
+			providers: [],
+			mcpServers: [],
+			mcpJson: '',
+			loadError: 'Database is sleeping'
+		});
+	});
+});
+
 describe('settings page actions', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mocks.listMcpServers.mockResolvedValue([
-			{
-				id: '00000000-0000-0000-0000-000000000001',
-				name: 'Svelte',
-				slug: 'svelte',
-				enabled: true
-			},
-			{
-				id: '00000000-0000-0000-0000-000000000002',
-				name: 'Memory',
-				slug: 'memory',
-				enabled: true
-			}
-		]);
+		mocks.syncMcpJsonConfig.mockResolvedValue({ upsertCount: 2, deleteCount: 1 });
 	});
 
-	it('syncs MCP JSON and deletes saved servers omitted from the submitted JSON', async () => {
+	it('delegates valid MCP JSON to the repository sync helper', async () => {
 		const result = await actions.saveMcpJson(
 			adminEvent(
 				formRequest({
-				mcpJson: JSON.stringify({
-					mcpServers: {
-						svelte: { command: 'pnpm', args: ['dlx', '@sveltejs/mcp'] },
-						remote: { url: 'https://mcp.example.test/mcp' }
-					}
+					mcpJson: JSON.stringify({
+						mcpServers: {
+							svelte: { command: 'pnpm', args: ['dlx', '@sveltejs/mcp'] },
+							remote: { url: 'https://mcp.example.test/mcp' }
+						}
+					})
 				})
-			})
 			) as never
 		);
 
 		expect(result).toMatchObject({ ok: true, message: 'Saved 2 MCP servers, deleted 1 MCP server' });
-		expect(mocks.updateMcpServer).toHaveBeenCalledWith(
-			'00000000-0000-0000-0000-000000000001',
+		expect(mocks.syncMcpJsonConfig).toHaveBeenCalledWith(
 			expect.objectContaining({
-				name: 'Svelte',
-				slug: 'svelte',
-				command: 'pnpm',
-				args: ['dlx', '@sveltejs/mcp']
+				servers: [
+					expect.objectContaining({ slug: 'svelte' }),
+					expect.objectContaining({ slug: 'remote' })
+				]
 			})
-		);
-		expect(mocks.createMcpServer).toHaveBeenCalledWith(
-			expect.objectContaining({
-				name: 'remote',
-				slug: 'remote',
-				url: 'https://mcp.example.test/mcp'
-			})
-		);
-		expect(mocks.deleteMcpServer).toHaveBeenCalledWith(
-			'00000000-0000-0000-0000-000000000002'
 		);
 	});
 
@@ -142,7 +228,7 @@ describe('settings page actions', () => {
 				mcpJson: '{"mcpServers":'
 			}
 		});
-		expect(mocks.listMcpServers).not.toHaveBeenCalled();
+		expect(mocks.syncMcpJsonConfig).not.toHaveBeenCalled();
 		expect(mocks.updateMcpServer).not.toHaveBeenCalled();
 		expect(mocks.createMcpServer).not.toHaveBeenCalled();
 		expect(mocks.deleteMcpServer).not.toHaveBeenCalled();

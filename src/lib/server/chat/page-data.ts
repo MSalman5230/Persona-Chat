@@ -6,6 +6,7 @@ import { getChatSession, listChatMessages, listChatSessions } from '$lib/server/
 import { listAgentOptions } from '$lib/server/repositories/agents';
 import { listProviderConnections } from '$lib/server/repositories/providers';
 import { isRecord } from '$lib/server/json';
+import { runtimeResourceFilter } from '$lib/server/resource-policy';
 import type { PublicProviderConnection } from '$lib/shared/providers';
 
 function isHttpError(cause: unknown): boolean {
@@ -26,7 +27,7 @@ function toChatProviderOption(connection: PublicProviderConnection) {
 export async function loadChatPageData(userId: string, sessionId: string | null = null) {
 	try {
 		const [providerConnections, sessions, agents] = await Promise.all([
-			listProviderConnections({ userId, enabledOnly: true }),
+			listProviderConnections({ userId, ...runtimeResourceFilter() }),
 			listChatSessions(userId),
 			listAgentOptions(userId)
 		]);

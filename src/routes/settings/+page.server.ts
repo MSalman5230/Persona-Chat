@@ -2,22 +2,18 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
 import { authenticatedUser, requireAdmin } from '$lib/server/auth-guard';
-import { booleanFromForm, stringFromForm } from '$lib/server/forms';
+import { booleanFromForm, stringFromForm, stringsFromForm } from '$lib/server/forms';
 import { testMcpServer } from '$lib/server/mcp/adapter';
-import {
-	buildMcpJsonSyncOperations,
-	parseMcpJsonConfig,
-	serializeMcpJsonConfig
-} from '$lib/server/mcp/json-config';
+import { parseMcpJsonConfig, serializeMcpJsonConfig } from '$lib/server/mcp/json-config';
 import { getSupportedProviders } from '$lib/server/providers/catalog';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
 import { providerPayloadFromForm } from '$lib/server/providers/settings-form';
+import { managementResourceFilter } from '$lib/server/resource-policy';
 import {
-	createMcpServer,
 	deleteMcpServer,
 	getMcpServer,
 	listMcpServers,
-	updateMcpServer
+	syncMcpJsonConfig
 } from '$lib/server/repositories/mcp';
 import {
 	createProviderConnection,
@@ -28,34 +24,51 @@ import {
 	updateProviderConnection
 } from '$lib/server/repositories/providers';
 
-function stringsFromForm(form: FormData, key: string): string[] {
-	return form.getAll(key).filter((value): value is string => typeof value === 'string');
+type SettingsLoadResult = Awaited<ReturnType<PageServerLoad>>;
+
+function buildSettingsLoadResult(input: {
+	isAdmin: boolean;
+	supportedProviders: ReturnType<typeof getSupportedProviders>;
+	providers?: Awaited<ReturnType<typeof listProviderConnections>>;
+	mcpServers?: Awaited<ReturnType<typeof listMcpServers>>;
+	loadError: string | null;
+}): SettingsLoadResult {
+	const mcpServers = input.mcpServers ?? [];
+
+	return {
+		isAdmin: input.isAdmin,
+		providers: input.providers ?? [],
+		supportedProviders: input.supportedProviders,
+		mcpServers,
+		mcpJson: input.isAdmin ? serializeMcpJsonConfig(mcpServers) : '',
+		loadError: input.loadError
+	};
 }
 
 export const load: PageServerLoad = async (event) => {
 	const user = authenticatedUser(event);
 	const supportedProviders = getSupportedProviders();
 	const isAdmin = event.locals.isAdmin;
+	const resourceFilter = managementResourceFilter(event);
 
 	try {
-		const mcpServers = await listMcpServers({ enabledOnly: !isAdmin });
-		return {
+		const [mcpServers, providers] = await Promise.all([
+			listMcpServers(resourceFilter),
+			listProviderConnections({ userId: user.id, ...resourceFilter })
+		]);
+		return buildSettingsLoadResult({
 			isAdmin,
-			providers: await listProviderConnections({ userId: user.id, enabledOnly: !isAdmin }),
 			supportedProviders,
+			providers,
 			mcpServers,
-			mcpJson: isAdmin ? serializeMcpJsonConfig(mcpServers) : '',
 			loadError: null
-		};
+		});
 	} catch (error) {
-		return {
+		return buildSettingsLoadResult({
 			isAdmin,
-			providers: [],
 			supportedProviders,
-			mcpServers: [],
-			mcpJson: serializeMcpJsonConfig([]),
 			loadError: error instanceof Error ? error.message : 'Database is not ready'
-		};
+		});
 	}
 };
 
@@ -158,29 +171,14 @@ export const actions: Actions = {
 			submittedJson = mcpJson;
 
 			const config = parseMcpJsonConfig(mcpJson);
-			const existingServers = await listMcpServers();
-			const { upserts, deletes } = buildMcpJsonSyncOperations(
-				config,
-				existingServers
-			);
-
-			for (const upsert of upserts) {
-				if (upsert.mode === 'update') {
-					await updateMcpServer(upsert.id, upsert.payload);
-				} else {
-					await createMcpServer(upsert.payload);
-				}
-			}
-			for (const deletedServer of deletes) {
-				await deleteMcpServer(deletedServer.id);
-			}
+			const { upsertCount, deleteCount } = await syncMcpJsonConfig(config);
 
 			return {
 				ok: true,
-				message: `Saved ${upserts.length} MCP server${upserts.length === 1 ? '' : 's'}${
-					deletes.length === 0
+				message: `Saved ${upsertCount} MCP server${upsertCount === 1 ? '' : 's'}${
+					deleteCount === 0
 						? ''
-						: `, deleted ${deletes.length} MCP server${deletes.length === 1 ? '' : 's'}`
+						: `, deleted ${deleteCount} MCP server${deleteCount === 1 ? '' : 's'}`
 				}`
 			};
 		} catch (error) {

@@ -8,7 +8,13 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 
 import { db } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
-import { roleForNewUser } from '$lib/server/auth-role';
+import {
+	AUTH_ACCESS_CONTROL,
+	AUTH_ADMIN_ROLES,
+	AUTH_DEFAULT_ROLE,
+	AUTH_ROLES,
+	roleForNewUser
+} from '$lib/server/auth-role';
 import { googleAccountLinking, googleProfileSync } from '$lib/server/auth-options';
 
 const localSecret = 'persona-local-development-secret-change-before-production';
@@ -70,7 +76,15 @@ export const auth = betterAuth({
 			}
 		}
 	},
-	plugins: [admin({ defaultRole: 'user', adminRoles: ['admin'] }), sveltekitCookies(getRequestEvent)]
+	plugins: [
+		admin({
+			defaultRole: AUTH_DEFAULT_ROLE,
+			adminRoles: [...AUTH_ADMIN_ROLES],
+			ac: AUTH_ACCESS_CONTROL,
+			roles: AUTH_ROLES
+		}),
+		sveltekitCookies(getRequestEvent)
+	]
 });
 
 export type AuthSessionPayload = Awaited<ReturnType<typeof auth.api.getSession>>;

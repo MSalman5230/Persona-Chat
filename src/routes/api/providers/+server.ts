@@ -3,6 +3,7 @@ import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { parseJsonRequest } from '$lib/server/api';
 import { authenticatedUser, requireAdmin } from '$lib/server/auth-guard';
 import { findSupportedProvider } from '$lib/server/providers/catalog';
+import { managementResourceFilter } from '$lib/server/resource-policy';
 import {
 	createProviderConnection,
 	listProviderConnections,
@@ -14,7 +15,7 @@ export const GET: RequestHandler = async (event) => {
 	return json({
 		providers: await listProviderConnections({
 			userId: user.id,
-			enabledOnly: !event.locals.isAdmin
+			...managementResourceFilter(event)
 		})
 	});
 };

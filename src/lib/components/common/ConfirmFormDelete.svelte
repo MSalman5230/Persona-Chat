@@ -25,16 +25,14 @@
 		idField = 'id'
 	}: Props = $props();
 
-	const componentId = $props.id();
-	const formId = `${componentId}-delete-form`;
+	let deleteForm: HTMLFormElement | undefined;
 
 	function confirmDelete() {
-		const form = document.getElementById(formId);
-		if (form instanceof HTMLFormElement) form.requestSubmit();
+		deleteForm?.requestSubmit();
 	}
 </script>
 
-<form id={formId} method="POST" {action}>
+<form bind:this={deleteForm} method="POST" {action}>
 	<input type="hidden" name={idField} value={id} />
 	<ConfirmActionButton
 		{title}

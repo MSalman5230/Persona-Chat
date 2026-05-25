@@ -58,7 +58,7 @@ export type UserProviderPreferenceInput = {
 	isDefault?: boolean;
 };
 
-type UserProviderContext = {
+export type UserProviderContext = {
 	preferencesByProvider: Map<string, UserProviderPreferenceRow>;
 	userDefaultProviderId: string | null;
 };
@@ -177,6 +177,26 @@ function rowWithUserPreferences(
 	return resolveProviderConnectionView(row, preference, userDefaultProviderId);
 }
 
+export function resolveVisibleUserDefaultProviderId(
+	rows: ProviderConnectionRow[],
+	userDefaultProviderId: string | null
+): string | null {
+	if (!userDefaultProviderId) return null;
+	return rows.some((row) => row.id === userDefaultProviderId) ? userDefaultProviderId : null;
+}
+
+export function resolveProviderConnectionViews(
+	rows: ProviderConnectionRow[],
+	context: UserProviderContext
+): ProviderConnectionView[] {
+	const userDefaultProviderId = resolveVisibleUserDefaultProviderId(
+		rows,
+		context.userDefaultProviderId
+	);
+
+	return rows.map((row) => rowWithUserPreferences(row, context, userDefaultProviderId));
+}
+
 async function serializeProviderForUserContext(
 	row: ProviderConnectionRow,
 	options: ProviderMutationOptions = {}
@@ -209,9 +229,7 @@ export async function listProviderConnections(options: {
 
 	const context = await loadUserProviderContext(options.userId);
 
-	return rows.map((row) =>
-		serializeProviderView(rowWithUserPreferences(row, context))
-	);
+	return resolveProviderConnectionViews(rows, context).map(serializeProviderView);
 }
 
 export async function getProviderConnection(id: string): Promise<ProviderConnectionRow | undefined> {

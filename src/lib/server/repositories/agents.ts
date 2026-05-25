@@ -14,6 +14,7 @@ import {
 import { appTools } from '$lib/server/agent/tools';
 import { db } from '$lib/server/db';
 import { agents } from '$lib/server/db/schema';
+import { runtimeResourceFilter } from '$lib/server/resource-policy';
 import { listMcpServers } from './mcp';
 
 export type AgentRow = typeof agents.$inferSelect;
@@ -36,7 +37,7 @@ function defaultToolNames(toolNames: string[] | undefined): string[] {
 }
 
 async function normalizeMcpServerIds(ids: string[]): Promise<string[]> {
-	const allowed = new Set((await listMcpServers({ enabledOnly: true })).map((server) => server.id));
+	const allowed = new Set((await listMcpServers(runtimeResourceFilter())).map((server) => server.id));
 	return uniqueStrings(ids).filter((id) => allowed.has(id));
 }
 
