@@ -5,6 +5,7 @@ import { authenticatedUser, requireAdmin } from './auth-guard';
 import { isAdminRole } from './auth-role';
 
 const adminUser = { id: 'admin-1', role: 'admin' };
+const multiRoleAdminUser = { id: 'admin-2', role: 'user, admin' };
 const regularUser = { id: 'user-1', role: 'user' };
 
 function eventFor(user: typeof adminUser | null) {
@@ -42,5 +43,9 @@ describe('auth guards', () => {
 
 	it('allows admin users', () => {
 		expect(requireAdmin(eventFor(adminUser))).toBe(adminUser);
+	});
+
+	it('allows admin users with comma-separated roles', () => {
+		expect(requireAdmin(eventFor(multiRoleAdminUser))).toBe(multiRoleAdminUser);
 	});
 });
