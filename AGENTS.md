@@ -20,6 +20,12 @@ Whenever writing code for the PI SDK, use the local repository at `C:\MegaSync\P
 
 ---
 
+## Auth Guidance
+
+This project uses **Better Auth** for authentication. Whenever making changes to auth code, use the official documentation at https://better-auth.com/llms.txt as the source for implementation patterns and API reference.
+
+---
+
 ## UI Guidance
 
 Whenever making UI changes or building frontend experiences, read `DESIGN.md` first and follow its design guidance.
