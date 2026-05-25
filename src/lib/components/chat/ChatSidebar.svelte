@@ -13,9 +13,20 @@
 		onNewChat: () => void;
 		onDeleteChat: (chat: ChatSession) => void;
 		onClose: () => void;
+		onLogout: () => void | Promise<void>;
+		logoutPending?: boolean;
 	}
 
-	let { open, sessions, activeSessionId, onNewChat, onDeleteChat, onClose }: Props = $props();
+	let {
+		open,
+		sessions,
+		activeSessionId,
+		onNewChat,
+		onDeleteChat,
+		onClose,
+		onLogout,
+		logoutPending = false
+	}: Props = $props();
 </script>
 
 <aside
@@ -98,6 +109,15 @@
 			<span class="material-symbols-outlined" aria-hidden="true">settings</span>
 			<span class="font-body-sm text-body-sm">Settings</span>
 		</a>
+		<button
+			type="button"
+			class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-muted"
+			disabled={logoutPending}
+			onclick={onLogout}
+		>
+			<span class="material-symbols-outlined" aria-hidden="true">logout</span>
+			<span class="font-body-sm text-body-sm">{logoutPending ? 'Logging out' : 'Log out'}</span>
+		</button>
 	</div>
 </aside>
 

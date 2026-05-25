@@ -22,6 +22,7 @@
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { authClient } from '$lib/auth-client';
 	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
 	import ChatSidebar from '$lib/components/chat/ChatSidebar.svelte';
 	import DesktopHeader from '$lib/components/chat/DesktopHeader.svelte';
@@ -49,6 +50,7 @@
 	let message = $state('');
 	let sidebarOpen = $state(false);
 	let settingsOpen = $state(false);
+	let logoutPending = $state(false);
 	let pendingConfirmation = $state<PendingConfirmation | null>(null);
 	let sessions = $state<ChatSessionSummary[]>(untrack(() => data.sessions));
 	let activeRun = $state<ActiveRun | null>(untrack(() => data.activeRun));
@@ -459,6 +461,23 @@
 		connectedRunId = null;
 	}
 
+	async function logout() {
+		if (logoutPending) return;
+
+		logoutPending = true;
+		errorText = '';
+		closeRunEvents();
+
+		try {
+			const result = await authClient.signOut();
+			if (result.error) throw new Error(result.error.message ?? 'Unable to log out');
+			await goto(resolve('/login'), { replaceState: true });
+		} catch (error) {
+			logoutPending = false;
+			errorText = error instanceof Error ? error.message : 'Unable to log out';
+		}
+	}
+
 	function connectRunEvents() {
 		const sessionId = activeSessionId;
 		const runId = activeRun?.id;
@@ -568,6 +587,8 @@
 			onNewChat={newChat}
 			onDeleteChat={deleteChat}
 			onClose={() => (sidebarOpen = false)}
+			onLogout={logout}
+			{logoutPending}
 		/>
 
 		<main
