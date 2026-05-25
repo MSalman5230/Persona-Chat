@@ -9,6 +9,7 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { db } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { isAdminRole, roleForNewUser } from '$lib/server/auth-role';
+import { googleAccountLinking, googleProfileSync } from '$lib/server/auth-options';
 
 export { isAdminRole, roleForNewUser };
 
@@ -43,11 +44,15 @@ export const auth = betterAuth({
 	emailAndPassword: {
 		enabled: true
 	},
+	account: {
+		accountLinking: googleAccountLinking
+	},
 	socialProviders: googleAuthEnabled()
 		? {
 				google: {
 					clientId: env.GOOGLE_CLIENT_ID as string,
-					clientSecret: env.GOOGLE_CLIENT_SECRET as string
+					clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+					...googleProfileSync
 				}
 			}
 		: {},
