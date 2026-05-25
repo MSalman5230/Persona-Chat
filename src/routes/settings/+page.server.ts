@@ -1,7 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { stringFromForm } from '$lib/server/forms';
+import { requireAdmin, requireUser } from '$lib/server/auth-guard';
+import { booleanFromForm, stringFromForm } from '$lib/server/forms';
 import { testMcpServer } from '$lib/server/mcp/adapter';
 import {
 	buildMcpJsonSyncOperations,
@@ -23,23 +24,32 @@ import {
 	deleteProviderConnection,
 	getProviderConnection,
 	listProviderConnections,
+	saveUserProviderPreference,
 	updateProviderConnection
 } from '$lib/server/repositories/providers';
 
-export const load: PageServerLoad = async () => {
+function stringsFromForm(form: FormData, key: string): string[] {
+	return form.getAll(key).filter((value): value is string => typeof value === 'string');
+}
+
+export const load: PageServerLoad = async (event) => {
+	const user = requireUser(event);
 	const supportedProviders = getSupportedProviders();
+	const isAdmin = event.locals.isAdmin;
 
 	try {
-		const mcpServers = await listMcpServers();
+		const mcpServers = await listMcpServers({ enabledOnly: !isAdmin });
 		return {
-			providers: await listProviderConnections(),
+			isAdmin,
+			providers: await listProviderConnections({ userId: user.id, enabledOnly: !isAdmin }),
 			supportedProviders,
 			mcpServers,
-			mcpJson: serializeMcpJsonConfig(mcpServers),
+			mcpJson: isAdmin ? serializeMcpJsonConfig(mcpServers) : '',
 			loadError: null
 		};
 	} catch (error) {
 		return {
+			isAdmin,
 			providers: [],
 			supportedProviders,
 			mcpServers: [],
@@ -73,8 +83,10 @@ async function saveProviderConnectionFromForm(form: FormData, id: string | undef
 }
 
 export const actions: Actions = {
-	saveProvider: async ({ request }) => {
+	saveProvider: async (event) => {
+		requireAdmin(event);
 		try {
+			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			const provider = await saveProviderConnectionFromForm(form, id);
@@ -83,15 +95,19 @@ export const actions: Actions = {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save provider' });
 		}
 	},
-	deleteProvider: async ({ request }) => {
+	deleteProvider: async (event) => {
+		requireAdmin(event);
+		const { request } = event;
 		const form = await request.formData();
 		const id = stringFromForm(form, 'id');
 		if (!id) return fail(400, { error: 'Provider ID is required' });
 		await deleteProviderConnection(id);
 		return { ok: true, message: 'Provider deleted' };
 	},
-	testProvider: async ({ request }) => {
+	testProvider: async (event) => {
+		requireAdmin(event);
 		try {
+			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('Provider ID is required');
@@ -104,7 +120,28 @@ export const actions: Actions = {
 			return fail(400, { error: error instanceof Error ? error.message : 'Provider test failed' });
 		}
 	},
-	saveMcpJson: async ({ request }) => {
+	saveProviderPreference: async (event) => {
+		const user = requireUser(event);
+		try {
+			const form = await event.request.formData();
+			const id = stringFromForm(form, 'id');
+			if (!id) throw new Error('Provider ID is required');
+			const provider = await saveUserProviderPreference(user.id, {
+				providerConnectionId: id,
+				defaultModel: stringFromForm(form, 'defaultModel'),
+				favoriteModels: stringsFromForm(form, 'favoriteModels'),
+				isDefault: booleanFromForm(form, 'isDefault', false)
+			});
+			return { ok: true, message: `${provider.name} preferences saved` };
+		} catch (error) {
+			return fail(400, {
+				error: error instanceof Error ? error.message : 'Unable to save provider preferences'
+			});
+		}
+	},
+	saveMcpJson: async (event) => {
+		requireAdmin(event);
+		const { request } = event;
 		let submittedJson: string | undefined;
 		try {
 			const form = await request.formData();
@@ -147,15 +184,19 @@ export const actions: Actions = {
 			});
 		}
 	},
-	deleteMcp: async ({ request }) => {
+	deleteMcp: async (event) => {
+		requireAdmin(event);
+		const { request } = event;
 		const form = await request.formData();
 		const id = stringFromForm(form, 'id');
 		if (!id) return fail(400, { error: 'MCP server ID is required' });
 		await deleteMcpServer(id);
 		return { ok: true, message: 'MCP server deleted' };
 	},
-	testMcp: async ({ request }) => {
+	testMcp: async (event) => {
+		requireAdmin(event);
 		try {
+			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('MCP server ID is required');

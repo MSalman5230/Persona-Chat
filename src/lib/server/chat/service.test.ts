@@ -343,6 +343,8 @@ describe('chat service display helpers', () => {
 });
 
 describe('chat turn thinking settings', () => {
+	const userId = 'user-1';
+
 	it('persists explicit thinking for a new chat', async () => {
 		vi.resetModules();
 		const runtimeInputs: Array<{ thinkingLevel?: string | null }> = [];
@@ -377,9 +379,10 @@ describe('chat turn thinking settings', () => {
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
 		const { prepareChatTurn } = await import('./service');
-		await prepareChatTurn({ message: 'hello', thinkingLevel: 'high' });
+		await prepareChatTurn({ userId, message: 'hello', thinkingLevel: 'high' });
 
 		expect(runtimeInputs[0]?.thinkingLevel).toBe('high');
+		expect(createChatSession).toHaveBeenCalledWith(expect.objectContaining({ userId }));
 		expect(createdSessions[0]?.thinkingLevel).toBe('high');
 		vi.doUnmock('$lib/server/repositories/chat');
 		vi.doUnmock('$lib/server/repositories/agents');
@@ -390,7 +393,7 @@ describe('chat turn thinking settings', () => {
 		vi.resetModules();
 		const runtimeInputs: Array<{ thinkingLevel?: string | null }> = [];
 		const updateInputs: Array<{ thinkingLevel?: string | null }> = [];
-		const updateChatSession = vi.fn(async (_id: string, input: { thinkingLevel?: string | null }) => {
+		const updateChatSession = vi.fn(async (_userId: string, _id: string, input: { thinkingLevel?: string | null }) => {
 			updateInputs.push(input);
 		});
 		const createServerAgentSession = vi.fn(async (input: { thinkingLevel?: string | null }) => {
@@ -423,8 +426,13 @@ describe('chat turn thinking settings', () => {
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
 		const { prepareChatTurn } = await import('./service');
-		await prepareChatTurn({ sessionId: 'session-1', message: 'hello', thinkingLevel: null });
+		await prepareChatTurn({ userId, sessionId: 'session-1', message: 'hello', thinkingLevel: null });
 
+		expect(updateChatSession).toHaveBeenCalledWith(
+			userId,
+			'session-1',
+			expect.objectContaining({ thinkingLevel: null })
+		);
 		expect(runtimeInputs[0]?.thinkingLevel).toBeNull();
 		expect(updateInputs[0]?.thinkingLevel).toBeNull();
 		vi.doUnmock('$lib/server/repositories/chat');
@@ -434,6 +442,8 @@ describe('chat turn thinking settings', () => {
 });
 
 describe('chat turn agents', () => {
+	const userId = 'user-1';
+
 	it('passes selected agent to runtime without adding synthetic history', async () => {
 		vi.resetModules();
 		const runtimeInputs: Array<{
@@ -451,7 +461,7 @@ describe('chat turn agents', () => {
 			createdAt: new Date(),
 			updatedAt: new Date()
 		};
-		const updateChatSession = vi.fn(async (_id: string, input: { agentId?: string | null }) => {
+		const updateChatSession = vi.fn(async (_userId: string, _id: string, input: { agentId?: string | null }) => {
 			updateInputs.push(input);
 		});
 		const createServerAgentSession = vi.fn(
@@ -491,16 +501,23 @@ describe('chat turn agents', () => {
 
 		const { prepareChatTurn } = await import('./service');
 		const turn = await prepareChatTurn({
+			userId,
 			sessionId: 'session-1',
 			message: 'hello',
 			agentId: agent.id
 		});
 
 		expect(runtimeInputs[0]).toMatchObject({
+			userId,
 			agent: { systemPrompt: 'You are a careful researcher.' }
 		});
 		expect(runtimeInputs[0]?.history).toHaveLength(1);
 		expect(turn.historyCount).toBe(1);
+		expect(updateChatSession).toHaveBeenCalledWith(
+			userId,
+			'session-1',
+			expect.objectContaining({ agentId: agent.id })
+		);
 		expect(updateInputs[0]).toMatchObject({
 			agentId: agent.id
 		});

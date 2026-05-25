@@ -21,7 +21,15 @@ function titleFromPrompt(prompt: string): string {
 	return cleaned.length > 56 ? `${cleaned.slice(0, 53)}...` : cleaned;
 }
 
+export class ChatSessionNotFoundError extends Error {
+	constructor() {
+		super('Chat session not found');
+		this.name = 'ChatSessionNotFoundError';
+	}
+}
+
 export async function prepareChatTurn(input: {
+	userId: string;
 	sessionId?: string | null;
 	message: string;
 	agentId?: string | null;
@@ -30,16 +38,18 @@ export async function prepareChatTurn(input: {
 	thinkingLevel?: string | null;
 	temperature?: number | null;
 }) {
-	const existing = input.sessionId ? await getChatSession(input.sessionId) : undefined;
+	const existing = input.sessionId ? await getChatSession(input.userId, input.sessionId) : undefined;
+	if (input.sessionId && !existing) throw new ChatSessionNotFoundError();
 	const historyRows = existing ? await listChatMessages(existing.id) : [];
 	const history = historyRows.map((row) => row.piMessage);
 	const agentId = input.agentId !== undefined ? input.agentId : (existing?.agentId ?? null);
-	const agent = agentId ? await getAgent(agentId) : null;
+	const agent = agentId ? await getAgent(input.userId, agentId) : null;
 	if (agentId && !agent) throw new Error('Agent not found');
 	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
 	const thinkingLevel =
 		input.thinkingLevel !== undefined ? input.thinkingLevel : (existing?.thinkingLevel ?? null);
 	const runtime = await createServerAgentSession({
+		userId: input.userId,
 		providerConnectionId: input.providerConnectionId ?? existing?.providerConnectionId,
 		modelId: input.modelId ?? existing?.modelId,
 		thinkingLevel,
@@ -51,6 +61,7 @@ export async function prepareChatTurn(input: {
 	let chatSession =
 		existing ??
 		(await createChatSession({
+			userId: input.userId,
 			title: titleFromPrompt(input.message),
 			agentId,
 			providerConnectionId: runtime.provider.id,
@@ -61,7 +72,7 @@ export async function prepareChatTurn(input: {
 		}));
 
 	if (existing) {
-		await updateChatSession(existing.id, {
+		await updateChatSession(input.userId, existing.id, {
 			agentId,
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,

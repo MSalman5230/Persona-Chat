@@ -36,6 +36,8 @@ vi.mock('$lib/server/chat/service', () => ({
 
 import { loadChatPageData } from './page-data';
 
+const userId = 'user-1';
+
 describe('loadChatPageData', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -73,9 +75,11 @@ describe('loadChatPageData', () => {
 	});
 
 	it('loads selector-only agent options for the chat page', async () => {
-		const data = await loadChatPageData();
+		const data = await loadChatPageData(userId);
 
-		expect(mocks.listAgentOptions).toHaveBeenCalledOnce();
+		expect(mocks.listAgentOptions).toHaveBeenCalledWith(userId);
+		expect(mocks.listProviderConnections).toHaveBeenCalledWith({ userId, enabledOnly: true });
+		expect(mocks.listChatSessions).toHaveBeenCalledWith(userId);
 		expect(mocks.listAgents).not.toHaveBeenCalled();
 		expect(data.defaultAgentId).toBe('agent-1');
 		expect(data.agents).toEqual([

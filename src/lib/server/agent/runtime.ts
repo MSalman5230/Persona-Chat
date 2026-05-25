@@ -10,6 +10,7 @@ import { createServerResourceLoader } from './resource-loader';
 import { applySessionStreamSettings, applySessionSystemPrompt } from './session-settings';
 
 export type AgentRuntimeInput = {
+	userId?: string;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;

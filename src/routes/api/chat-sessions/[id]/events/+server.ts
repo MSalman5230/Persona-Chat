@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
+import { requireUser } from '$lib/server/auth-guard';
 import { subscribeToChatRun } from '$lib/server/chat/runs';
 import { getChatSession } from '$lib/server/repositories/chat';
 
@@ -8,8 +9,10 @@ function encodeSse(event: string, data: unknown): Uint8Array {
 	return new TextEncoder().encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-export const GET: RequestHandler = async ({ params, request }) => {
-	const session = await getChatSession(params.id);
+export const GET: RequestHandler = async (event) => {
+	const user = requireUser(event);
+	const { params, request } = event;
+	const session = await getChatSession(user.id, params.id);
 	if (!session) error(404, 'Chat session not found');
 
 	const stream = new ReadableStream<Uint8Array>({

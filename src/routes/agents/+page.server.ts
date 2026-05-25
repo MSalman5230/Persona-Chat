@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
+import { requireUser } from '$lib/server/auth-guard';
 import { booleanFromForm, stringFromForm } from '$lib/server/forms';
 import {
 	createAgent,
@@ -26,12 +27,13 @@ function agentInputFromForm(form: FormData) {
 	};
 }
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async (event) => {
+	const user = requireUser(event);
 	try {
 		return {
-			agents: await listAgents(),
+			agents: await listAgents(user.id),
 			agentTools: listAvailableAgentTools(),
-			mcpServers: await listMcpServers(),
+			mcpServers: await listMcpServers({ enabledOnly: true }),
 			loadError: null
 		};
 	} catch (error) {
@@ -45,24 +47,28 @@ export const load: PageServerLoad = async () => {
 };
 
 export const actions: Actions = {
-	saveAgent: async ({ request }) => {
+	saveAgent: async (event) => {
+		const user = requireUser(event);
 		try {
+			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			const agent = id
-				? await updateAgent(id, agentInputFromForm(form))
-				: await createAgent(agentInputFromForm(form));
+				? await updateAgent(user.id, id, agentInputFromForm(form))
+				: await createAgent(user.id, agentInputFromForm(form));
 			return { ok: true, message: `${agent.name} saved` };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save agent' });
 		}
 	},
-	defaultAgent: async ({ request }) => {
+	defaultAgent: async (event) => {
+		const user = requireUser(event);
 		try {
+			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('Agent ID is required');
-			const agent = await updateAgentDefault(id, { isDefault: true });
+			const agent = await updateAgentDefault(user.id, id, { isDefault: true });
 			return { ok: true, message: `${agent.name} set as default` };
 		} catch (error) {
 			return fail(400, {
@@ -70,12 +76,14 @@ export const actions: Actions = {
 			});
 		}
 	},
-	deleteAgent: async ({ request }) => {
+	deleteAgent: async (event) => {
+		const user = requireUser(event);
 		try {
+			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('Agent ID is required');
-			await deleteAgent(id);
+			await deleteAgent(user.id, id);
 			return { ok: true, message: 'Agent deleted' };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to delete agent' });

@@ -11,16 +11,16 @@ function isHttpError(cause: unknown): boolean {
 	return isRecord(cause) && typeof cause.status === 'number' && cause.status >= 400;
 }
 
-export async function loadChatPageData(sessionId: string | null = null) {
+export async function loadChatPageData(userId: string, sessionId: string | null = null) {
 	try {
 		const [providers, sessions, agents] = await Promise.all([
-			listProviderConnections(),
-			listChatSessions(),
-			listAgentOptions()
+			listProviderConnections({ userId, enabledOnly: true }),
+			listChatSessions(userId),
+			listAgentOptions(userId)
 		]);
 		const defaultProvider = providers.find((provider) => provider.isDefault) ?? providers[0];
 		const defaultAgent = agents.find((agent) => agent.isDefault) ?? null;
-		const activeSession = sessionId ? await getChatSession(sessionId) : null;
+		const activeSession = sessionId ? await getChatSession(userId, sessionId) : null;
 
 		if (sessionId && !activeSession) error(404, 'Chat session not found');
 

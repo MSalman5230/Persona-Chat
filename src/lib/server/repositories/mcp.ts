@@ -74,8 +74,14 @@ function serializeMcp(row: McpServerRow): PublicMcpServer {
 	};
 }
 
-export async function listMcpServers(): Promise<PublicMcpServer[]> {
-	const rows = await db.select().from(mcpServers).orderBy(desc(mcpServers.createdAt));
+export async function listMcpServers(options: { enabledOnly?: boolean } = {}): Promise<PublicMcpServer[]> {
+	const rows = options.enabledOnly
+		? await db
+				.select()
+				.from(mcpServers)
+				.where(eq(mcpServers.enabled, true))
+				.orderBy(desc(mcpServers.createdAt))
+		: await db.select().from(mcpServers).orderBy(desc(mcpServers.createdAt));
 	return rows.map(serializeMcp);
 }
 

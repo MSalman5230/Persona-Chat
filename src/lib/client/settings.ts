@@ -18,6 +18,9 @@ export type SavedProviderOption = {
 	defaultModel: string;
 	models: string[];
 	favoriteModels: string[];
+	providerDefaultModel: string;
+	providerFavoriteModels: string[];
+	providerIsDefault: boolean;
 	defaultThinkingLevel: string;
 	hasApiKey: boolean;
 	enabled: boolean;

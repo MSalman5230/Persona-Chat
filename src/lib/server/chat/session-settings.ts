@@ -10,15 +10,16 @@ export class ChatSessionSettingsValidationError extends Error {
 }
 
 export async function updateChatSessionSettings(
+	userId: string,
 	session: ChatSessionRow,
 	patch: ChatSessionSettingsPatch
 ): Promise<ChatSessionRow> {
 	if (patch.agentId !== undefined && patch.agentId !== null) {
-		const agent = await getAgent(patch.agentId);
+		const agent = await getAgent(userId, patch.agentId);
 		if (!agent) throw new ChatSessionSettingsValidationError('Selected agent does not exist');
 	}
 
-	await updateChatSession(session.id, patch);
+	await updateChatSession(userId, session.id, patch);
 	return {
 		...session,
 		...patch,

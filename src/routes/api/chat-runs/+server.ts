@@ -2,6 +2,8 @@ import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { parseJsonRequest } from '$lib/server/api';
+import { requireUser } from '$lib/server/auth-guard';
+import { ChatSessionNotFoundError } from '$lib/server/chat/service';
 import { ActiveChatRunError, startChatRun } from '$lib/server/chat/runs';
 import { temperatureSchema } from '$lib/server/chat/settings';
 import { THINKING_LEVELS } from '$lib/shared/thinking';
@@ -16,14 +18,17 @@ const chatRunRequestSchema = z.object({
 	temperature: temperatureSchema.optional()
 });
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async (event) => {
+	const user = requireUser(event);
+	const { request } = event;
 	const body = await parseJsonRequest(request, chatRunRequestSchema, 'Invalid chat run request');
 
 	try {
-		const result = await startChatRun(body);
+		const result = await startChatRun({ ...body, userId: user.id });
 		return json(result, { status: 202 });
 	} catch (cause) {
 		if (cause instanceof ActiveChatRunError) error(cause.status, cause.message);
+		if (cause instanceof ChatSessionNotFoundError) error(404, cause.message);
 		throw cause;
 	}
 };

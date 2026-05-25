@@ -28,8 +28,11 @@ import { DELETE, PATCH } from './+server';
 
 const session = {
 	id: '00000000-0000-4000-8000-000000000001',
+	userId: 'user-1',
 	title: 'Planning'
 };
+
+const userId = session.userId;
 
 function jsonRequest(body: unknown): Request {
 	return new Request(`http://localhost/api/chat-sessions/${session.id}`, {
@@ -37,6 +40,17 @@ function jsonRequest(body: unknown): Request {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(body)
 	});
+}
+
+function eventWithUser(overrides: Record<string, unknown>) {
+	return {
+		...overrides,
+		locals: {
+			user: { id: userId, role: 'user' },
+			session: { id: 'session-1' },
+			isAdmin: false
+		}
+	};
 }
 
 describe('chat session PATCH route', () => {
@@ -61,10 +75,10 @@ describe('chat session PATCH route', () => {
 			agentId: '00000000-0000-4000-8000-000000000003',
 			temperature: null
 		};
-		const response = await PATCH({
+		const response = await PATCH(eventWithUser({
 			params: { id: session.id },
 			request: jsonRequest(payload)
-		} as never);
+		}) as never);
 
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toMatchObject({
@@ -73,18 +87,19 @@ describe('chat session PATCH route', () => {
 				...payload
 			}
 		});
-		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, payload);
+		expect(mocks.getChatSession).toHaveBeenCalledWith(userId, session.id);
+		expect(mocks.updateChatSession).toHaveBeenCalledWith(userId, session.id, payload);
 	});
 
 	it('clears the selected agent without validating an agent record', async () => {
-		const response = await PATCH({
+		const response = await PATCH(eventWithUser({
 			params: { id: session.id },
 			request: jsonRequest({ agentId: null })
-		} as never);
+		}) as never);
 
 		expect(response.status).toBe(200);
 		expect(mocks.getAgent).not.toHaveBeenCalled();
-		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, { agentId: null });
+		expect(mocks.updateChatSession).toHaveBeenCalledWith(userId, session.id, { agentId: null });
 	});
 
 	it('returns 400 when the selected agent does not exist', async () => {
@@ -92,15 +107,15 @@ describe('chat session PATCH route', () => {
 		const agentId = '00000000-0000-4000-8000-000000000099';
 
 		await expect(
-			PATCH({
+			PATCH(eventWithUser({
 				params: { id: session.id },
 				request: jsonRequest({ agentId })
-			} as never)
+			}) as never)
 		).rejects.toMatchObject({
 			status: 400,
 			body: { message: 'Selected agent does not exist' }
 		});
-		expect(mocks.getAgent).toHaveBeenCalledWith(agentId);
+		expect(mocks.getAgent).toHaveBeenCalledWith(userId, agentId);
 		expect(mocks.updateChatSession).not.toHaveBeenCalled();
 	});
 
@@ -108,10 +123,10 @@ describe('chat session PATCH route', () => {
 		mocks.getChatSession.mockResolvedValue(undefined);
 
 		await expect(
-			PATCH({
+			PATCH(eventWithUser({
 				params: { id: session.id },
 				request: jsonRequest({ agentId: null })
-			} as never)
+			}) as never)
 		).rejects.toMatchObject({
 			status: 404,
 			body: { message: 'Chat session not found' }
@@ -128,17 +143,18 @@ describe('chat session DELETE route', () => {
 	});
 
 	it('deletes an inactive chat session', async () => {
-		const response = await DELETE({ params: { id: session.id } } as never);
+		const response = await DELETE(eventWithUser({ params: { id: session.id } }) as never);
 
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toEqual({ ok: true });
-		expect(mocks.deleteChatSession).toHaveBeenCalledWith(session.id);
+		expect(mocks.getChatSession).toHaveBeenCalledWith(userId, session.id);
+		expect(mocks.deleteChatSession).toHaveBeenCalledWith(userId, session.id);
 	});
 
 	it('returns 404 when the chat session does not exist', async () => {
 		mocks.getChatSession.mockResolvedValue(undefined);
 
-		await expect(DELETE({ params: { id: session.id } } as never)).rejects.toMatchObject({
+		await expect(DELETE(eventWithUser({ params: { id: session.id } }) as never)).rejects.toMatchObject({
 			status: 404,
 			body: { message: 'Chat session not found' }
 		});
@@ -159,7 +175,7 @@ describe('chat session DELETE route', () => {
 			interruptedRun: null
 		});
 
-		await expect(DELETE({ params: { id: session.id } } as never)).rejects.toMatchObject({
+		await expect(DELETE(eventWithUser({ params: { id: session.id } }) as never)).rejects.toMatchObject({
 			status: 409,
 			body: { message: 'Wait for the response to finish before deleting this chat' }
 		});

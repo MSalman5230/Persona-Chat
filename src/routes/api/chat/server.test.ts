@@ -23,6 +23,7 @@ vi.mock('$lib/server/chat/runs', () => ({
 import { POST } from './+server';
 
 const sessionId = '00000000-0000-4000-8000-000000000001';
+const userId = 'user-1';
 
 function chatRequest(body: Record<string, unknown>) {
 	return new Request('http://localhost/api/chat', {
@@ -30,6 +31,17 @@ function chatRequest(body: Record<string, unknown>) {
 		headers: { 'content-type': 'application/json' },
 		body: JSON.stringify(body)
 	});
+}
+
+function eventWithUser(request: Request) {
+	return {
+		request,
+		locals: {
+			user: { id: userId, role: 'user' },
+			session: { id: 'session-1' },
+			isAdmin: false
+		}
+	};
 }
 
 describe('legacy chat route', () => {
@@ -56,9 +68,7 @@ describe('legacy chat route', () => {
 		};
 		mocks.startChatRun.mockResolvedValue(result);
 
-		const response = await POST({
-			request: chatRequest({ sessionId, message: 'hello' })
-		} as never);
+		const response = await POST(eventWithUser(chatRequest({ sessionId, message: 'hello' })) as never);
 
 		expect(response.status).toBe(202);
 		await expect(response.json()).resolves.toEqual({
@@ -68,7 +78,7 @@ describe('legacy chat route', () => {
 			},
 			session: result.session
 		});
-		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello' });
+		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello', userId });
 	});
 
 	it('surfaces active-run conflicts for direct legacy POST requests', async () => {
@@ -76,12 +86,12 @@ describe('legacy chat route', () => {
 
 		await expect(
 			POST({
-				request: chatRequest({ sessionId, message: 'hello' })
+				...eventWithUser(chatRequest({ sessionId, message: 'hello' }))
 			} as never)
 		).rejects.toMatchObject({
 			status: 409,
 			body: { message: 'A response is already streaming for this chat' }
 		});
-		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello' });
+		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello', userId });
 	});
 });

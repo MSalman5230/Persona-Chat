@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 	deleteProviderConnection: vi.fn(),
 	getProviderConnection: vi.fn(),
 	listProviderConnections: vi.fn(),
+	saveUserProviderPreference: vi.fn(),
 	updateProviderConnection: vi.fn(),
 	createProviderRuntime: vi.fn(),
 	getSupportedProviders: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('$lib/server/repositories/providers', () => ({
 	deleteProviderConnection: mocks.deleteProviderConnection,
 	getProviderConnection: mocks.getProviderConnection,
 	listProviderConnections: mocks.listProviderConnections,
+	saveUserProviderPreference: mocks.saveUserProviderPreference,
 	updateProviderConnection: mocks.updateProviderConnection
 }));
 
@@ -60,6 +62,17 @@ function formRequest(values: Record<string, string>) {
 		method: 'POST',
 		body: form
 	});
+}
+
+function adminEvent(request: Request) {
+	return {
+		request,
+		locals: {
+			user: { id: 'admin-1', role: 'admin' },
+			session: { id: 'session-1' },
+			isAdmin: true
+		}
+	};
 }
 
 describe('settings page actions', () => {
@@ -82,8 +95,9 @@ describe('settings page actions', () => {
 	});
 
 	it('syncs MCP JSON and deletes saved servers omitted from the submitted JSON', async () => {
-		const result = await actions.saveMcpJson({
-			request: formRequest({
+		const result = await actions.saveMcpJson(
+			adminEvent(
+				formRequest({
 				mcpJson: JSON.stringify({
 					mcpServers: {
 						svelte: { command: 'pnpm', args: ['dlx', '@sveltejs/mcp'] },
@@ -91,7 +105,8 @@ describe('settings page actions', () => {
 					}
 				})
 			})
-		} as never);
+			) as never
+		);
 
 		expect(result).toMatchObject({ ok: true, message: 'Saved 2 MCP servers, deleted 1 MCP server' });
 		expect(mocks.updateMcpServer).toHaveBeenCalledWith(
@@ -116,9 +131,9 @@ describe('settings page actions', () => {
 	});
 
 	it('does not mutate MCP servers when submitted JSON is invalid', async () => {
-		const result = await actions.saveMcpJson({
-			request: formRequest({ mcpJson: '{"mcpServers":' })
-		} as never);
+		const result = await actions.saveMcpJson(
+			adminEvent(formRequest({ mcpJson: '{"mcpServers":' })) as never
+		);
 
 		expect(result).toMatchObject({
 			status: 400,

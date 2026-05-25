@@ -4,7 +4,9 @@ import { AuthStorage, ModelRegistry } from '@earendil-works/pi-coding-agent';
 import type { ProviderConnectionRow } from '$lib/server/repositories/providers';
 import {
 	getDefaultProviderConnection,
+	getDefaultProviderConnectionForUser,
 	getProviderConnection,
+	getProviderConnectionForUser,
 	getProviderSecrets
 } from '$lib/server/repositories/providers';
 import { isThinkingLevel, type ThinkingLevel } from '$lib/shared/thinking';
@@ -62,13 +64,18 @@ function registerCustomProvider(row: ProviderConnectionRow, registry: ModelRegis
 }
 
 export async function createProviderRuntime(input?: {
+	userId?: string;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
 }): Promise<ProviderRuntime> {
 	const row = input?.providerConnectionId
-		? await getProviderConnection(input.providerConnectionId)
-		: await getDefaultProviderConnection();
+		? input.userId
+			? await getProviderConnectionForUser(input.providerConnectionId, input.userId)
+			: await getProviderConnection(input.providerConnectionId)
+		: input?.userId
+			? await getDefaultProviderConnectionForUser(input.userId)
+			: await getDefaultProviderConnection();
 
 	if (!row || !row.enabled) {
 		throw new Error('No enabled provider connection is configured');

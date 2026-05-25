@@ -68,6 +68,7 @@
 			<ProvidersPanel
 				{providers}
 				{supportedProviders}
+				canManage={data.isAdmin}
 				{selectedProviderId}
 				{selectedDefaultModel}
 				{selectedSupportedModels}
@@ -75,7 +76,12 @@
 				onSelectDefaultModel={selectDefaultModel}
 			/>
 		{:else}
-			<McpPanel {mcpServers} mcpJson={data.mcpJson} formMcpJson={form?.mcpJson} />
+			<McpPanel
+				{mcpServers}
+				canManage={data.isAdmin}
+				mcpJson={data.mcpJson}
+				formMcpJson={form?.mcpJson}
+			/>
 		{/if}
 	</div>
 </div>

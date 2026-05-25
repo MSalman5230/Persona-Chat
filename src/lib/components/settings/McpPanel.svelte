@@ -4,11 +4,12 @@
 
 	interface Props {
 		mcpServers: McpServerOption[];
+		canManage: boolean;
 		mcpJson: string;
 		formMcpJson?: string;
 	}
 
-	let { mcpServers, mcpJson, formMcpJson }: Props = $props();
+	let { mcpServers, canManage, mcpJson, formMcpJson }: Props = $props();
 
 	let pendingDeleteServer = $state<McpServerOption | null>(null);
 	let deleteForm: HTMLFormElement | null = null;
@@ -32,45 +33,49 @@
 	}
 </script>
 
-<section class="grid flex-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-	<form
-		class="settings-mcp-json-panel"
-		method="POST"
-		action="?/saveMcpJson"
-		aria-labelledby="mcp-json-heading"
-	>
-		<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-			<div>
-				<h2 id="mcp-json-heading" class="font-body-md text-body-md font-semibold text-primary">
-					MCP JSON
-				</h2>
-				<p class="font-body-sm text-body-sm text-text-muted">mcpServers</p>
+<section class={['grid flex-1 gap-6', canManage ? 'lg:grid-cols-[minmax(0,1fr)_340px]' : '']}>
+	{#if canManage}
+		<form
+			class="settings-mcp-json-panel"
+			method="POST"
+			action="?/saveMcpJson"
+			aria-labelledby="mcp-json-heading"
+		>
+			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+				<div>
+					<h2 id="mcp-json-heading" class="font-body-md text-body-md font-semibold text-primary">
+						MCP JSON
+					</h2>
+					<p class="font-body-sm text-body-sm text-text-muted">mcpServers</p>
+				</div>
+				<button class="settings-primary-button">Save JSON</button>
 			</div>
-			<button class="settings-primary-button">Save JSON</button>
-		</div>
-		<label class="sr-only" for="mcp-json">MCP JSON</label>
-		<textarea
-			id="mcp-json"
-			class="settings-json-editor"
-			name="mcpJson"
-			autocomplete="off"
-			autocapitalize="off"
-			spellcheck="false"
-			value={formMcpJson ?? mcpJson}
-		></textarea>
-	</form>
+			<label class="sr-only" for="mcp-json">MCP JSON</label>
+			<textarea
+				id="mcp-json"
+				class="settings-json-editor"
+				name="mcpJson"
+				autocomplete="off"
+				autocapitalize="off"
+				spellcheck="false"
+				value={formMcpJson ?? mcpJson}
+			></textarea>
+		</form>
+	{/if}
 
 	<aside class="space-y-3" aria-label="Saved MCP servers">
-		<div class="settings-mcp-example-panel">
-			<div class="mb-3">
-				<h2 class="font-body-md text-body-md font-semibold text-primary">JSON Example</h2>
-				<p class="mt-1 font-body-sm text-body-sm text-text-muted">
-					Use server keys as slugs. Local servers use command and args; remote servers use url.
-					Add transport: "sse" only for legacy SSE endpoints.
-				</p>
+		{#if canManage}
+			<div class="settings-mcp-example-panel">
+				<div class="mb-3">
+					<h2 class="font-body-md text-body-md font-semibold text-primary">JSON Example</h2>
+					<p class="mt-1 font-body-sm text-body-sm text-text-muted">
+						Use server keys as slugs. Local servers use command and args; remote servers use url.
+						Add transport: "sse" only for legacy SSE endpoints.
+					</p>
+				</div>
+				<pre class="settings-example-code"><code>{MCP_JSON_EXAMPLE}</code></pre>
 			</div>
-			<pre class="settings-example-code"><code>{MCP_JSON_EXAMPLE}</code></pre>
-		</div>
+		{/if}
 		<div class="flex items-center justify-between gap-3">
 			<h2 class="font-body-md text-body-md font-semibold text-primary">Saved Servers</h2>
 			<span class="font-code text-code text-text-muted">{mcpServers.length}</span>
@@ -103,20 +108,22 @@
 						</p>
 					{/if}
 				</div>
-				<div class="settings-server-actions">
-					<form method="POST" action="?/testMcp">
-						<input type="hidden" name="id" value={server.id} />
-						<button class="settings-icon-button" aria-label="Test MCP server">
-							<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">hub</span>
-						</button>
-					</form>
-					<form method="POST" action="?/deleteMcp" onsubmit={(event) => requestDeleteMcp(event, server)}>
-						<input type="hidden" name="id" value={server.id} />
-						<button class="settings-icon-button danger" aria-label="Delete MCP server">
-							<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
-						</button>
-					</form>
-				</div>
+				{#if canManage}
+					<div class="settings-server-actions">
+						<form method="POST" action="?/testMcp">
+							<input type="hidden" name="id" value={server.id} />
+							<button class="settings-icon-button" aria-label="Test MCP server">
+								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">hub</span>
+							</button>
+						</form>
+						<form method="POST" action="?/deleteMcp" onsubmit={(event) => requestDeleteMcp(event, server)}>
+							<input type="hidden" name="id" value={server.id} />
+							<button class="settings-icon-button danger" aria-label="Delete MCP server">
+								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
+							</button>
+						</form>
+					</div>
+				{/if}
 			</div>
 		{:else}
 			<div class="rounded-lg border border-border-subtle bg-surface-container-low p-6 text-text-muted">
@@ -125,15 +132,17 @@
 	{/each}
 </aside>
 
-<ConfirmDialog
-	open={pendingDeleteServer !== null}
-	title="Delete MCP server?"
-	description={pendingDeleteServer
-		? `Delete "${pendingDeleteServer.name}"? This removes its saved configuration.`
-		: ''}
-	confirmLabel="Delete server"
-	variant="danger"
-	onCancel={cancelDeleteMcp}
-	onConfirm={confirmDeleteMcp}
-/>
+{#if canManage}
+	<ConfirmDialog
+		open={pendingDeleteServer !== null}
+		title="Delete MCP server?"
+		description={pendingDeleteServer
+			? `Delete "${pendingDeleteServer.name}"? This removes its saved configuration.`
+			: ''}
+		confirmLabel="Delete server"
+		variant="danger"
+		onCancel={cancelDeleteMcp}
+		onConfirm={confirmDeleteMcp}
+	/>
+{/if}
 </section>

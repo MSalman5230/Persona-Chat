@@ -19,8 +19,11 @@ import {
 } from './session-settings';
 import type { ChatSessionRow } from '$lib/server/repositories/chat';
 
+const userId = 'user-1';
+
 const session: ChatSessionRow = {
 	id: '00000000-0000-4000-8000-000000000001',
+	userId,
 	title: 'Planning',
 	agentId: null,
 	providerConnectionId: null,
@@ -54,10 +57,10 @@ describe('chat session settings service', () => {
 			temperature: null
 		};
 
-		const updated = await updateChatSessionSettings(session, patch);
+		const updated = await updateChatSessionSettings(userId, session, patch);
 
-		expect(mocks.getAgent).toHaveBeenCalledWith(patch.agentId);
-		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, patch);
+		expect(mocks.getAgent).toHaveBeenCalledWith(userId, patch.agentId);
+		expect(mocks.updateChatSession).toHaveBeenCalledWith(userId, session.id, patch);
 		expect(updated).toMatchObject({
 			id: session.id,
 			title: session.title,
@@ -69,10 +72,10 @@ describe('chat session settings service', () => {
 	it('allows clearing the agent without an agent lookup', async () => {
 		const patch = { agentId: null };
 
-		const updated = await updateChatSessionSettings(session, patch);
+		const updated = await updateChatSessionSettings(userId, session, patch);
 
 		expect(mocks.getAgent).not.toHaveBeenCalled();
-		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, patch);
+		expect(mocks.updateChatSession).toHaveBeenCalledWith(userId, session.id, patch);
 		expect(updated.agentId).toBeNull();
 	});
 
@@ -80,7 +83,7 @@ describe('chat session settings service', () => {
 		mocks.getAgent.mockResolvedValue(undefined);
 		const patch = { agentId: '00000000-0000-4000-8000-000000000099' };
 
-		await expect(updateChatSessionSettings(session, patch)).rejects.toBeInstanceOf(
+		await expect(updateChatSessionSettings(userId, session, patch)).rejects.toBeInstanceOf(
 			ChatSessionSettingsValidationError
 		);
 		expect(mocks.updateChatSession).not.toHaveBeenCalled();
