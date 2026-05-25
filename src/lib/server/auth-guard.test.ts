@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { requireAdmin, requireUser } from './auth-guard';
+import { authenticatedUser, requireAdmin } from './auth-guard';
 import { isAdminRole } from './auth-role';
 
 const adminUser = { id: 'admin-1', role: 'admin' };
@@ -18,14 +18,14 @@ function eventFor(user: typeof adminUser | null) {
 
 describe('auth guards', () => {
 	it('returns the authenticated user', () => {
-		expect(requireUser(eventFor(regularUser) as never)).toBe(regularUser);
+		expect(authenticatedUser(eventFor(regularUser) as never)).toBe(regularUser);
 	});
 
-	it('rejects unauthenticated requests', () => {
-		expect(() => requireUser(eventFor(null) as never)).toThrow(
+	it('throws an invariant error when a protected route has no user', () => {
+		expect(() => authenticatedUser(eventFor(null) as never)).toThrow(
 			expect.objectContaining({
-				status: 401,
-				body: { message: 'Authentication required' }
+				status: 500,
+				body: { message: 'Authenticated user missing from protected route' }
 			})
 		);
 	});

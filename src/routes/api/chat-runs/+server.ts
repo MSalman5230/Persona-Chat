@@ -2,7 +2,7 @@ import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { parseJsonRequest } from '$lib/server/api';
-import { requireUser } from '$lib/server/auth-guard';
+import { authenticatedUser } from '$lib/server/auth-guard';
 import { ChatSessionNotFoundError } from '$lib/server/chat/service';
 import { ActiveChatRunError, startChatRun } from '$lib/server/chat/runs';
 import { temperatureSchema } from '$lib/server/chat/settings';
@@ -19,7 +19,7 @@ const chatRunRequestSchema = z.object({
 });
 
 export const POST: RequestHandler = async (event) => {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	const { request } = event;
 	const body = await parseJsonRequest(request, chatRunRequestSchema, 'Invalid chat run request');
 

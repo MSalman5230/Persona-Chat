@@ -2,7 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { parseJsonRequest } from '$lib/server/api';
-import { requireUser } from '$lib/server/auth-guard';
+import { authenticatedUser } from '$lib/server/auth-guard';
 import { resolveActiveChatRun } from '$lib/server/chat/runs';
 import {
 	ChatSessionSettingsValidationError,
@@ -17,7 +17,7 @@ import {
 } from '$lib/server/repositories/chat';
 
 export const GET: RequestHandler = async (event) => {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	const { params } = event;
 	const session = await getChatSession(user.id, params.id);
 	if (!session) error(404, 'Chat session not found');
@@ -32,7 +32,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const PATCH: RequestHandler = async (event) => {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	const { params, request } = event;
 	const session = await getChatSession(user.id, params.id);
 	if (!session) error(404, 'Chat session not found');
@@ -55,7 +55,7 @@ export const PATCH: RequestHandler = async (event) => {
 };
 
 export const DELETE: RequestHandler = async (event) => {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	const { params } = event;
 	const session = await getChatSession(user.id, params.id);
 	if (!session) error(404, 'Chat session not found');

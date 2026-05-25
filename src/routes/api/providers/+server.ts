@@ -1,7 +1,7 @@
 import { error, json, type RequestHandler } from '@sveltejs/kit';
 
 import { parseJsonRequest } from '$lib/server/api';
-import { requireAdmin, requireUser } from '$lib/server/auth-guard';
+import { authenticatedUser, requireAdmin } from '$lib/server/auth-guard';
 import { findSupportedProvider } from '$lib/server/providers/catalog';
 import {
 	createProviderConnection,
@@ -10,7 +10,7 @@ import {
 } from '$lib/server/repositories/providers';
 
 export const GET: RequestHandler = async (event) => {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	return json({
 		providers: await listProviderConnections({
 			userId: user.id,

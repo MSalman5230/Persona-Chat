@@ -2,14 +2,15 @@ import { error, type RequestEvent } from '@sveltejs/kit';
 
 import type { AuthUser } from '$lib/server/auth';
 
-export function requireUser(event: RequestEvent): AuthUser {
+// Typed accessor for routes already protected by the global auth hook.
+export function authenticatedUser(event: RequestEvent): AuthUser {
 	const user = event.locals.user;
-	if (!user) error(401, 'Authentication required');
+	if (!user) error(500, 'Authenticated user missing from protected route');
 	return user;
 }
 
 export function requireAdmin(event: RequestEvent): AuthUser {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	if (!event.locals.isAdmin) error(403, 'Admin access required');
 	return user;
 }

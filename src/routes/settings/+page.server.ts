@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { requireAdmin, requireUser } from '$lib/server/auth-guard';
+import { authenticatedUser, requireAdmin } from '$lib/server/auth-guard';
 import { booleanFromForm, stringFromForm } from '$lib/server/forms';
 import { testMcpServer } from '$lib/server/mcp/adapter';
 import {
@@ -33,7 +33,7 @@ function stringsFromForm(form: FormData, key: string): string[] {
 }
 
 export const load: PageServerLoad = async (event) => {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	const supportedProviders = getSupportedProviders();
 	const isAdmin = event.locals.isAdmin;
 
@@ -127,7 +127,7 @@ export const actions: Actions = {
 		}
 	},
 	saveProviderPreference: async (event) => {
-		const user = requireUser(event);
+		const user = authenticatedUser(event);
 		try {
 			const form = await event.request.formData();
 			const id = stringFromForm(form, 'id');

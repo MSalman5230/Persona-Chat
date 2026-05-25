@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { requireUser } from '$lib/server/auth-guard';
+import { authenticatedUser } from '$lib/server/auth-guard';
 import { booleanFromForm, stringFromForm } from '$lib/server/forms';
 import {
 	createAgent,
@@ -28,7 +28,7 @@ function agentInputFromForm(form: FormData) {
 }
 
 export const load: PageServerLoad = async (event) => {
-	const user = requireUser(event);
+	const user = authenticatedUser(event);
 	try {
 		return {
 			agents: await listAgents(user.id),
@@ -48,7 +48,7 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	saveAgent: async (event) => {
-		const user = requireUser(event);
+		const user = authenticatedUser(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
@@ -62,7 +62,7 @@ export const actions: Actions = {
 		}
 	},
 	defaultAgent: async (event) => {
-		const user = requireUser(event);
+		const user = authenticatedUser(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
@@ -77,7 +77,7 @@ export const actions: Actions = {
 		}
 	},
 	deleteAgent: async (event) => {
-		const user = requireUser(event);
+		const user = authenticatedUser(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
