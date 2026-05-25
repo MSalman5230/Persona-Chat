@@ -4,6 +4,21 @@ import { BLANK_SYSTEM_PROMPT_SENTINEL } from '$lib/server/chat/settings';
 
 import { wrapStreamFnWithSessionSettings } from './session-settings';
 
+const usage = {
+	input: 1,
+	output: 2,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 3,
+	cost: {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0
+	}
+};
+
 describe('agent runtime session settings', () => {
 	it('strips the blank prompt sentinel before calling PI providers', () => {
 		const calls: Array<{ context: { systemPrompt?: string }; options: Record<string, unknown> }> = [];
@@ -165,6 +180,11 @@ describe('agent runtime session settings', () => {
 				{
 					role: 'assistant',
 					content: [{ type: 'text', text: 'Earlier answer.' }],
+					api: 'openai-responses',
+					provider: 'openai',
+					model: 'gpt-5',
+					usage,
+					stopReason: 'stop',
 					timestamp: 3
 				}
 			]

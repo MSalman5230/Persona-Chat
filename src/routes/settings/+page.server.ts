@@ -1,14 +1,13 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { authenticatedUser, requireAdmin } from '$lib/server/auth-guard';
 import { booleanFromForm, stringFromForm, stringsFromForm } from '$lib/server/forms';
 import { testMcpServer } from '$lib/server/mcp/adapter';
 import { parseMcpJsonConfig, serializeMcpJsonConfig } from '$lib/server/mcp/json-config';
 import { getSupportedProviders } from '$lib/server/providers/catalog';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
 import { providerPayloadFromForm } from '$lib/server/providers/settings-form';
-import { managementResourceFilter } from '$lib/server/resource-policy';
+import { adminAccess, authenticatedAccess } from '$lib/server/resource-policy';
 import {
 	deleteMcpServer,
 	getMcpServer,
@@ -21,6 +20,7 @@ import {
 	getProviderConnection,
 	listProviderConnections,
 	saveUserProviderPreference,
+	serializeProviderConnectionForUser,
 	updateProviderConnection
 } from '$lib/server/repositories/providers';
 
@@ -46,18 +46,16 @@ function buildSettingsLoadResult(input: {
 }
 
 export const load: PageServerLoad = async (event) => {
-	const user = authenticatedUser(event);
+	const access = authenticatedAccess(event);
 	const supportedProviders = getSupportedProviders();
-	const isAdmin = event.locals.isAdmin;
-	const resourceFilter = managementResourceFilter(event);
 
 	try {
 		const [mcpServers, providers] = await Promise.all([
-			listMcpServers(resourceFilter),
-			listProviderConnections({ userId: user.id, ...resourceFilter })
+			listMcpServers(access.resources.management),
+			listProviderConnections({ userId: access.userId, ...access.resources.management })
 		]);
 		return buildSettingsLoadResult({
-			isAdmin,
+			isAdmin: access.isAdmin,
 			supportedProviders,
 			providers,
 			mcpServers,
@@ -65,7 +63,7 @@ export const load: PageServerLoad = async (event) => {
 		});
 	} catch (error) {
 		return buildSettingsLoadResult({
-			isAdmin,
+			isAdmin: access.isAdmin,
 			supportedProviders,
 			loadError: error instanceof Error ? error.message : 'Database is not ready'
 		});
@@ -80,42 +78,42 @@ async function saveProviderConnectionFromForm(
 	const supportedProviders = getSupportedProviders();
 
 	if (!id) {
-		return createProviderConnection(
-			providerPayloadFromForm(form, { update: false, supportedProviders }),
-			{ userId }
+		const row = await createProviderConnection(
+			providerPayloadFromForm(form, { update: false, supportedProviders })
 		);
+		return serializeProviderConnectionForUser(row, userId);
 	}
 
 	const current = await getProviderConnection(id);
 	if (!current) throw new Error('Provider connection not found');
 
-	return updateProviderConnection(
+	const row = await updateProviderConnection(
 		id,
 		providerPayloadFromForm(form, {
 			update: true,
 			existingBaseUrl: current.baseUrl,
 			existingProviderId: current.providerId,
 			supportedProviders
-		}),
-		{ userId }
+		})
 	);
+	return serializeProviderConnectionForUser(row, userId);
 }
 
 export const actions: Actions = {
 	saveProvider: async (event) => {
-		const user = requireAdmin(event);
+		const access = adminAccess(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
-			const provider = await saveProviderConnectionFromForm(form, id, user.id);
+			const provider = await saveProviderConnectionFromForm(form, id, access.userId);
 			return { ok: true, message: `${provider.provider.name} saved` };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save provider' });
 		}
 	},
 	deleteProvider: async (event) => {
-		requireAdmin(event);
+		adminAccess(event);
 		const { request } = event;
 		const form = await request.formData();
 		const id = stringFromForm(form, 'id');
@@ -124,7 +122,7 @@ export const actions: Actions = {
 		return { ok: true, message: 'Provider deleted' };
 	},
 	testProvider: async (event) => {
-		requireAdmin(event);
+		adminAccess(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
@@ -140,12 +138,12 @@ export const actions: Actions = {
 		}
 	},
 	saveProviderPreference: async (event) => {
-		const user = authenticatedUser(event);
+		const access = authenticatedAccess(event);
 		try {
 			const form = await event.request.formData();
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('Provider ID is required');
-			const provider = await saveUserProviderPreference(user.id, {
+			const provider = await saveUserProviderPreference(access.userId, {
 				providerConnectionId: id,
 				defaultModel: stringFromForm(form, 'defaultModel'),
 				favoriteModels: stringsFromForm(form, 'favoriteModels'),
@@ -159,7 +157,7 @@ export const actions: Actions = {
 		}
 	},
 	saveMcpJson: async (event) => {
-		requireAdmin(event);
+		adminAccess(event);
 		const { request } = event;
 		let submittedJson: string | undefined;
 		try {
@@ -189,7 +187,7 @@ export const actions: Actions = {
 		}
 	},
 	deleteMcp: async (event) => {
-		requireAdmin(event);
+		adminAccess(event);
 		const { request } = event;
 		const form = await request.formData();
 		const id = stringFromForm(form, 'id');
@@ -198,7 +196,7 @@ export const actions: Actions = {
 		return { ok: true, message: 'MCP server deleted' };
 	},
 	testMcp: async (event) => {
-		requireAdmin(event);
+		adminAccess(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();

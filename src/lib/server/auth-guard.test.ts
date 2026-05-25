@@ -23,11 +23,11 @@ describe('auth guards', () => {
 		expect(authenticatedUser(eventFor(regularUser))).toBe(regularUser);
 	});
 
-	it('throws an invariant error when a protected route has no user', () => {
+	it('throws an authentication error when a protected route has no user', () => {
 		expect(() => authenticatedUser(eventFor(null))).toThrow(
 			expect.objectContaining({
-				status: 500,
-				body: { message: 'Authenticated user missing from protected route' }
+				status: 401,
+				body: { message: 'Authentication required' }
 			})
 		);
 	});

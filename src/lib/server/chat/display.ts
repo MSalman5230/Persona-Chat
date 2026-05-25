@@ -1,4 +1,4 @@
-import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
+import type { PersistedAgentMessage } from '$lib/server/agent/messages';
 import { isRecord } from '$lib/server/json';
 import {
 	createChatThoughtDisplay,

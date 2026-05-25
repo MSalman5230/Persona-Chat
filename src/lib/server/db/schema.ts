@@ -12,7 +12,7 @@ import {
 	uniqueIndex,
 	uuid
 } from 'drizzle-orm/pg-core';
-import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
+import type { PersistedAgentMessage } from '$lib/server/agent/messages';
 import type { ChatMessageDisplay } from '$lib/shared/chat-display';
 
 export const mcpTransport = pgEnum('mcp_transport', ['stdio', 'streamable_http', 'sse']);

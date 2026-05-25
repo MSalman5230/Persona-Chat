@@ -5,7 +5,7 @@ import type { AuthUser } from '$lib/server/auth';
 // Typed accessor for routes already protected by the global auth hook.
 export function authenticatedUser(event: RequestEvent): AuthUser {
 	const user = event.locals.user;
-	if (!user) error(500, 'Authenticated user missing from protected route');
+	if (!user) error(401, 'Authentication required');
 	return user;
 }
 

@@ -4,14 +4,12 @@ import { buildProgressiveMcpToolDefinitions } from '$lib/server/mcp/adapter';
 import { getEnabledMcpServerBySlug, listEnabledMcpServers } from '$lib/server/repositories/mcp';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
 import type { Agent } from '$lib/server/agents';
+import { replayHistory } from '$lib/server/agent/message-replay';
+import type { PersistedAgentMessage } from '$lib/server/agent/messages';
 
 import { appTools } from './tools';
 import { createServerResourceLoader } from './resource-loader';
 import { applySessionStreamSettings, applySessionSystemPrompt } from './session-settings';
-
-type SessionManagerInstance = ReturnType<typeof SessionManager.inMemory>;
-type ReplayableAgentMessage = Parameters<SessionManagerInstance['appendMessage']>[0];
-type ReplayablePersistedAgentMessage = PersistedAgentMessage & ReplayableAgentMessage;
 
 export type AgentRuntimeInput = {
 	userId?: string;
@@ -23,49 +21,6 @@ export type AgentRuntimeInput = {
 	temperature?: number | null;
 	history?: PersistedAgentMessage[];
 };
-
-export type PersistedAgentMessage = {
-	role: string;
-	content?: string | Array<{ type: string; text?: string; [key: string]: unknown }>;
-	[key: string]: unknown;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function hasTimestamp(message: PersistedAgentMessage): boolean {
-	return typeof message.timestamp === 'number' && Number.isFinite(message.timestamp);
-}
-
-function isContentBlockArray(value: unknown): value is Array<{ type: string }> {
-	return Array.isArray(value) && value.every((item) => isRecord(item) && typeof item.type === 'string');
-}
-
-function isReplayableAgentMessage(
-	message: PersistedAgentMessage
-): message is ReplayablePersistedAgentMessage {
-	if (!hasTimestamp(message)) return false;
-
-	if (message.role === 'user') {
-		return typeof message.content === 'string' || isContentBlockArray(message.content);
-	}
-
-	if (message.role === 'assistant') {
-		return isContentBlockArray(message.content) && message.content.length > 0;
-	}
-
-	if (message.role === 'toolResult') {
-		return (
-			isContentBlockArray(message.content) &&
-			typeof message.toolCallId === 'string' &&
-			typeof message.toolName === 'string' &&
-			typeof message.isError === 'boolean'
-		);
-	}
-
-	return false;
-}
 
 function appToolsForAgent(agent: AgentRuntimeInput['agent']) {
 	if (!agent) return appTools;
@@ -91,10 +46,7 @@ function mcpToolsForAgent(agent: AgentRuntimeInput['agent']) {
 export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 	const provider = await createProviderRuntime(input);
 	const sessionManager = SessionManager.inMemory(process.cwd());
-
-	for (const message of input.history ?? []) {
-		if (isReplayableAgentMessage(message)) sessionManager.appendMessage(message);
-	}
+	replayHistory(sessionManager, input.history);
 
 	const customTools = [...appToolsForAgent(input.agent), ...mcpToolsForAgent(input.agent)];
 	const allowedToolNames = customTools.map((tool) => tool.name);

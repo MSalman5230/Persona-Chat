@@ -2,17 +2,19 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import { AuthStorage, ModelRegistry } from '@earendil-works/pi-coding-agent';
 
 import type {
-	ProviderConnectionRow,
-	ProviderConnectionView
-} from '$lib/server/repositories/providers';
+	ProviderConnectionRow
+} from '$lib/server/repositories/provider-connections';
 import {
 	getDefaultProviderConnection,
-	getDefaultProviderConnectionForUser,
 	getProviderConnection,
+	getProviderSecrets
+} from '$lib/server/repositories/provider-connections';
+import type { ProviderConnectionView } from '$lib/server/repositories/provider-preferences';
+import {
+	getDefaultProviderConnectionForUser,
 	getProviderConnectionForUser,
-	getProviderSecrets,
 	resolveProviderConnectionView
-} from '$lib/server/repositories/providers';
+} from '$lib/server/repositories/provider-preferences';
 import { isThinkingLevel, type ThinkingLevel } from '$lib/shared/thinking';
 import type { ProviderEffectiveSettings } from '$lib/shared/providers';
 import { findSupportedProvider } from './catalog';
@@ -73,19 +75,33 @@ function rowView(row: ProviderConnectionRow | undefined): ProviderConnectionView
 	return row ? resolveProviderConnectionView(row, undefined, null) : undefined;
 }
 
-export async function createProviderRuntime(input?: {
+type ProviderRuntimeInput = {
 	userId?: string;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
-}): Promise<ProviderRuntime> {
-	const view = input?.providerConnectionId
-		? input.userId
-			? await getProviderConnectionForUser(input.providerConnectionId, input.userId)
-			: rowView(await getProviderConnection(input.providerConnectionId))
-		: input?.userId
-			? await getDefaultProviderConnectionForUser(input.userId)
-			: rowView(await getDefaultProviderConnection());
+};
+
+async function resolveProviderRuntimeView(
+	input: ProviderRuntimeInput = {}
+): Promise<ProviderConnectionView | undefined> {
+	if (input.providerConnectionId && input.userId) {
+		return getProviderConnectionForUser(input.providerConnectionId, input.userId);
+	}
+
+	if (input.providerConnectionId) {
+		return rowView(await getProviderConnection(input.providerConnectionId));
+	}
+
+	if (input.userId) {
+		return getDefaultProviderConnectionForUser(input.userId);
+	}
+
+	return rowView(await getDefaultProviderConnection());
+}
+
+export async function createProviderRuntime(input: ProviderRuntimeInput = {}): Promise<ProviderRuntime> {
+	const view = await resolveProviderRuntimeView(input);
 
 	if (!view || !view.provider.enabled) {
 		throw new Error('No enabled provider connection is configured');

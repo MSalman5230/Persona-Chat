@@ -3,6 +3,8 @@ import { env } from '$env/dynamic/private';
 
 import { encryptJson } from '$lib/server/crypto';
 import {
+	buildProviderConnectionPatch,
+	providerUpdateSchema,
 	resolveProviderConnectionViews,
 	resolveProviderConnectionView,
 	serializeProviderView,
@@ -216,5 +218,45 @@ describe('resolveProviderConnectionViews', () => {
 		);
 
 		expect(views[0].effective.isDefault).toBe(true);
+	});
+});
+
+describe('buildProviderConnectionPatch', () => {
+	it('builds a small explicit patch and normalizes dependent model fields', () => {
+		const updatedAt = new Date('2026-05-25T12:00:00.000Z');
+		const parsed = providerUpdateSchema.parse({
+			defaultModel: 'next-default',
+			models: ['favorite-a'],
+			favoriteModels: ['favorite-a', 'missing'],
+			baseUrl: null,
+			enabled: false
+		});
+		const patch = buildProviderConnectionPatch(providerRow(), parsed, updatedAt);
+
+		expect(patch).toMatchObject({
+			defaultModel: 'next-default',
+			models: ['next-default', 'favorite-a'],
+			favoriteModels: ['favorite-a'],
+			baseUrl: null,
+			enabled: false,
+			secret: null,
+			updatedAt
+		});
+		expect(patch).not.toHaveProperty('name');
+		expect(patch).not.toHaveProperty('providerId');
+	});
+
+	it('can clear all stored provider secrets', () => {
+		const updatedAt = new Date('2026-05-25T12:00:00.000Z');
+		const current = providerRow({
+			secret: encryptJson({ apiKey: 'old-key', headers: { Authorization: 'Bearer old' } })
+		});
+		const parsed = providerUpdateSchema.parse({ apiKey: '', headers: {} });
+		const patch = buildProviderConnectionPatch(current, parsed, updatedAt);
+
+		expect(patch).toMatchObject({
+			secret: null,
+			updatedAt
+		});
 	});
 });

@@ -2,8 +2,7 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { parseJsonRequest } from '$lib/server/api';
-import { requireAdmin } from '$lib/server/auth-guard';
-import { managementResourceFilter } from '$lib/server/resource-policy';
+import { adminAccess, authenticatedAccess } from '$lib/server/resource-policy';
 import { createMcpServer, listMcpServers } from '$lib/server/repositories/mcp';
 
 const mcpSchema = z.object({
@@ -20,11 +19,12 @@ const mcpSchema = z.object({
 });
 
 export const GET: RequestHandler = async (event) => {
-	return json({ servers: await listMcpServers(managementResourceFilter(event)) });
+	const access = authenticatedAccess(event);
+	return json({ servers: await listMcpServers(access.resources.management) });
 };
 
 export const POST: RequestHandler = async (event) => {
-	requireAdmin(event);
+	adminAccess(event);
 	const { request } = event;
 	const body = await parseJsonRequest(request, mcpSchema, 'Invalid MCP server');
 	const server = await createMcpServer(body);

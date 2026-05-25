@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 	getProviderConnection: vi.fn(),
 	listProviderConnections: vi.fn(),
 	saveUserProviderPreference: vi.fn(),
+	serializeProviderConnectionForUser: vi.fn(),
 	updateProviderConnection: vi.fn(),
 	createProviderRuntime: vi.fn(),
 	getSupportedProviders: vi.fn(),
@@ -50,6 +51,7 @@ vi.mock('$lib/server/repositories/providers', () => ({
 	getProviderConnection: mocks.getProviderConnection,
 	listProviderConnections: mocks.listProviderConnections,
 	saveUserProviderPreference: mocks.saveUserProviderPreference,
+	serializeProviderConnectionForUser: mocks.serializeProviderConnectionForUser,
 	updateProviderConnection: mocks.updateProviderConnection
 }));
 

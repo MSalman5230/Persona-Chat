@@ -19,7 +19,7 @@ import {
 	type ChatMessageInput,
 	type ChatRunRow
 } from '$lib/server/repositories/chat';
-import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
+import type { PersistedAgentMessage } from '$lib/server/agent/messages';
 import type { ThoughtTimingsByAssistant } from '$lib/server/chat/display';
 
 export type ChatRunInput = {

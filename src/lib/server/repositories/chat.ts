@@ -2,7 +2,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '$lib/server/db';
 import { chatMessages, chatRuns, chatSessions } from '$lib/server/db/schema';
-import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
+import type { PersistedAgentMessage } from '$lib/server/agent/messages';
 import type { ChatMessageDisplay } from '$lib/shared/chat-display';
 
 export type ChatSessionRow = typeof chatSessions.$inferSelect;
