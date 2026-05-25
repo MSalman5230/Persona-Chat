@@ -10,6 +10,7 @@
 		modelOptionsForProvider,
 		presetIdForPrompt,
 		responseErrorMessage,
+		setConversationTurnThoughtExpanded,
 		sortSystemPromptPresets,
 		temperatureFromServer,
 		thinkingLevelForRequest,
@@ -221,12 +222,8 @@
 		messages = upsertUiMessageFromServer(messages, payload);
 	}
 
-	function toggleThought(sourceKey: string, contentIndex: number) {
-		const messageIndex = messages.findIndex((item) => item.clientKey === sourceKey);
-		const thought = messages[messageIndex]?.thoughts.find(
-			(item) => item.contentIndex === contentIndex
-		);
-		if (thought) thought.expanded = !thought.expanded;
+	function toggleThought(turnKey: string, thoughtKey: string, expanded: boolean) {
+		messages = setConversationTurnThoughtExpanded(messages, turnKey, thoughtKey, expanded);
 	}
 
 	function openSettingsSidebar() {
@@ -538,7 +535,13 @@
 			if (Array.isArray(payload.messages)) {
 				messages = uiMessagesFromServerSnapshot(payload.messages, messages);
 			}
-			setActiveRun(activeRunFromPayload(payload.activeRun));
+			const snapshotRun = activeRunFromPayload(payload.activeRun);
+			if (snapshotRun) {
+				setActiveRun(snapshotRun);
+			} else {
+				activeRun = null;
+				isStreaming = false;
+			}
 		}
 
 		if (eventName === 'event' && payload.type === 'message_update') {

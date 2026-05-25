@@ -6,7 +6,9 @@ import {
 } from '$lib/server/chat/service';
 import {
 	applyToolEventToDisplay,
-	normalizeChatMessageDisplay
+	normalizeChatMessageDisplay,
+	settleChatMessageDisplayTools,
+	type ChatToolTerminalStatus
 } from '$lib/shared/chat-display';
 import {
 	createChatRun,
@@ -184,6 +186,53 @@ export function mergeToolEventIntoStoredMessage(
 	};
 }
 
+export function settleRunMessageSnapshotTools(
+	messageSnapshots: Map<number, ChatMessageInput>,
+	status: ChatToolTerminalStatus,
+	now = Date.now()
+): { messageSnapshots: Map<number, ChatMessageInput>; changedSequences: number[] } {
+	let nextSnapshots = messageSnapshots;
+	const changedSequences: number[] = [];
+
+	for (const [sequence, message] of messageSnapshots) {
+		if (message.role !== 'assistant') continue;
+
+		const display = normalizeChatMessageDisplay(message.display, {
+			role: message.role,
+			text: message.contentText
+		});
+		const nextDisplay = settleChatMessageDisplayTools(display, status, now);
+		if (nextDisplay === display) continue;
+
+		if (nextSnapshots === messageSnapshots) nextSnapshots = new Map(messageSnapshots);
+		nextSnapshots.set(sequence, { ...message, display: nextDisplay });
+		changedSequences.push(sequence);
+	}
+
+	return { messageSnapshots: nextSnapshots, changedSequences };
+}
+
+function settleLiveRunMessageSnapshots(
+	liveRun: LiveChatRun,
+	status: ChatToolTerminalStatus
+): number[] {
+	const settled = settleRunMessageSnapshotTools(liveRun.messageSnapshots, status);
+	liveRun.messageSnapshots = settled.messageSnapshots;
+	return settled.changedSequences;
+}
+
+async function persistSettledLiveRunMessageSnapshots(
+	liveRun: LiveChatRun,
+	sessionId: string,
+	status: ChatToolTerminalStatus
+) {
+	const changedSequences = settleLiveRunMessageSnapshots(liveRun, status);
+	for (const sequence of changedSequences) {
+		const message = liveRun.messageSnapshots.get(sequence);
+		if (message) await upsertChatMessage(sessionId, sequence, message);
+	}
+}
+
 export function attachChatRunEventSequenceMetadata(
 	payload: Record<string, unknown>,
 	eventType: unknown,
@@ -331,11 +380,13 @@ async function executeChatRun(
 		});
 
 		await turn.runtime.session.prompt(input.message, { source: 'rpc' });
+		settleLiveRunMessageSnapshots(liveRun, 'completed');
 		await upsertAgentMessages(
 			turn.chatSession.id,
 			turn.runtime.session.messages as never,
 			turn.historyCount,
-			thoughtTimings
+			thoughtTimings,
+			liveRun.messageSnapshots
 		);
 		await updateChatRunStatus(liveRun.run.id, 'completed');
 		await publishSnapshot(liveRun, null);
@@ -346,6 +397,7 @@ async function executeChatRun(
 		});
 	} catch (cause) {
 		const message = cause instanceof Error ? cause.message : 'Chat request failed';
+		await persistSettledLiveRunMessageSnapshots(liveRun, turn.chatSession.id, 'failed');
 		await updateChatRunStatus(liveRun.run.id, 'failed', message);
 		await publishSnapshot(liveRun, null);
 		publish(liveRun, 'run_error', { message, runId: liveRun.run.id });

@@ -1,6 +1,7 @@
 import { isRecord } from './json';
 
 export type ChatToolStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type ChatToolTerminalStatus = Extract<ChatToolStatus, 'completed' | 'failed'>;
 export type ChatThoughtStatus = 'thinking' | 'thought';
 
 export type ChatThoughtDisplay = {
@@ -177,6 +178,14 @@ function toolKeys(tool: ChatToolDisplay): string[] {
 	return [tool.id || String(tool.contentIndex), String(tool.contentIndex)];
 }
 
+function byToolId(items: ChatToolDisplay[]): Map<string, ChatToolDisplay> {
+	return new Map(items.map((item) => [item.id, item]));
+}
+
+function isTerminalToolStatus(status: ChatToolStatus): boolean {
+	return status === 'completed' || status === 'failed';
+}
+
 function storedToolStatus(value: unknown): ChatToolStatus {
 	if (value === 'pending' || value === 'running' || value === 'failed') return value;
 	return 'completed';
@@ -276,6 +285,23 @@ function overlayStoredTool(
 	};
 }
 
+function settleChatToolDisplay(
+	tool: ChatToolDisplay,
+	status: ChatToolTerminalStatus,
+	now: number
+): ChatToolDisplay {
+	if (isTerminalToolStatus(tool.status)) return tool;
+
+	const durationMs =
+		tool.durationMs ?? (tool.startedAt !== undefined ? Math.max(0, now - tool.startedAt) : undefined);
+
+	return {
+		...tool,
+		status,
+		...(durationMs !== undefined ? { durationMs } : {})
+	};
+}
+
 function mergeClientSnapshotTool(
 	previous: ChatToolDisplay | undefined,
 	incoming: ChatToolDisplay,
@@ -310,6 +336,30 @@ export function applyToolEventToDisplay(
 	return { ...display, tools };
 }
 
+export function settleChatToolDisplays(
+	tools: ChatToolDisplay[],
+	status: ChatToolTerminalStatus,
+	now = Date.now()
+): ChatToolDisplay[] {
+	let changed = false;
+	const settled = tools.map((tool) => {
+		const nextTool = settleChatToolDisplay(tool, status, now);
+		if (nextTool !== tool) changed = true;
+		return nextTool;
+	});
+
+	return changed ? settled : tools;
+}
+
+export function settleChatMessageDisplayTools(
+	display: ChatMessageDisplay,
+	status: ChatToolTerminalStatus,
+	now = Date.now()
+): ChatMessageDisplay {
+	const tools = settleChatToolDisplays(display.tools, status, now);
+	return tools === display.tools ? display : { ...display, tools };
+}
+
 export function overlayStoredDisplay(
 	hydratedDisplay: ChatMessageDisplay,
 	storedDisplay: unknown
@@ -318,7 +368,9 @@ export function overlayStoredDisplay(
 	const storedThoughts = normalizeChatThoughtDisplays(storedRecord.thoughts);
 	const storedTools = normalizeChatToolDisplays(storedRecord.tools, 'completed');
 	const storedThoughtsByIndex = byContentIndex(storedThoughts);
+	const storedToolsById = byToolId(storedTools);
 	const storedToolsByIndex = byContentIndex(storedTools);
+	const hydratedToolIds = new Set(hydratedDisplay.tools.map((tool) => tool.id));
 	const hydratedToolIndexes = new Set(hydratedDisplay.tools.map((tool) => tool.contentIndex));
 	const thoughts = hydratedDisplay.thoughts.map((thought) =>
 		overlayStoredThought(thought, storedThoughtsByIndex.get(thought.contentIndex))
@@ -327,7 +379,8 @@ export function overlayStoredDisplay(
 		...hydratedDisplay.tools.map((tool) =>
 			overlayStoredTool(
 				tool,
-				storedToolsByIndex.get(tool.contentIndex) ??
+				storedToolsById.get(tool.id) ??
+					storedToolsByIndex.get(tool.contentIndex) ??
 					createChatToolDisplay({
 						contentIndex: tool.contentIndex,
 						id: tool.id,
@@ -336,7 +389,9 @@ export function overlayStoredDisplay(
 					})
 			)
 		),
-		...storedTools.filter((tool) => !hydratedToolIndexes.has(tool.contentIndex))
+		...storedTools.filter(
+			(tool) => !hydratedToolIds.has(tool.id) && !hydratedToolIndexes.has(tool.contentIndex)
+		)
 	];
 
 	return {

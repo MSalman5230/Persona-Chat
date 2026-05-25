@@ -66,6 +66,43 @@ describe('chat service display helpers', () => {
 		]);
 	});
 
+	it('preserves completed live tool state while normalizing final assistant messages', () => {
+		const row = normalizeAgentMessageForStorage(
+			{
+				role: 'assistant',
+				content: [
+					{ type: 'thinking', thinking: 'Need current time.' },
+					{ type: 'toolCall', id: 'call-1', name: 'current_datetime', arguments: {} },
+					{ type: 'text', text: 'It is 7:15 PM.' }
+				]
+			},
+			undefined,
+			{
+				tools: [
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'current_datetime',
+						status: 'completed',
+						startedAt: 1000,
+						durationMs: 250
+					}
+				]
+			}
+		);
+
+		expect(row.display.tools).toEqual([
+			{
+				contentIndex: 1,
+				id: 'call-1',
+				name: 'current_datetime',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 250
+			}
+		]);
+	});
+
 	it('attaches stored timing metadata to the matching thought', () => {
 		const timings: ThoughtTimingsByContentIndex = new Map([
 			[0, { startedAt: 1_000, endedAt: 9_250 }]
@@ -225,6 +262,79 @@ describe('chat service display helpers', () => {
 		});
 		expect(JSON.stringify(event)).not.toContain('opaque-secret');
 		expect(JSON.stringify(event)).not.toContain('Should not be shown.');
+	});
+
+	it('passes live stored display into final upserted agent messages', async () => {
+		vi.resetModules();
+		const upsertChatMessages = vi.fn();
+
+		vi.doMock('$lib/server/repositories/chat', () => ({
+			createChatSession: vi.fn(),
+			getChatSession: vi.fn(),
+			listChatMessages: vi.fn(),
+			updateChatSession: vi.fn(),
+			upsertChatMessages
+		}));
+		vi.doMock('$lib/server/agent/runtime', () => ({
+			createServerAgentSession: vi.fn()
+		}));
+
+		const { upsertAgentMessages } = await import('./service');
+		await upsertAgentMessages(
+			'session-1',
+			[
+				{ role: 'user', content: [{ type: 'text', text: 'time?' }] },
+				{
+					role: 'assistant',
+					content: [{ type: 'toolCall', id: 'call-1', name: 'current_datetime', arguments: {} }]
+				}
+			],
+			0,
+			undefined,
+			new Map([
+				[
+					2,
+					{
+						display: {
+							tools: [
+								{
+									contentIndex: 0,
+									id: 'call-1',
+									name: 'current_datetime',
+									status: 'completed',
+									startedAt: 1000,
+									durationMs: 100
+								}
+							]
+						}
+					}
+				]
+			])
+		);
+
+		expect(upsertChatMessages).toHaveBeenCalledWith(
+			'session-1',
+			1,
+			expect.arrayContaining([
+				expect.objectContaining({
+					role: 'assistant',
+					display: expect.objectContaining({
+						tools: [
+							{
+								contentIndex: 0,
+								id: 'call-1',
+								name: 'current_datetime',
+								status: 'completed',
+								startedAt: 1000,
+								durationMs: 100
+							}
+						]
+					})
+				})
+			])
+		);
+		vi.doUnmock('$lib/server/repositories/chat');
+		vi.doUnmock('$lib/server/agent/runtime');
 	});
 });
 

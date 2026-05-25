@@ -88,7 +88,8 @@ export async function upsertAgentMessages(
 	sessionId: string,
 	messages: AgentMessage[],
 	historyCount: number,
-	thoughtTimings?: ThoughtTimingsByAssistant
+	thoughtTimings?: ThoughtTimingsByAssistant,
+	storedMessagesBySequence?: Map<number, { display?: unknown }>
 ): Promise<void> {
 	const newMessages = messages.slice(historyCount);
 	let assistantIndex = -1;
@@ -96,9 +97,14 @@ export async function upsertAgentMessages(
 	await upsertChatMessages(
 		sessionId,
 		historyCount + 1,
-		newMessages.map((message) => {
+		newMessages.map((message, index) => {
+			const sequence = historyCount + 1 + index;
 			const timings = message.role === 'assistant' ? thoughtTimings?.get(++assistantIndex) : undefined;
-			return normalizeAgentMessageForStorage(message, timings);
+			return normalizeAgentMessageForStorage(
+				message,
+				timings,
+				storedMessagesBySequence?.get(sequence)?.display
+			);
 		})
 	);
 }

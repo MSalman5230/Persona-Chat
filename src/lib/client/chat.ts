@@ -25,6 +25,15 @@ export type UiTurnThought = UiThought & {
 	thoughtKey: string;
 };
 
+type UiTurnThoughtSource = {
+	sourceKey: string;
+	contentIndex: number;
+};
+
+export type UiMergedTurnThought = UiThought & {
+	thoughtKey: string;
+};
+
 export type UiTurnTool = UiTool & {
 	sourceKey: string;
 	toolKey: string;
@@ -48,6 +57,7 @@ export type UiConversationTurn = {
 	assistantMessages: UiMessage[];
 	assistantText: string;
 	thoughts: UiTurnThought[];
+	displayThoughts: UiMergedTurnThought[];
 	tools: UiTurnTool[];
 };
 
@@ -356,6 +366,7 @@ function emptyTurn(key: string): UiConversationTurn {
 		assistantMessages: [],
 		assistantText: '',
 		thoughts: [],
+		displayThoughts: [],
 		tools: []
 	};
 }
@@ -381,7 +392,10 @@ function appendAssistantToTurn(turn: UiConversationTurn, message: UiMessage): vo
 	);
 }
 
-export function groupMessagesIntoConversationTurns(messages: UiMessage[]): UiConversationTurn[] {
+export function groupMessagesIntoConversationTurns(
+	messages: UiMessage[],
+	now = Date.now()
+): UiConversationTurn[] {
 	const turns: UiConversationTurn[] = [];
 	let current: UiConversationTurn | undefined;
 
@@ -405,7 +419,106 @@ export function groupMessagesIntoConversationTurns(messages: UiMessage[]): UiCon
 		}
 	}
 
+	for (const turn of turns) {
+		turn.displayThoughts = projectTurnThoughtsForDisplay(turn.thoughts, turn.key, now).displayThoughts;
+	}
+
 	return turns;
+}
+
+function projectTurnThoughtsForDisplay(
+	thoughts: UiTurnThought[],
+	turnKey: string,
+	now = Date.now()
+): {
+	displayThoughts: UiMergedTurnThought[];
+	sourcesByThoughtKey: Map<string, UiTurnThoughtSource[]>;
+} {
+	if (thoughts.length === 0) {
+		return { displayThoughts: [], sourcesByThoughtKey: new Map() };
+	}
+
+	let durationMs = 0;
+	let hasDuration = false;
+	for (const thought of thoughts) {
+		const duration = thoughtDurationMs(thought, now);
+		if (duration !== undefined) {
+			durationMs += duration;
+			hasDuration = true;
+		}
+	}
+
+	const status = thoughts.some((thought) => thought.status === 'thinking') ? 'thinking' : 'thought';
+	const redacted = thoughts.every((thought) => thought.redacted);
+	const expanded = status === 'thinking' || thoughts.some((thought) => thought.expanded);
+	const text = thoughts
+		.filter((thought) => !thought.redacted)
+		.map((thought) => thought.text.trim())
+		.filter(Boolean)
+		.join('\n\n');
+	const sources = thoughts.map((thought) => ({
+		sourceKey: thought.sourceKey,
+		contentIndex: thought.contentIndex
+	}));
+	const startedAt = status === 'thinking' && hasDuration ? now - durationMs : undefined;
+	const thoughtKey = `${turnKey}:thoughts`;
+
+	return {
+		displayThoughts: [
+			{
+				contentIndex: thoughts[0].contentIndex,
+				text,
+				status,
+				...(hasDuration ? { durationMs } : {}),
+				redacted,
+				expanded,
+				...(startedAt !== undefined ? { startedAt } : {}),
+				thoughtKey
+			}
+		],
+		sourcesByThoughtKey: new Map([[thoughtKey, sources]])
+	};
+}
+
+export function setConversationTurnThoughtExpanded(
+	messages: UiMessage[],
+	turnKey: string,
+	thoughtKey: string,
+	expanded: boolean
+): UiMessage[] {
+	const turn = groupMessagesIntoConversationTurns(messages).find((item) => item.key === turnKey);
+	if (!turn) return messages;
+
+	const sources = projectTurnThoughtsForDisplay(turn.thoughts, turn.key).sourcesByThoughtKey.get(thoughtKey);
+	if (!sources?.length) return messages;
+
+	const contentIndexesBySourceKey = new Map<string, Set<number>>();
+	for (const source of sources) {
+		const indexes = contentIndexesBySourceKey.get(source.sourceKey) ?? new Set<number>();
+		indexes.add(source.contentIndex);
+		contentIndexesBySourceKey.set(source.sourceKey, indexes);
+	}
+
+	let changed = false;
+	const nextMessages = messages.map((message) => {
+		const sourceIndexes = contentIndexesBySourceKey.get(message.clientKey);
+		if (!sourceIndexes) return message;
+
+		let thoughtsChanged = false;
+		const thoughts = message.thoughts.map((thought) => {
+			if (!sourceIndexes.has(thought.contentIndex) || thought.expanded === expanded) {
+				return thought;
+			}
+			thoughtsChanged = true;
+			return { ...thought, expanded };
+		});
+
+		if (!thoughtsChanged) return message;
+		changed = true;
+		return { ...message, thoughts };
+	});
+
+	return changed ? nextMessages : messages;
 }
 
 export function shouldShowAssistantTurnPlaceholder(
