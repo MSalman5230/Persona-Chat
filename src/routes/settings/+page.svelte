@@ -1,10 +1,5 @@
 <script lang="ts">
-	import {
-		supportedProviderFor,
-		type McpServerOption,
-		type SavedProviderOption,
-		type SupportedProviderOption
-	} from '$lib/client/settings';
+	import { supportedProviderFor } from '$lib/client/settings';
 	import McpPanel from '$lib/components/settings/McpPanel.svelte';
 	import ProvidersPanel from '$lib/components/settings/ProvidersPanel.svelte';
 	import SettingsHeader from '$lib/components/settings/SettingsHeader.svelte';
@@ -20,9 +15,9 @@
 	let selectedSupportedProviderId = $state<string | null>(null);
 	let selectedDefaultModelOverride = $state<string | null>(null);
 
-	const providers = $derived(data.providers as SavedProviderOption[]);
-	const supportedProviders = $derived(data.supportedProviders as SupportedProviderOption[]);
-	const mcpServers = $derived(data.mcpServers as McpServerOption[]);
+	const providers = $derived(data.providers);
+	const supportedProviders = $derived(data.supportedProviders);
+	const mcpServers = $derived(data.mcpServers);
 	const selectedProviderId = $derived(selectedSupportedProviderId ?? supportedProviders[0]?.id ?? CUSTOM_PROVIDER_ID);
 	const selectedSupportedProvider = $derived(
 		supportedProviderFor(supportedProviders, selectedProviderId) ?? supportedProviders[0]

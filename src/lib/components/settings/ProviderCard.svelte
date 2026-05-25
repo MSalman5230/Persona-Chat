@@ -1,14 +1,14 @@
 <script lang="ts">
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import SelectField from '$lib/components/common/SelectField.svelte';
+	import ConfirmFormDelete from '$lib/components/common/ConfirmFormDelete.svelte';
 	import {
+		defaultModelOptions,
 		defaultModelValue,
-		hasModel,
 		isCatalogBackedProvider,
 		providerModelOptions,
 		type SavedProviderOption,
 		type SupportedProviderOption
 	} from '$lib/client/settings';
+	import ProviderModelPicker from './ProviderModelPicker.svelte';
 
 	interface Props {
 		provider: SavedProviderOption;
@@ -20,39 +20,12 @@
 
 	const catalogBacked = $derived(isCatalogBackedProvider(connection, supportedProviders));
 	const modelOptions = $derived(providerModelOptions(connection, supportedProviders));
-	const userDefaultModelOptions = $derived([
-		...(connection.effective.defaultModel && !hasModel(modelOptions, connection.effective.defaultModel)
-			? [{ value: connection.effective.defaultModel, label: connection.effective.defaultModel }]
-			: []),
-		...modelOptions.map((model) => ({ value: model.id, label: model.name }))
-	]);
-	const adminDefaultModelOptions = $derived([
-		...(connection.provider.defaultModel && !hasModel(modelOptions, connection.provider.defaultModel)
-			? [{ value: connection.provider.defaultModel, label: connection.provider.defaultModel }]
-			: []),
-		...modelOptions.map((model) => ({ value: model.id, label: model.name }))
-	]);
-
-	let deleteForm: HTMLFormElement | null = null;
-	let deleteConfirmationOpen = $state(false);
-
-	function requestDeleteProvider(event: SubmitEvent) {
-		event.preventDefault();
-		deleteForm = event.currentTarget as HTMLFormElement;
-		deleteConfirmationOpen = true;
-	}
-
-	function cancelDeleteProvider() {
-		deleteConfirmationOpen = false;
-		deleteForm = null;
-	}
-
-	function confirmDeleteProvider() {
-		const form = deleteForm;
-		deleteConfirmationOpen = false;
-		deleteForm = null;
-		form?.submit();
-	}
+	const userDefaultModelOptions = $derived(
+		defaultModelOptions(connection.effective.defaultModel, modelOptions)
+	);
+	const adminDefaultModelOptions = $derived(
+		defaultModelOptions(connection.provider.defaultModel, modelOptions)
+	);
 </script>
 
 <div class="rounded-lg border border-border-subtle bg-surface-container-low p-4">
@@ -89,29 +62,31 @@
 						</span>
 					</button>
 				</form>
-				<form method="POST" action="?/deleteProvider" onsubmit={requestDeleteProvider}>
-					<input type="hidden" name="id" value={connection.provider.id} />
-					<button
-						class="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-error"
-						aria-label="Delete provider"
-					>
-						<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
-					</button>
-				</form>
+				<ConfirmFormDelete
+					action="?/deleteProvider"
+					id={connection.provider.id}
+					title="Delete provider?"
+					description={`Delete "${connection.provider.name}"? This removes its saved configuration.`}
+					confirmLabel="Delete provider"
+					buttonLabel="Delete provider"
+					buttonClass="rounded-lg border border-border-subtle p-2 text-text-muted transition-colors hover:bg-surface-container-high hover:text-error"
+				/>
 			</div>
 		{/if}
 	</div>
 
 	<form class="mt-4 grid gap-3 sm:grid-cols-2" method="POST" action="?/saveProviderPreference">
 		<input type="hidden" name="id" value={connection.provider.id} />
-		<label class="space-y-1">
-			<span class="font-label-md text-label-md uppercase text-text-muted">Your Default Model</span>
-			<SelectField
-				name="defaultModel"
-				value={defaultModelValue(connection, modelOptions)}
-				options={userDefaultModelOptions}
-			/>
-		</label>
+		<ProviderModelPicker
+			defaultLabel="Your Default Model"
+			favoriteLabel="Your Favorite Models"
+			defaultModel={connection.effective.defaultModel}
+			selectedDefaultModel={defaultModelValue(connection, modelOptions)}
+			favoriteModels={connection.effective.favoriteModels}
+			{modelOptions}
+			defaultOptions={userDefaultModelOptions}
+			defaultBadge="Your default"
+		/>
 		<label class="mt-auto flex h-10 items-center gap-2 font-body-sm text-body-sm text-text-primary">
 			<input
 				type="checkbox"
@@ -122,35 +97,6 @@
 			<span>Your default provider</span>
 		</label>
 
-		<div class="space-y-2 sm:col-span-2">
-			<span class="font-label-md text-label-md uppercase text-text-muted">Your Favorite Models</span>
-			{#if modelOptions.length > 0}
-				<div class="settings-model-list">
-					{#each modelOptions as model (model.id)}
-						<label class="settings-model-favorite">
-							<input
-								class="settings-model-favorite-input"
-								type="checkbox"
-								name="favoriteModels"
-								value={model.id}
-								checked={connection.effective.favoriteModels.includes(model.id)}
-							/>
-							<span class="settings-favorite-toggle" aria-hidden="true">
-								<span class="material-symbols-outlined settings-favorite-icon">star</span>
-							</span>
-							<span class="settings-model-name">{model.name}</span>
-							{#if model.id === connection.effective.defaultModel}
-								<span class="settings-model-badge">Your default</span>
-							{/if}
-						</label>
-					{/each}
-				</div>
-			{:else}
-				<div class="rounded-lg border border-border-subtle bg-surface-container p-3 text-text-muted">
-					No models configured.
-				</div>
-			{/if}
-		</div>
 		<div class="flex justify-end sm:col-span-2">
 			<button class="settings-primary-button">Save Preferences</button>
 		</div>
@@ -172,43 +118,16 @@
 					<span class="font-label-md text-label-md uppercase text-text-muted">Name</span>
 					<input class="settings-field" name="name" value={connection.provider.name} />
 				</label>
-				<label class="space-y-1">
-					<span class="font-label-md text-label-md uppercase text-text-muted">Global Default Model</span>
-					<SelectField
-						name="defaultModel"
-						value={connection.provider.defaultModel}
-						options={adminDefaultModelOptions}
-					/>
-				</label>
-				<div class="space-y-2 sm:col-span-2">
-					<span class="font-label-md text-label-md uppercase text-text-muted">Global Favorite Models</span>
-					{#if modelOptions.length > 0}
-						<div class="settings-model-list">
-							{#each modelOptions as model (model.id)}
-								<label class="settings-model-favorite">
-									<input
-										class="settings-model-favorite-input"
-										type="checkbox"
-										name="favoriteModels"
-										value={model.id}
-										checked={connection.provider.favoriteModels.includes(model.id)}
-									/>
-									<span class="settings-favorite-toggle" aria-hidden="true">
-										<span class="material-symbols-outlined settings-favorite-icon">star</span>
-									</span>
-									<span class="settings-model-name">{model.name}</span>
-									{#if model.id === connection.provider.defaultModel}
-										<span class="settings-model-badge">Global default</span>
-									{/if}
-								</label>
-							{/each}
-						</div>
-					{:else}
-						<div class="rounded-lg border border-border-subtle bg-surface-container p-3 text-text-muted">
-							No models configured.
-						</div>
-					{/if}
-				</div>
+				<ProviderModelPicker
+					defaultLabel="Global Default Model"
+					favoriteLabel="Global Favorite Models"
+					defaultModel={connection.provider.defaultModel}
+					selectedDefaultModel={connection.provider.defaultModel}
+					favoriteModels={connection.provider.favoriteModels}
+					{modelOptions}
+					defaultOptions={adminDefaultModelOptions}
+					defaultBadge="Global default"
+				/>
 
 				<div class="grid gap-3 sm:col-span-2 sm:grid-cols-2">
 					<label class="space-y-1">
@@ -281,15 +200,4 @@
 		</details>
 	{/if}
 
-	{#if canManage}
-		<ConfirmDialog
-			open={deleteConfirmationOpen}
-			title="Delete provider?"
-			description={`Delete "${connection.provider.name}"? This removes its saved configuration.`}
-			confirmLabel="Delete provider"
-			variant="danger"
-			onCancel={cancelDeleteProvider}
-			onConfirm={confirmDeleteProvider}
-		/>
-	{/if}
 </div>

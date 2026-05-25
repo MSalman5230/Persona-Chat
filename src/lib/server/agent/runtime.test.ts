@@ -95,14 +95,88 @@ describe('agent runtime session settings', () => {
 
 		const { createServerAgentSession } = await import('./runtime');
 		const runtime = await createServerAgentSession({
-			history: [{ role: 'assistant', content: [{ type: 'text', text: 'Earlier answer.' }] }]
+			history: [
+				{
+					role: 'user',
+					content: [{ type: 'text', text: 'Earlier question.' }],
+					timestamp: 1
+				}
+			]
 		});
 
 		expect(appendedMessages[0]).toMatchObject({
-			role: 'assistant',
-			content: [{ type: 'text', text: 'Earlier answer.' }]
+			role: 'user',
+			content: [{ type: 'text', text: 'Earlier question.' }]
 		});
 		expect(appendedMessages).toHaveLength(1);
+		expect(runtime.provider.providerId).toBe('mock-provider');
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
+	});
+
+	it('skips incomplete placeholders and non-PI messages when loading history', async () => {
+		vi.resetModules();
+		const appendedMessages: unknown[] = [];
+		const createAgentSession = vi.fn(async () => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} }
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({
+					appendMessage: vi.fn((message) => appendedMessages.push(message))
+				})
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				provider: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: undefined,
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers: vi.fn(),
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		await createServerAgentSession({
+			history: [
+				{ role: 'assistant', content: [], timestamp: 1 },
+				{ role: 'system', content: [{ type: 'text', text: 'metadata' }], timestamp: 2 },
+				{
+					role: 'assistant',
+					content: [{ type: 'text', text: 'Earlier answer.' }],
+					timestamp: 3
+				}
+			]
+		});
+
+		expect(appendedMessages).toEqual([
+			expect.objectContaining({
+				role: 'assistant',
+				content: [{ type: 'text', text: 'Earlier answer.' }],
+				timestamp: 3
+			})
+		]);
 		vi.doUnmock('@earendil-works/pi-coding-agent');
 		vi.doUnmock('$lib/server/providers/runtime');
 		vi.doUnmock('$lib/server/repositories/mcp');

@@ -3,8 +3,7 @@ import { AuthStorage, ModelRegistry } from '@earendil-works/pi-coding-agent';
 
 import type {
 	ProviderConnectionRow,
-	ProviderConnectionView,
-	ProviderEffectiveSettings
+	ProviderConnectionView
 } from '$lib/server/repositories/providers';
 import {
 	getDefaultProviderConnection,
@@ -15,6 +14,7 @@ import {
 	resolveProviderConnectionView
 } from '$lib/server/repositories/providers';
 import { isThinkingLevel, type ThinkingLevel } from '$lib/shared/thinking';
+import type { ProviderEffectiveSettings } from '$lib/shared/providers';
 import { findSupportedProvider } from './catalog';
 
 export type ProviderRuntime = {

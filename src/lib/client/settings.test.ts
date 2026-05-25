@@ -31,13 +31,16 @@ const baseProvider: SavedProviderOption = {
 		defaultModel: 'gpt-5',
 		models: [],
 		favoriteModels: [],
+		config: {},
 		defaultThinkingLevel: 'medium',
 		hasApiKey: true,
 		hasHeaders: false,
 		secretPreview: '••••',
 		enabled: true,
 		isDefault: true,
-		authHeader: true
+		authHeader: true,
+		createdAt: new Date('2026-05-25T00:00:00.000Z'),
+		updatedAt: new Date('2026-05-25T00:00:00.000Z')
 	},
 	preference: null,
 	effective: {

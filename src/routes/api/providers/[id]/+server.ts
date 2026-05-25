@@ -1,14 +1,14 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-import { readJsonRequest, rethrowValidationAsBadRequest } from '$lib/server/api';
+import { parseJsonRequest } from '$lib/server/api';
 import { requireAdmin } from '$lib/server/auth-guard';
 import {
 	deleteProviderConnection,
 	getProviderConnection,
+	providerUpdateSchema,
 	updateProviderConnection
 } from '$lib/server/repositories/providers';
-import type { ProviderUpdateInput } from '$lib/server/repositories/providers';
 
 export const GET: RequestHandler = async (event) => {
 	requireAdmin(event);
@@ -20,18 +20,11 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const PATCH: RequestHandler = async (event) => {
-	requireAdmin(event);
+	const user = requireAdmin(event);
 	const { params, request } = event;
-	const body = (await readJsonRequest(
-		request,
-		'Invalid provider connection update'
-	)) as ProviderUpdateInput;
-	try {
-		const provider = await updateProviderConnection(params.id, body);
-		return json({ provider });
-	} catch (cause) {
-		rethrowValidationAsBadRequest(cause, 'Invalid provider connection update');
-	}
+	const body = await parseJsonRequest(request, providerUpdateSchema, 'Invalid provider connection update');
+	const provider = await updateProviderConnection(params.id, body, { userId: user.id });
+	return json({ provider });
 };
 
 export const DELETE: RequestHandler = async (event) => {

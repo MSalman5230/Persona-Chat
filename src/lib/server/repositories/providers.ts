@@ -10,16 +10,21 @@ import {
 	type ProviderSecretPayload,
 	type EncryptedJsonPayload
 } from '$lib/server/db/schema';
+import { THINKING_LEVELS } from '$lib/shared/thinking';
+import type {
+	ProviderEffectiveSettings,
+	PublicProviderConnection,
+	PublicProviderRecord,
+	PublicUserProviderPreference
+} from '$lib/shared/providers';
 
-const providerInputSchema = z.object({
+export const providerInputSchema = z.object({
 	name: z.string().min(1),
 	providerId: z.string().min(1).regex(/^[a-zA-Z0-9_.-]+$/),
 	api: z.string().min(1).default('openai'),
 	baseUrl: z.string().url().optional().nullable(),
 	defaultModel: z.string().min(1),
-	defaultThinkingLevel: z
-		.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
-		.default('medium'),
+	defaultThinkingLevel: z.enum(THINKING_LEVELS).default('medium'),
 	authHeader: z.boolean().default(true),
 	models: z.array(z.string().min(1)).default([]),
 	favoriteModels: z.array(z.string().min(1)).default([]),
@@ -30,7 +35,7 @@ const providerInputSchema = z.object({
 	isDefault: z.boolean().default(false)
 });
 
-const providerUpdateSchema = providerInputSchema.partial().extend({
+export const providerUpdateSchema = providerInputSchema.partial().extend({
 	apiKey: z.string().optional(),
 	headers: z.record(z.string(), z.string()).optional()
 });
@@ -40,29 +45,9 @@ export type ProviderUpdateInput = z.input<typeof providerUpdateSchema>;
 export type ProviderConnectionRow = typeof providerConnections.$inferSelect;
 export type UserProviderPreferenceRow = typeof userProviderPreferences.$inferSelect;
 
-export type ProviderEffectiveSettings = {
-	defaultModel: string;
-	favoriteModels: string[];
-	isDefault: boolean;
-};
-
 export type ProviderConnectionView = {
 	provider: ProviderConnectionRow;
 	preference: UserProviderPreferenceRow | null;
-	effective: ProviderEffectiveSettings;
-};
-
-export type PublicProviderRecord = Omit<ProviderConnectionRow, 'secret'> & {
-	hasApiKey: boolean;
-	hasHeaders: boolean;
-	secretPreview: string | null;
-};
-
-export type PublicUserProviderPreference = Omit<UserProviderPreferenceRow, 'userId'>;
-
-export type PublicProviderConnection = {
-	provider: PublicProviderRecord;
-	preference: PublicUserProviderPreference | null;
 	effective: ProviderEffectiveSettings;
 };
 
@@ -73,6 +58,15 @@ export type UserProviderPreferenceInput = {
 	isDefault?: boolean;
 };
 
+type UserProviderContext = {
+	preferencesByProvider: Map<string, UserProviderPreferenceRow>;
+	userDefaultProviderId: string | null;
+};
+
+type ProviderMutationOptions = {
+	userId?: string;
+};
+
 function decryptProviderSecret(
 	secret: EncryptedJsonPayload | null | undefined
 ): ProviderSecretPayload {
@@ -80,12 +74,15 @@ function decryptProviderSecret(
 }
 
 function serializeProvider(row: ProviderConnectionRow): PublicProviderRecord {
-	const hasSecret = Boolean(row.secret);
+	const secret = decryptProviderSecret(row.secret);
+	const hasApiKey = Boolean(secret.apiKey);
+	const hasHeaders = Boolean(secret.headers && Object.keys(secret.headers).length > 0);
+	const hasSecret = hasApiKey || hasHeaders;
 	const { secret: _secret, ...publicRow } = row;
 	return {
 		...publicRow,
-		hasApiKey: hasSecret,
-		hasHeaders: hasSecret,
+		hasApiKey,
+		hasHeaders,
 		secretPreview: hasSecret ? '••••' : null
 	};
 }
@@ -120,7 +117,7 @@ export function resolveProviderConnectionView(
 	};
 }
 
-function serializeProviderView(view: ProviderConnectionView): PublicProviderConnection {
+export function serializeProviderView(view: ProviderConnectionView): PublicProviderConnection {
 	return {
 		provider: serializeProvider(view.provider),
 		preference: serializePreference(view.preference),
@@ -160,13 +157,36 @@ async function preferencesForUser(userId: string): Promise<UserProviderPreferenc
 		.where(eq(userProviderPreferences.userId, userId));
 }
 
+async function loadUserProviderContext(userId: string): Promise<UserProviderContext> {
+	const preferences = await preferencesForUser(userId);
+	return {
+		preferencesByProvider: new Map(
+			preferences.map((preference) => [preference.providerConnectionId, preference])
+		),
+		userDefaultProviderId:
+			preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null
+	};
+}
+
 function rowWithUserPreferences(
 	row: ProviderConnectionRow,
-	preferencesByProvider: Map<string, UserProviderPreferenceRow>,
-	userDefaultProviderId: string | null
+	context: UserProviderContext,
+	userDefaultProviderId: string | null = context.userDefaultProviderId
 ): ProviderConnectionView {
-	const preference = preferencesByProvider.get(row.id);
+	const preference = context.preferencesByProvider.get(row.id);
 	return resolveProviderConnectionView(row, preference, userDefaultProviderId);
+}
+
+async function serializeProviderForUserContext(
+	row: ProviderConnectionRow,
+	options: ProviderMutationOptions = {}
+): Promise<PublicProviderConnection> {
+	if (!options.userId) {
+		return serializeProviderView(resolveProviderConnectionView(row, undefined, null));
+	}
+
+	const context = await loadUserProviderContext(options.userId);
+	return serializeProviderView(rowWithUserPreferences(row, context));
 }
 
 export async function listProviderConnections(options: {
@@ -187,15 +207,10 @@ export async function listProviderConnections(options: {
 		);
 	}
 
-	const preferences = await preferencesForUser(options.userId);
-	const preferencesByProvider = new Map(
-		preferences.map((preference) => [preference.providerConnectionId, preference])
-	);
-	const userDefaultProviderId =
-		preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null;
+	const context = await loadUserProviderContext(options.userId);
 
 	return rows.map((row) =>
-		serializeProviderView(rowWithUserPreferences(row, preferencesByProvider, userDefaultProviderId))
+		serializeProviderView(rowWithUserPreferences(row, context))
 	);
 }
 
@@ -215,13 +230,8 @@ export async function getProviderConnectionForUser(
 	const row = await getProviderConnection(id);
 	if (!row?.enabled) return undefined;
 
-	const preferences = await preferencesForUser(userId);
-	const preferencesByProvider = new Map(
-		preferences.map((preference) => [preference.providerConnectionId, preference])
-	);
-	const userDefaultProviderId =
-		preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null;
-	return rowWithUserPreferences(row, preferencesByProvider, userDefaultProviderId);
+	const context = await loadUserProviderContext(userId);
+	return rowWithUserPreferences(row, context);
 }
 
 export async function getDefaultProviderConnection(): Promise<ProviderConnectionRow | undefined> {
@@ -246,27 +256,25 @@ export async function getDefaultProviderConnection(): Promise<ProviderConnection
 export async function getDefaultProviderConnectionForUser(
 	userId: string
 ): Promise<ProviderConnectionView | undefined> {
-	const preferences = await preferencesForUser(userId);
-	const preferencesByProvider = new Map(
-		preferences.map((preference) => [preference.providerConnectionId, preference])
-	);
-	const userDefaultProviderId =
-		preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null;
+	const context = await loadUserProviderContext(userId);
 
-	if (userDefaultProviderId) {
-		const row = await getProviderConnection(userDefaultProviderId);
+	if (context.userDefaultProviderId) {
+		const row = await getProviderConnection(context.userDefaultProviderId);
 		if (row?.enabled) {
-			return resolveProviderConnectionView(row, preferencesByProvider.get(row.id), userDefaultProviderId);
+			return rowWithUserPreferences(row, context);
 		}
 	}
 
 	const globalDefault = await getDefaultProviderConnection();
 	if (!globalDefault) return undefined;
 
-	return rowWithUserPreferences(globalDefault, preferencesByProvider, null);
+	return rowWithUserPreferences(globalDefault, context, null);
 }
 
-export async function createProviderConnection(input: ProviderInput): Promise<PublicProviderConnection> {
+export async function createProviderConnection(
+	input: ProviderInput,
+	options: ProviderMutationOptions = {}
+): Promise<PublicProviderConnection> {
 	const parsed = providerInputSchema.parse(input);
 	const existing = await db.select({ id: providerConnections.id }).from(providerConnections).limit(1);
 	const models = normalizeModels(parsed.defaultModel, parsed.models);
@@ -291,12 +299,13 @@ export async function createProviderConnection(input: ProviderInput): Promise<Pu
 		.returning();
 
 	if (row.isDefault) await ensureSingleDefault(row.id);
-	return serializeProviderView(resolveProviderConnectionView(row, undefined, null));
+	return serializeProviderForUserContext(row, options);
 }
 
 export async function updateProviderConnection(
 	id: string,
-	input: ProviderUpdateInput
+	input: ProviderUpdateInput,
+	options: ProviderMutationOptions = {}
 ): Promise<PublicProviderConnection> {
 	const current = await getProviderConnection(id);
 	if (!current) throw new Error('Provider connection not found');
@@ -352,7 +361,7 @@ export async function updateProviderConnection(
 		.returning();
 
 	if (row.isDefault) await ensureSingleDefault(row.id);
-	return serializeProviderView(resolveProviderConnectionView(row, undefined, null));
+	return serializeProviderForUserContext(row, options);
 }
 
 export async function deleteProviderConnection(id: string): Promise<void> {
@@ -409,16 +418,8 @@ export async function saveUserProviderPreference(
 			.returning();
 	});
 
-	const preferences = await preferencesForUser(userId);
-	const preferencesByProvider = new Map(
-		preferences.map((preference) => [preference.providerConnectionId, preference])
-	);
-	const userDefaultProviderId =
-		preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null;
-
-	return serializeProviderView(
-		rowWithUserPreferences(provider, preferencesByProvider, userDefaultProviderId)
-	);
+	const context = await loadUserProviderContext(userId);
+	return serializeProviderView(rowWithUserPreferences(provider, context));
 }
 
 export function getProviderSecrets(row: ProviderConnectionRow): ProviderSecretPayload {

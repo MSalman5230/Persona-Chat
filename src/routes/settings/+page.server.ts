@@ -59,12 +59,17 @@ export const load: PageServerLoad = async (event) => {
 	}
 };
 
-async function saveProviderConnectionFromForm(form: FormData, id: string | undefined) {
+async function saveProviderConnectionFromForm(
+	form: FormData,
+	id: string | undefined,
+	userId: string
+) {
 	const supportedProviders = getSupportedProviders();
 
 	if (!id) {
 		return createProviderConnection(
-			providerPayloadFromForm(form, { update: false, supportedProviders })
+			providerPayloadFromForm(form, { update: false, supportedProviders }),
+			{ userId }
 		);
 	}
 
@@ -78,18 +83,19 @@ async function saveProviderConnectionFromForm(form: FormData, id: string | undef
 			existingBaseUrl: current.baseUrl,
 			existingProviderId: current.providerId,
 			supportedProviders
-		})
+		}),
+		{ userId }
 	);
 }
 
 export const actions: Actions = {
 	saveProvider: async (event) => {
-		requireAdmin(event);
+		const user = requireAdmin(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
-			const provider = await saveProviderConnectionFromForm(form, id);
+			const provider = await saveProviderConnectionFromForm(form, id, user.id);
 			return { ok: true, message: `${provider.provider.name} saved` };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save provider' });

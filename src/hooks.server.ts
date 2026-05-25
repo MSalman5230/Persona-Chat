@@ -2,7 +2,8 @@ import { building } from '$app/environment';
 import { redirect, type Handle } from '@sveltejs/kit';
 import { isAuthPath, svelteKitHandler } from 'better-auth/svelte-kit';
 
-import { auth, isAdminRole } from '$lib/server/auth';
+import { auth } from '$lib/server/auth';
+import { isAdminRole } from '$lib/server/auth-role';
 
 const PUBLIC_PAGE_PATHS = new Set(['/login', '/signup']);
 

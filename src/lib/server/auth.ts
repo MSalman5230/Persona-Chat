@@ -8,10 +8,8 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 
 import { db } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
-import { isAdminRole, roleForNewUser } from '$lib/server/auth-role';
+import { roleForNewUser } from '$lib/server/auth-role';
 import { googleAccountLinking, googleProfileSync } from '$lib/server/auth-options';
-
-export { isAdminRole, roleForNewUser };
 
 const localSecret = 'persona-local-development-secret-change-before-production';
 

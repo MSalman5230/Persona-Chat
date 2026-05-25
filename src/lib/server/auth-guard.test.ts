@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { requireAdmin, requireUser, userIsAdmin } from './auth-guard';
+import { requireAdmin, requireUser } from './auth-guard';
+import { isAdminRole } from './auth-role';
 
 const adminUser = { id: 'admin-1', role: 'admin' };
 const regularUser = { id: 'user-1', role: 'user' };
@@ -10,7 +11,7 @@ function eventFor(user: typeof adminUser | null) {
 		locals: {
 			user,
 			session: user ? { id: 'session-1' } : null,
-			isAdmin: userIsAdmin(user as never)
+			isAdmin: isAdminRole(user?.role)
 		}
 	};
 }

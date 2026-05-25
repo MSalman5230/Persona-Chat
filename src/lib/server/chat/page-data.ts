@@ -4,11 +4,9 @@ import { resolveActiveChatRun } from '$lib/server/chat/runs';
 import { serializeChatMessages } from '$lib/server/chat/service';
 import { getChatSession, listChatMessages, listChatSessions } from '$lib/server/repositories/chat';
 import { listAgentOptions } from '$lib/server/repositories/agents';
-import {
-	listProviderConnections,
-	type PublicProviderConnection
-} from '$lib/server/repositories/providers';
+import { listProviderConnections } from '$lib/server/repositories/providers';
 import { isRecord } from '$lib/server/json';
+import type { PublicProviderConnection } from '$lib/shared/providers';
 
 function isHttpError(cause: unknown): boolean {
 	return isRecord(cause) && typeof cause.status === 'number' && cause.status >= 400;
