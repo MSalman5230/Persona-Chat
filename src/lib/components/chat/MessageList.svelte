@@ -2,12 +2,10 @@
 	import { resolve } from '$app/paths';
 	import {
 		groupMessagesIntoConversationTurns,
-		mergeTurnThoughtsForDisplay,
 		shouldShowAssistantTurnPlaceholder,
 		thoughtLabel,
 		toolActivityLabel,
-		type UiMessage,
-		type UiTurnThoughtSource
+		type UiMessage
 	} from '$lib/client/chat';
 	import MarkdownContent from './MarkdownContent.svelte';
 
@@ -18,7 +16,7 @@
 		errorText: string;
 		isStreaming: boolean;
 		now: number;
-		onToggleThought: (sources: UiTurnThoughtSource[], expanded: boolean) => void;
+		onToggleThought: (turnKey: string, thoughtKey: string, expanded: boolean) => void;
 	}
 
 	let {
@@ -31,7 +29,7 @@
 		onToggleThought
 	}: Props = $props();
 
-	let turns = $derived(groupMessagesIntoConversationTurns(messages));
+	let turns = $derived(groupMessagesIntoConversationTurns(messages, now));
 </script>
 
 <section class="custom-scrollbar flex flex-1 flex-col overflow-y-auto px-4 pb-48 pt-8 md:pb-44">
@@ -78,14 +76,14 @@
 						<div class="message-block assistant">
 							{#if turn.thoughts.length > 0 || turn.tools.length > 0}
 								<div class="activity-stack" aria-label="Thinking and tool activity">
-									{#each mergeTurnThoughtsForDisplay(turn.thoughts, turn.key, now) as thought (thought.thoughtKey)}
+									{#each turn.displayThoughts as thought (thought.thoughtKey)}
 										<div class={['thought-block', thought.status]}>
 											<button
 												type="button"
 												class="thought-toggle"
 												aria-expanded={thought.expanded}
 												aria-controls={`thought-${turnIndex}-${thought.thoughtKey}`}
-												onclick={() => onToggleThought(thought.sources, !thought.expanded)}
+												onclick={() => onToggleThought(turn.key, thought.thoughtKey, !thought.expanded)}
 											>
 												<span
 													class={['material-symbols-outlined thought-chevron', thought.expanded ? 'expanded' : '']}

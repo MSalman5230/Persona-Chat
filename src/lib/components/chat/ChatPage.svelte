@@ -10,8 +10,8 @@
 		modelOptionsForProvider,
 		presetIdForPrompt,
 		responseErrorMessage,
+		setConversationTurnThoughtExpanded,
 		sortSystemPromptPresets,
-		settleUiMessageTools,
 		temperatureFromServer,
 		thinkingLevelForRequest,
 		uiMessageFromServer,
@@ -20,8 +20,7 @@
 		type ChatThinkingSelection,
 		type ChatProviderOption,
 		type SystemPromptPresetOption,
-		type UiMessage,
-		type UiTurnThoughtSource
+		type UiMessage
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -223,14 +222,8 @@
 		messages = upsertUiMessageFromServer(messages, payload);
 	}
 
-	function toggleThought(sources: UiTurnThoughtSource[], expanded: boolean) {
-		for (const source of sources) {
-			const messageIndex = messages.findIndex((item) => item.clientKey === source.sourceKey);
-			const thought = messages[messageIndex]?.thoughts.find(
-				(item) => item.contentIndex === source.contentIndex
-			);
-			if (thought) thought.expanded = expanded;
-		}
+	function toggleThought(turnKey: string, thoughtKey: string, expanded: boolean) {
+		messages = setConversationTurnThoughtExpanded(messages, turnKey, thoughtKey, expanded);
 	}
 
 	function openSettingsSidebar() {
@@ -492,10 +485,6 @@
 		messages = mergeToolEventIntoMessages(messages, payload);
 	}
 
-	function settleToolActivity(status: 'completed' | 'failed') {
-		messages = messages.map((item) => settleUiMessageTools(item, status));
-	}
-
 	function activeRunFromPayload(payload: unknown): ActiveRun | null {
 		if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.sessionId !== 'string') {
 			return null;
@@ -579,12 +568,10 @@
 		}
 
 		if (eventName === 'done') {
-			settleToolActivity('completed');
 			setActiveRun(null);
 		}
 
 		if (eventName === 'run_error') {
-			settleToolActivity('failed');
 			errorText = String(payload.message ?? 'Chat request failed');
 			setActiveRun(null);
 		}

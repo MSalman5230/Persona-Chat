@@ -6,12 +6,11 @@ import {
 	createLocalUiMessage,
 	formatDuration,
 	groupMessagesIntoConversationTurns,
-	mergeTurnThoughtsForDisplay,
 	mergeToolEventIntoMessages,
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
-	settleUiMessageTools,
+	setConversationTurnThoughtExpanded,
 	thoughtLabel,
 	thinkingLevelForRequest,
 	toolActivityLabel,
@@ -425,130 +424,169 @@ describe('chat client helpers', () => {
 	});
 
 	it('merges turn thoughts into one display thought', () => {
-		const turns = groupMessagesIntoConversationTurns([
-			{ clientKey: 'user-1', sequence: 1, role: 'user', text: 'time?', thoughts: [], tools: [] },
-			{
-				clientKey: 'assistant-2',
-				sequence: 2,
-				role: 'assistant',
-				text: '',
-				thoughts: [
-					{
-						contentIndex: 0,
-						text: 'Need current time.',
-						status: 'thought',
-						durationMs: 500,
-						redacted: false,
-						expanded: false
-					}
-				],
-				tools: []
-			},
-			{
-				clientKey: 'assistant-4',
-				sequence: 4,
-				role: 'assistant',
-				text: 'It is 7:15 PM.',
-				thoughts: [
-					{
-						contentIndex: 0,
-						text: 'Summarize the result.',
-						status: 'thought',
-						durationMs: 1500,
-						redacted: false,
-						expanded: true
-					}
-				],
-				tools: []
-			}
-		]);
+		const turns = groupMessagesIntoConversationTurns(
+			[
+				{ clientKey: 'user-1', sequence: 1, role: 'user', text: 'time?', thoughts: [], tools: [] },
+				{
+					clientKey: 'assistant-2',
+					sequence: 2,
+					role: 'assistant',
+					text: '',
+					thoughts: [
+						{
+							contentIndex: 0,
+							text: 'Need current time.',
+							status: 'thought',
+							durationMs: 500,
+							redacted: false,
+							expanded: false
+						}
+					],
+					tools: []
+				},
+				{
+					clientKey: 'assistant-4',
+					sequence: 4,
+					role: 'assistant',
+					text: 'It is 7:15 PM.',
+					thoughts: [
+						{
+							contentIndex: 0,
+							text: 'Summarize the result.',
+							status: 'thought',
+							durationMs: 1500,
+							redacted: false,
+							expanded: true
+						}
+					],
+					tools: []
+				}
+			],
+			5000
+		);
 
-		const merged = mergeTurnThoughtsForDisplay(turns[0].thoughts, turns[0].key, 5000);
-
-		expect(merged).toHaveLength(1);
-		expect(merged[0]).toMatchObject({
+		expect(turns[0].displayThoughts).toHaveLength(1);
+		expect(turns[0].displayThoughts[0]).toMatchObject({
 			contentIndex: 0,
 			text: 'Need current time.\n\nSummarize the result.',
 			status: 'thought',
 			durationMs: 2000,
 			redacted: false,
 			expanded: true,
-			thoughtKey: `${turns[0].key}:thoughts`,
-			sources: [
-				{ sourceKey: 'assistant-2', contentIndex: 0 },
-				{ sourceKey: 'assistant-4', contentIndex: 0 }
-			]
+			thoughtKey: `${turns[0].key}:thoughts`
 		});
-		expect(thoughtLabel(merged[0], 5000)).toBe('Thought for 2s');
+		expect(thoughtLabel(turns[0].displayThoughts[0], 5000)).toBe('Thought for 2s');
 	});
 
 	it('keeps merged display thoughts active when any source is thinking', () => {
-		const merged = mergeTurnThoughtsForDisplay(
+		const turns = groupMessagesIntoConversationTurns(
 			[
 				{
-					sourceKey: 'assistant-2',
-					thoughtKey: 'assistant-2:thought:0',
-					contentIndex: 0,
-					text: 'Prepared earlier.',
-					status: 'thought',
-					durationMs: 1000,
-					redacted: false,
-					expanded: false
+					clientKey: 'user-1',
+					sequence: 1,
+					role: 'user',
+					text: 'time?',
+					thoughts: [],
+					tools: []
 				},
 				{
-					sourceKey: 'assistant-4',
-					thoughtKey: 'assistant-4:thought:0',
-					contentIndex: 0,
-					text: 'Still thinking',
-					status: 'thinking',
-					redacted: false,
-					expanded: false,
-					startedAt: 3000
+					clientKey: 'assistant-2',
+					sequence: 2,
+					role: 'assistant',
+					text: '',
+					thoughts: [
+						{
+							contentIndex: 0,
+							text: 'Prepared earlier.',
+							status: 'thought',
+							durationMs: 1000,
+							redacted: false,
+							expanded: false
+						}
+					],
+					tools: []
+				},
+				{
+					clientKey: 'assistant-4',
+					sequence: 4,
+					role: 'assistant',
+					text: '',
+					thoughts: [
+						{
+							contentIndex: 0,
+							text: 'Still thinking',
+							status: 'thinking',
+							redacted: false,
+							expanded: false,
+							startedAt: 3000
+						}
+					],
+					tools: []
 				}
 			],
-			'turn:user-1',
 			5000
 		);
 
-		expect(merged[0]).toMatchObject({
+		expect(turns[0].displayThoughts[0]).toMatchObject({
 			text: 'Prepared earlier.\n\nStill thinking',
 			status: 'thinking',
 			durationMs: 3000,
 			startedAt: 2000,
 			expanded: true
 		});
-		expect(thoughtLabel(merged[0], 5000)).toBe('Thinking... 3s');
+		expect(thoughtLabel(turns[0].displayThoughts[0], 5000)).toBe('Thinking... 3s');
 	});
 
 	it('keeps all-redacted merged thoughts redacted', () => {
-		const merged = mergeTurnThoughtsForDisplay(
+		const turns = groupMessagesIntoConversationTurns(
 			[
 				{
-					sourceKey: 'assistant-2',
-					thoughtKey: 'assistant-2:thought:0',
-					contentIndex: 0,
-					text: '',
-					status: 'thought',
-					durationMs: 500,
-					redacted: true,
-					expanded: false
+					clientKey: 'user-1',
+					sequence: 1,
+					role: 'user',
+					text: 'time?',
+					thoughts: [],
+					tools: []
 				},
 				{
-					sourceKey: 'assistant-4',
-					thoughtKey: 'assistant-4:thought:0',
-					contentIndex: 1,
+					clientKey: 'assistant-2',
+					sequence: 2,
+					role: 'assistant',
 					text: '',
-					status: 'thought',
-					durationMs: 500,
-					redacted: true,
-					expanded: false
+					thoughts: [
+						{
+							contentIndex: 0,
+							text: '',
+							status: 'thought',
+							durationMs: 500,
+							redacted: true,
+							expanded: false
+						}
+					],
+					tools: []
+				},
+				{
+					clientKey: 'assistant-4',
+					sequence: 4,
+					role: 'assistant',
+					text: '',
+					thoughts: [
+						{
+							contentIndex: 1,
+							text: '',
+							status: 'thought',
+							durationMs: 500,
+							redacted: true,
+							expanded: false
+						}
+					],
+					tools: []
 				}
 			],
-			'turn:user-1',
 			5000
 		);
 
-		expect(merged[0]).toMatchObject({
+		expect(turns[0].displayThoughts[0]).toMatchObject({
 			text: '',
 			status: 'thought',
 			durationMs: 1000,
@@ -566,76 +604,78 @@ describe('chat client helpers', () => {
 		expect(toolActivityLabel({ contentIndex: 0, id: 'x', name: 'current_datetime', status: 'running' })).toBe('tool:current_datetime');
 	});
 
-	it('settles running tool activity as completed when a run finishes', () => {
-		const message: UiMessage = {
-			clientKey: 'assistant-1',
-			role: 'assistant',
-			text: 'Done.',
-			thoughts: [],
-			tools: [
-				{
-					contentIndex: 0,
-					id: 'call-1',
-					name: 'current_datetime',
-					status: 'running',
-					startedAt: 1000
-				}
-			]
-		};
-
-		expect(settleUiMessageTools(message, 'completed', 1750).tools).toEqual([
+	it('updates all raw source thoughts for a merged display thought', () => {
+		const messages: UiMessage[] = [
+			{ clientKey: 'user-1', sequence: 1, role: 'user', text: 'time?', thoughts: [], tools: [] },
 			{
-				contentIndex: 0,
-				id: 'call-1',
-				name: 'current_datetime',
-				status: 'completed',
-				startedAt: 1000,
-				durationMs: 750
-			}
-		]);
-	});
-
-	it('settles only active tool activity as failed when a run errors', () => {
-		const message: UiMessage = {
-			clientKey: 'assistant-1',
-			role: 'assistant',
-			text: '',
-			thoughts: [],
-			tools: [
-				{
-					contentIndex: 0,
-					id: 'call-1',
-					name: 'current_datetime',
-					status: 'completed',
-					durationMs: 100
-				},
-				{
-					contentIndex: 1,
-					id: 'call-2',
-					name: 'mcp_search',
-					status: 'running',
-					startedAt: 1000
-				}
-			]
-		};
-
-		expect(settleUiMessageTools(message, 'failed', 1500).tools).toEqual([
-			{
-				contentIndex: 0,
-				id: 'call-1',
-				name: 'current_datetime',
-				status: 'completed',
-				durationMs: 100
+				clientKey: 'assistant-2',
+				sequence: 2,
+				role: 'assistant',
+				text: '',
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Need current time.',
+						status: 'thought',
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: []
 			},
 			{
-				contentIndex: 1,
-				id: 'call-2',
-				name: 'mcp_search',
-				status: 'failed',
-				startedAt: 1000,
-				durationMs: 500
+				clientKey: 'assistant-4',
+				sequence: 4,
+				role: 'assistant',
+				text: 'It is 7:15 PM.',
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Summarize the result.',
+						status: 'thought',
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: []
 			}
-		]);
+		];
+		const turn = groupMessagesIntoConversationTurns(messages, 5000)[0];
+		const thoughtKey = turn.displayThoughts[0].thoughtKey;
+
+		const updated = setConversationTurnThoughtExpanded(messages, turn.key, thoughtKey, true);
+
+		expect(updated).not.toBe(messages);
+		expect(updated[1].thoughts[0].expanded).toBe(true);
+		expect(updated[2].thoughts[0].expanded).toBe(true);
+		expect(updated[0]).toBe(messages[0]);
+	});
+
+	it('returns the original messages when a merged thought toggle makes no changes', () => {
+		const messages: UiMessage[] = [
+			{ clientKey: 'user-1', sequence: 1, role: 'user', text: 'time?', thoughts: [], tools: [] },
+			{
+				clientKey: 'assistant-2',
+				sequence: 2,
+				role: 'assistant',
+				text: '',
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Need current time.',
+						status: 'thought',
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: []
+			}
+		];
+		const turn = groupMessagesIntoConversationTurns(messages, 5000)[0];
+		const thoughtKey = turn.displayThoughts[0].thoughtKey;
+
+		expect(setConversationTurnThoughtExpanded(messages, turn.key, thoughtKey, false)).toBe(messages);
+		expect(setConversationTurnThoughtExpanded(messages, turn.key, 'missing-thought', true)).toBe(messages);
 	});
 
 	it('limits chat model options to the default and favorites', () => {
