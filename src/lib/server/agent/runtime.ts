@@ -15,7 +15,6 @@ export type AgentRuntimeInput = {
 	thinkingLevel?: string | null;
 	agent?: Pick<Agent, 'systemPrompt' | 'toolNames' | 'mcpServerIds'> | null;
 	systemPrompt?: string;
-	customInstruction?: string;
 	temperature?: number | null;
 	history?: PersistedAgentMessage[];
 };
@@ -25,14 +24,6 @@ export type PersistedAgentMessage = {
 	content?: string | Array<{ type: string; text?: string; [key: string]: unknown }>;
 	[key: string]: unknown;
 };
-
-function userTextMessage(text: string): PersistedAgentMessage {
-	return {
-		role: 'user',
-		content: [{ type: 'text', text }],
-		timestamp: Date.now()
-	};
-}
 
 function appToolsForAgent(agent: AgentRuntimeInput['agent']) {
 	if (!agent) return appTools;
@@ -59,14 +50,6 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 	const provider = await createProviderRuntime(input);
 	const sessionManager = SessionManager.inMemory(process.cwd());
 
-	const customInstruction =
-		typeof input.customInstruction === 'string' && input.customInstruction.length > 0
-			? input.customInstruction
-			: '';
-	const syntheticMessages = customInstruction ? [userTextMessage(customInstruction)] : [];
-	for (const message of syntheticMessages) {
-		sessionManager.appendMessage(message as never);
-	}
 	for (const message of input.history ?? []) {
 		if (message.role === 'user' || message.role === 'assistant' || message.role === 'toolResult') {
 			sessionManager.appendMessage(message as never);
@@ -104,7 +87,6 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 		provider: provider.row,
 		model: provider.model,
 		thinkingLevel: provider.thinkingLevel,
-		allowedToolNames,
-		syntheticMessageCount: syntheticMessages.length
+		allowedToolNames
 	};
 }

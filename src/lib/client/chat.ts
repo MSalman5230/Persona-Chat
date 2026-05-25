@@ -87,13 +87,6 @@ export type ChatAgentOption = {
 	isDefault: boolean;
 };
 
-export type CustomInstructionPresetOption = {
-	id: string;
-	name: string;
-	instruction: string;
-	isDefault: boolean;
-};
-
 export const DEFAULT_MANUAL_TEMPERATURE = 0.7;
 
 export function clampTemperature(value: number): number {
@@ -103,22 +96,6 @@ export function clampTemperature(value: number): number {
 
 export function temperatureFromServer(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) ? clampTemperature(value) : null;
-}
-
-export function sortCustomInstructionPresets(
-	presets: CustomInstructionPresetOption[]
-): CustomInstructionPresetOption[] {
-	return [...presets].sort((a, b) => {
-		if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
-		return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-	});
-}
-
-export function presetIdForInstruction(
-	presets: CustomInstructionPresetOption[],
-	instruction: string
-): string {
-	return presets.find((preset) => preset.instruction === instruction)?.id ?? '';
 }
 
 export function roleFromServer(role: unknown): UiMessage['role'] {

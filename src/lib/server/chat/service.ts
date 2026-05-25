@@ -28,7 +28,6 @@ export async function prepareChatTurn(input: {
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
-	customInstruction?: string;
 	temperature?: number | null;
 }) {
 	const existing = input.sessionId ? await getChatSession(input.sessionId) : undefined;
@@ -37,7 +36,6 @@ export async function prepareChatTurn(input: {
 	const agentId = input.agentId !== undefined ? input.agentId : (existing?.agentId ?? null);
 	const agent = agentId ? await getAgent(agentId) : null;
 	if (agentId && !agent) throw new Error('Agent not found');
-	const customInstruction = input.customInstruction ?? existing?.customInstruction ?? '';
 	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
 	const thinkingLevel =
 		input.thinkingLevel !== undefined ? input.thinkingLevel : (existing?.thinkingLevel ?? null);
@@ -46,11 +44,9 @@ export async function prepareChatTurn(input: {
 		modelId: input.modelId ?? existing?.modelId,
 		thinkingLevel,
 		agent,
-		customInstruction,
 		temperature,
 		history
 	});
-	const runtimeMessageOffset = history.length + runtime.syntheticMessageCount;
 
 	let chatSession =
 		existing ??
@@ -61,7 +57,6 @@ export async function prepareChatTurn(input: {
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
 			thinkingLevel,
-			customInstruction,
 			temperature
 		}));
 
@@ -72,7 +67,6 @@ export async function prepareChatTurn(input: {
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
 			thinkingLevel,
-			customInstruction,
 			temperature
 		});
 		chatSession = {
@@ -82,7 +76,6 @@ export async function prepareChatTurn(input: {
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
 			thinkingLevel,
-			customInstruction,
 			temperature
 		};
 	}
@@ -90,8 +83,7 @@ export async function prepareChatTurn(input: {
 	return {
 		chatSession,
 		runtime,
-		historyCount: history.length,
-		runtimeMessageOffset
+		historyCount: history.length
 	};
 }
 

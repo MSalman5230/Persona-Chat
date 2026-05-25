@@ -29,7 +29,6 @@ export type ChatRunInput = {
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
-	customInstruction?: string;
 	temperature?: number | null;
 };
 
@@ -308,7 +307,6 @@ async function executeChatRun(
 			modelId: turn.runtime.model.id,
 			thinkingLevel: turn.chatSession.thinkingLevel,
 			agentId: turn.chatSession.agentId,
-			customInstruction: turn.chatSession.customInstruction,
 			temperature: turn.chatSession.temperature,
 			tools: turn.runtime.allowedToolNames
 		});
@@ -386,7 +384,7 @@ async function executeChatRun(
 		await upsertAgentMessages(
 			turn.chatSession.id,
 			turn.runtime.session.messages as never,
-			turn.runtimeMessageOffset,
+			turn.historyCount,
 			thoughtTimings,
 			liveRun.messageSnapshots,
 			turn.historyCount + 1

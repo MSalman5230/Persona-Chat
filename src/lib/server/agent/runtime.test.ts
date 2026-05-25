@@ -51,7 +51,7 @@ describe('agent runtime session settings', () => {
 		});
 	});
 
-	it('injects custom instruction as a hidden user message before stored history', async () => {
+	it('loads stored history without synthetic messages', async () => {
 		vi.resetModules();
 		const appendedMessages: unknown[] = [];
 		const createAgentSession = vi.fn(async () => ({
@@ -95,19 +95,14 @@ describe('agent runtime session settings', () => {
 
 		const { createServerAgentSession } = await import('./runtime');
 		const runtime = await createServerAgentSession({
-			customInstruction: 'Use citations.',
 			history: [{ role: 'assistant', content: [{ type: 'text', text: 'Earlier answer.' }] }]
 		});
 
 		expect(appendedMessages[0]).toMatchObject({
-			role: 'user',
-			content: [{ type: 'text', text: 'Use citations.' }]
-		});
-		expect(appendedMessages[1]).toMatchObject({
 			role: 'assistant',
 			content: [{ type: 'text', text: 'Earlier answer.' }]
 		});
-		expect(runtime.syntheticMessageCount).toBe(1);
+		expect(appendedMessages).toHaveLength(1);
 		vi.doUnmock('@earendil-works/pi-coding-agent');
 		vi.doUnmock('$lib/server/providers/runtime');
 		vi.doUnmock('$lib/server/repositories/mcp');

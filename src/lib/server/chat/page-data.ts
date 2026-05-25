@@ -5,7 +5,6 @@ import { serializeChatMessages } from '$lib/server/chat/service';
 import { getChatSession, listChatMessages, listChatSessions } from '$lib/server/repositories/chat';
 import { listAgents } from '$lib/server/repositories/agents';
 import { listProviderConnections } from '$lib/server/repositories/providers';
-import { listCustomInstructionPresets } from '$lib/server/repositories/custom-instructions';
 import { isRecord } from '$lib/server/json';
 
 function isHttpError(cause: unknown): boolean {
@@ -14,15 +13,12 @@ function isHttpError(cause: unknown): boolean {
 
 export async function loadChatPageData(sessionId: string | null = null) {
 	try {
-		const [providers, sessions, customInstructionPresets, agents] = await Promise.all([
+		const [providers, sessions, agents] = await Promise.all([
 			listProviderConnections(),
 			listChatSessions(),
-			listCustomInstructionPresets(),
 			listAgents()
 		]);
 		const defaultProvider = providers.find((provider) => provider.isDefault) ?? providers[0];
-		const defaultCustomInstruction =
-			customInstructionPresets.find((preset) => preset.isDefault) ?? null;
 		const defaultAgent = agents.find((agent) => agent.isDefault) ?? null;
 		const activeSession = sessionId ? await getChatSession(sessionId) : null;
 
@@ -36,8 +32,6 @@ export async function loadChatPageData(sessionId: string | null = null) {
 		return {
 			providers,
 			sessions,
-			customInstructionPresets,
-			defaultCustomInstruction,
 			agents,
 			defaultAgentId: defaultAgent?.id ?? null,
 			defaultProviderId: defaultProvider?.id ?? null,
@@ -54,8 +48,6 @@ export async function loadChatPageData(sessionId: string | null = null) {
 		return {
 			providers: [],
 			sessions: [],
-			customInstructionPresets: [],
-			defaultCustomInstruction: null,
 			agents: [],
 			defaultAgentId: null,
 			defaultProviderId: null,

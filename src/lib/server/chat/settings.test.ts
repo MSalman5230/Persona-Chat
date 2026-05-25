@@ -9,14 +9,12 @@ import {
 } from './settings';
 
 describe('chat session settings', () => {
-	it('accepts a blank custom instruction and automatic temperature', () => {
+	it('accepts automatic temperature', () => {
 		expect(
 			chatSessionSettingsSchema.parse({
-				customInstruction: '',
 				temperature: null
 			})
 		).toEqual({
-			customInstruction: '',
 			temperature: null
 		});
 	});
@@ -24,7 +22,6 @@ describe('chat session settings', () => {
 	it('accepts finite temperatures in range', () => {
 		expect(
 			chatSessionSettingsSchema.parse({
-				customInstruction: 'Answer tersely.',
 				temperature: 1.2
 			}).temperature
 		).toBe(1.2);
@@ -33,19 +30,16 @@ describe('chat session settings', () => {
 	it('rejects invalid temperatures', () => {
 		expect(() =>
 			chatSessionSettingsSchema.parse({
-				customInstruction: '',
 				temperature: -0.1
 			})
 		).toThrow();
 		expect(() =>
 			chatSessionSettingsSchema.parse({
-				customInstruction: '',
 				temperature: 2.1
 			})
 		).toThrow();
 		expect(() =>
 			chatSessionSettingsSchema.parse({
-				customInstruction: '',
 				temperature: Number.NaN
 			})
 		).toThrow();

@@ -1,47 +1,40 @@
 <script lang="ts">
 	import {
-		DEFAULT_MANUAL_TEMPERATURE,
 		CHAT_THINKING_OPTIONS,
+		DEFAULT_MANUAL_TEMPERATURE,
 		chatThinkingSelectionFromServer,
 		clampTemperature,
 		createLocalUiMessage,
 		isRecord,
 		mergeToolEventIntoMessages,
 		modelOptionsForProvider,
-		presetIdForInstruction,
 		responseErrorMessage,
 		setConversationTurnThoughtExpanded,
-		sortCustomInstructionPresets,
 		temperatureFromServer,
 		thinkingLevelForRequest,
 		uiMessageFromServer,
 		uiMessagesFromServerSnapshot,
 		upsertUiMessageFromServer,
 		type ChatAgentOption,
-		type ChatThinkingSelection,
 		type ChatProviderOption,
-		type CustomInstructionPresetOption,
+		type ChatThinkingSelection,
 		type UiMessage
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
 	import ChatSidebar from '$lib/components/chat/ChatSidebar.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import DesktopHeader from '$lib/components/chat/DesktopHeader.svelte';
 	import MessageList from '$lib/components/chat/MessageList.svelte';
 	import MobileHeader from '$lib/components/chat/MobileHeader.svelte';
 	import SessionSettingsDrawer from '$lib/components/chat/SessionSettingsDrawer.svelte';
-	import TextPromptDialog from '$lib/components/common/TextPromptDialog.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { onMount, tick, untrack } from 'svelte';
 
 	let { data } = $props();
 
-	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 	type ChatSessionSummary = { id: string; title: string };
-	type PendingConfirmation =
-		| { kind: 'chat'; chat: ChatSessionSummary }
-		| { kind: 'preset'; preset: CustomInstructionPresetOption };
+	type PendingConfirmation = { kind: 'chat'; chat: ChatSessionSummary };
 	type ChatSessionDetails = {
 		id: string;
 		title: string;
@@ -49,7 +42,6 @@
 		providerConnectionId: string | null;
 		modelId: string | null;
 		thinkingLevel: string | null;
-		customInstruction: string;
 		temperature: number | null;
 	};
 	type ActiveRun = { id: string; sessionId: string; status: string; errorText: string | null };
@@ -58,7 +50,6 @@
 	let sidebarOpen = $state(false);
 	let settingsOpen = $state(false);
 	let pendingConfirmation = $state<PendingConfirmation | null>(null);
-	let presetNameDialogOpen = $state(false);
 	let sessions = $state<ChatSessionSummary[]>(untrack(() => data.sessions));
 	let activeRun = $state<ActiveRun | null>(untrack(() => data.activeRun));
 	let isStreaming = $state(Boolean(untrack(() => data.activeRun)));
@@ -76,34 +67,16 @@
 	let selectedThinking = $state<ChatThinkingSelection>(
 		untrack(() => chatThinkingSelectionFromServer(data.activeSession?.thinkingLevel))
 	);
-	let customInstructionPresets = $state<CustomInstructionPresetOption[]>(
-		untrack(() => data.customInstructionPresets)
-	);
-	let selectedCustomInstructionPresetId = $state(
-		untrack(() =>
-			presetIdForInstruction(
-				data.customInstructionPresets,
-				data.activeSession?.customInstruction ?? data.defaultCustomInstruction?.instruction ?? ''
-			)
-		)
-	);
-	let customInstruction = $state(
-		untrack(() => data.activeSession?.customInstruction ?? data.defaultCustomInstruction?.instruction ?? '')
-	);
 	let temperatureAuto = $state(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature) === null)
 	);
 	let temperatureValue = $state(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature) ?? DEFAULT_MANUAL_TEMPERATURE)
 	);
-	let lastSavedCustomInstruction = $state(
-		untrack(() => data.activeSession?.customInstruction ?? data.defaultCustomInstruction?.instruction ?? '')
-	);
 	let lastSavedTemperature = $state<number | null>(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature))
 	);
 	let settingsSaveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
-	let presetActionStatus = $state<PresetActionStatus>('idle');
 	let settingsErrorText = $state('');
 	let errorText = $state(untrack(() => data.interruptedRun?.errorText ?? ''));
 	let messages = $state<UiMessage[]>(
@@ -144,33 +117,16 @@
 		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
 	);
 	const currentTemperature = $derived(temperatureAuto ? null : clampTemperature(temperatureValue));
-	const selectedCustomInstructionPreset = $derived(
-		customInstructionPresets.find((preset) => preset.id === selectedCustomInstructionPresetId)
-	);
-	const defaultCustomInstructionPreset = $derived(
-		customInstructionPresets.find((preset) => preset.isDefault) ?? null
-	);
-	const defaultCustomInstructionText = $derived(defaultCustomInstructionPreset?.instruction ?? '');
 	const settingsDirty = $derived(
-		activeSessionId !== null &&
-			(customInstruction !== lastSavedCustomInstruction ||
-				currentTemperature !== lastSavedTemperature)
+		activeSessionId !== null && currentTemperature !== lastSavedTemperature
 	);
 	const confirmationDialog = $derived.by(() => {
 		if (!pendingConfirmation) return null;
 
-		if (pendingConfirmation.kind === 'chat') {
-			return {
-				title: 'Delete chat?',
-				description: `Delete "${pendingConfirmation.chat.title}"? This cannot be undone.`,
-				confirmLabel: 'Delete chat'
-			};
-		}
-
 		return {
-			title: 'Delete preset?',
-			description: `Delete "${pendingConfirmation.preset.name}"?`,
-			confirmLabel: 'Delete preset'
+			title: 'Delete chat?',
+			description: `Delete "${pendingConfirmation.chat.title}"? This cannot be undone.`,
+			confirmLabel: 'Delete chat'
 		};
 	});
 
@@ -201,42 +157,25 @@
 		activeRun = data.activeRun;
 		isStreaming = Boolean(data.activeRun);
 		sessions = data.sessions;
-		customInstructionPresets = data.customInstructionPresets;
 		selectedAgentIdOverride = session ? (session.agentId ?? '') : (data.defaultAgentId ?? '');
 		selectedProviderIdOverride = session?.providerConnectionId ?? null;
 		selectedModelOverride = session?.modelId ?? null;
 		selectedThinking = chatThinkingSelectionFromServer(session?.thinkingLevel);
-		resetSessionSettings({
-			customInstruction: session?.customInstruction ?? defaultCustomInstructionText,
-			temperature: temperatureFromServer(session?.temperature)
-		});
+		resetSessionSettings(temperatureFromServer(session?.temperature));
 		messages = data.messages.map((item: Record<string, unknown>) => uiMessageFromServer(item));
 		errorText = data.interruptedRun?.errorText ?? '';
 	}
 
-	function resetSessionSettings(settings?: {
-		customInstruction?: string;
-		temperature?: number | null;
-	}) {
-		const nextCustomInstruction = settings?.customInstruction ?? '';
-		const nextTemperature = settings?.temperature ?? null;
-
-		customInstruction = nextCustomInstruction;
-		selectedCustomInstructionPresetId = presetIdForInstruction(
-			customInstructionPresets,
-			nextCustomInstruction
-		);
-		temperatureAuto = nextTemperature === null;
-		temperatureValue = nextTemperature ?? DEFAULT_MANUAL_TEMPERATURE;
-		lastSavedCustomInstruction = nextCustomInstruction;
-		lastSavedTemperature = nextTemperature;
+	function resetSessionSettings(temperature: number | null = null) {
+		temperatureAuto = temperature === null;
+		temperatureValue = temperature ?? DEFAULT_MANUAL_TEMPERATURE;
+		lastSavedTemperature = temperature;
 		settingsSaveStatus = 'idle';
 		settingsErrorText = '';
 	}
 
 	function markSettingsChanged() {
 		if (settingsSaveStatus === 'saved' || settingsSaveStatus === 'error') settingsSaveStatus = 'idle';
-		if (presetActionStatus === 'saved' || presetActionStatus === 'error') presetActionStatus = 'idle';
 		settingsErrorText = '';
 	}
 
@@ -263,7 +202,7 @@
 		settingsOpen = false;
 		selectedAgentIdOverride = data.defaultAgentId ?? '';
 		selectedThinking = 'auto';
-		resetSessionSettings({ customInstruction: defaultCustomInstructionText, temperature: null });
+		resetSessionSettings();
 	}
 
 	function newChat() {
@@ -306,13 +245,12 @@
 		}
 	}
 
-	function updateCustomInstruction(value: string) {
-		customInstruction = value;
-		selectedCustomInstructionPresetId = presetIdForInstruction(
-			customInstructionPresets,
-			customInstruction
-		);
-		markSettingsChanged();
+	async function confirmPendingDeletion() {
+		const confirmation = pendingConfirmation;
+		if (!confirmation) return;
+
+		pendingConfirmation = null;
+		await confirmDeleteChat(confirmation.chat);
 	}
 
 	function updateTemperatureAuto(checked: boolean) {
@@ -327,19 +265,16 @@
 
 	function updateSavedSessionSettings(payload: {
 		agentId?: string | null;
-		customInstruction?: string;
 		temperature?: number | null;
 	}) {
-		const savedCustomInstruction = payload.customInstruction ?? customInstruction;
-		const savedTemperature =
-			payload.temperature !== undefined ? temperatureFromServer(payload.temperature) : currentTemperature;
-
 		if (payload.agentId !== undefined) selectedAgentIdOverride = payload.agentId ?? '';
-		customInstruction = savedCustomInstruction;
-		temperatureAuto = savedTemperature === null;
-		temperatureValue = savedTemperature ?? temperatureValue;
-		lastSavedCustomInstruction = savedCustomInstruction;
-		lastSavedTemperature = savedTemperature;
+
+		if (payload.temperature !== undefined) {
+			const savedTemperature = temperatureFromServer(payload.temperature);
+			temperatureAuto = savedTemperature === null;
+			temperatureValue = savedTemperature ?? temperatureValue;
+			lastSavedTemperature = savedTemperature;
+		}
 	}
 
 	async function saveSessionSettings() {
@@ -353,7 +288,6 @@
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					customInstruction,
 					temperature: currentTemperature
 				})
 			});
@@ -362,8 +296,6 @@
 
 			const payload = (await response.json()) as {
 				session: {
-					agentId?: string | null;
-					customInstruction?: string;
 					temperature?: number | null;
 				};
 			};
@@ -372,130 +304,6 @@
 		} catch (error) {
 			settingsSaveStatus = 'error';
 			settingsErrorText = error instanceof Error ? error.message : 'Settings save failed';
-		}
-	}
-
-	function applyCustomInstructionPresetUpdate(preset: CustomInstructionPresetOption) {
-		customInstructionPresets = sortCustomInstructionPresets(
-			customInstructionPresets.map((item) => ({
-				...item,
-				isDefault: preset.isDefault ? false : item.isDefault,
-				...(item.id === preset.id ? preset : {})
-			}))
-		);
-	}
-
-	function selectCustomInstructionPreset(id: string) {
-		selectedCustomInstructionPresetId = id;
-		const preset = customInstructionPresets.find((item) => item.id === id);
-		if (!preset) return;
-
-		customInstruction = preset.instruction;
-		markSettingsChanged();
-	}
-
-	function saveCurrentCustomInstructionAsPreset() {
-		if (presetActionStatus === 'saving') return;
-		if (customInstruction.trim().length === 0) {
-			settingsErrorText = 'Custom instruction is required';
-			presetActionStatus = 'error';
-			return;
-		}
-
-		presetNameDialogOpen = true;
-	}
-
-	async function confirmSaveCurrentCustomInstructionAsPreset(name: string) {
-		presetNameDialogOpen = false;
-		presetActionStatus = 'saving';
-		settingsErrorText = '';
-
-		try {
-			const response = await fetch('/api/custom-instructions', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name, instruction: customInstruction })
-			});
-			if (!response.ok) {
-				throw new Error(await responseErrorMessage(response, 'Unable to save preset'));
-			}
-
-			const payload = (await response.json()) as { preset: CustomInstructionPresetOption };
-			customInstructionPresets = sortCustomInstructionPresets([
-				...customInstructionPresets.filter((preset) => preset.id !== payload.preset.id),
-				payload.preset
-			]);
-			selectedCustomInstructionPresetId = payload.preset.id;
-			presetActionStatus = 'saved';
-		} catch (error) {
-			presetActionStatus = 'error';
-			settingsErrorText = error instanceof Error ? error.message : 'Unable to save preset';
-		}
-	}
-
-	async function toggleSelectedCustomInstructionPresetDefault() {
-		const preset = selectedCustomInstructionPreset;
-		if (!preset || presetActionStatus === 'saving') return;
-
-		presetActionStatus = 'saving';
-		settingsErrorText = '';
-
-		try {
-			const response = await fetch(`/api/custom-instructions/${preset.id}`, {
-				method: 'PATCH',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ isDefault: !preset.isDefault })
-			});
-			if (!response.ok) {
-				throw new Error(await responseErrorMessage(response, 'Unable to update preset'));
-			}
-
-			const payload = (await response.json()) as { preset: CustomInstructionPresetOption };
-			applyCustomInstructionPresetUpdate(payload.preset);
-			selectedCustomInstructionPresetId = payload.preset.id;
-			presetActionStatus = 'saved';
-		} catch (error) {
-			presetActionStatus = 'error';
-			settingsErrorText = error instanceof Error ? error.message : 'Unable to update preset';
-		}
-	}
-
-	async function deleteSelectedCustomInstructionPreset() {
-		const preset = selectedCustomInstructionPreset;
-		if (!preset || presetActionStatus === 'saving') return;
-
-		pendingConfirmation = { kind: 'preset', preset };
-	}
-
-	async function confirmDeleteSelectedCustomInstructionPreset(preset: CustomInstructionPresetOption) {
-		presetActionStatus = 'saving';
-		settingsErrorText = '';
-
-		try {
-			const response = await fetch(`/api/custom-instructions/${preset.id}`, { method: 'DELETE' });
-			if (!response.ok) {
-				throw new Error(await responseErrorMessage(response, 'Unable to delete preset'));
-			}
-
-			customInstructionPresets = customInstructionPresets.filter((item) => item.id !== preset.id);
-			selectedCustomInstructionPresetId = '';
-			presetActionStatus = 'saved';
-		} catch (error) {
-			presetActionStatus = 'error';
-			settingsErrorText = error instanceof Error ? error.message : 'Unable to delete preset';
-		}
-	}
-
-	async function confirmPendingDeletion() {
-		const confirmation = pendingConfirmation;
-		if (!confirmation) return;
-
-		pendingConfirmation = null;
-
-		if (confirmation.kind === 'chat') {
-			await confirmDeleteChat(confirmation.chat);
-		} else {
-			await confirmDeleteSelectedCustomInstructionPreset(confirmation.preset);
 		}
 	}
 
@@ -582,10 +390,6 @@
 			});
 			updateSavedSessionSettings({
 				agentId: typeof payload.agentId === 'string' ? payload.agentId : null,
-				customInstruction:
-					typeof payload.customInstruction === 'string'
-						? payload.customInstruction
-						: customInstruction,
 				temperature: temperatureFromServer(payload.temperature)
 			});
 			if ('thinkingLevel' in payload) {
@@ -710,7 +514,6 @@
 					providerConnectionId: selectedProviderId || null,
 					modelId: selectedModel || null,
 					thinkingLevel: thinkingLevelForRequest(selectedThinking),
-					customInstruction,
 					temperature: currentTemperature
 				})
 			});
@@ -731,7 +534,6 @@
 			upsertSessionSummary(payload.session);
 			updateSavedSessionSettings({
 				agentId: payload.session.agentId,
-				customInstruction: payload.session.customInstruction,
 				temperature: temperatureFromServer(payload.session.temperature)
 			});
 			selectedThinking = chatThinkingSelectionFromServer(payload.session.thinkingLevel);
@@ -815,10 +617,6 @@
 		<SessionSettingsDrawer
 			open={settingsOpen}
 			{activeSessionId}
-			{customInstructionPresets}
-			{selectedCustomInstructionPresetId}
-			{selectedCustomInstructionPreset}
-			{customInstruction}
 			{thinkingOptions}
 			{selectedThinking}
 			{temperatureAuto}
@@ -826,17 +624,11 @@
 			{settingsErrorText}
 			{settingsDirty}
 			{settingsSaveStatus}
-			{presetActionStatus}
 			onClose={() => (settingsOpen = false)}
-			onSelectCustomInstructionPreset={selectCustomInstructionPreset}
-			onCustomInstructionInput={updateCustomInstruction}
 			onThinkingChange={selectThinking}
 			onTemperatureAutoChange={updateTemperatureAuto}
 			onTemperatureValueChange={updateTemperatureValue}
 			onSaveSessionSettings={saveSessionSettings}
-			onSaveCurrentCustomInstructionAsPreset={saveCurrentCustomInstructionAsPreset}
-			onToggleSelectedCustomInstructionPresetDefault={toggleSelectedCustomInstructionPresetDefault}
-			onDeleteSelectedCustomInstructionPreset={deleteSelectedCustomInstructionPreset}
 		/>
 	</div>
 
@@ -848,15 +640,5 @@
 		variant="danger"
 		onCancel={() => (pendingConfirmation = null)}
 		onConfirm={confirmPendingDeletion}
-	/>
-
-	<TextPromptDialog
-		open={presetNameDialogOpen}
-		title="Save preset"
-		description="Name this custom instruction preset."
-		label="Preset name"
-		confirmLabel="Save preset"
-		onCancel={() => (presetNameDialogOpen = false)}
-		onConfirm={(name) => void confirmSaveCurrentCustomInstructionAsPreset(name)}
 	/>
 </div>

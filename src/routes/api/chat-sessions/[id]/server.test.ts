@@ -41,10 +41,9 @@ describe('chat session PATCH route', () => {
 		mocks.updateChatSession.mockResolvedValue(undefined);
 	});
 
-	it('updates agent and custom instruction settings', async () => {
+	it('updates agent and temperature settings', async () => {
 		const payload = {
 			agentId: '00000000-0000-4000-8000-000000000003',
-			customInstruction: 'Use citations.',
 			temperature: null
 		};
 		const response = await PATCH({

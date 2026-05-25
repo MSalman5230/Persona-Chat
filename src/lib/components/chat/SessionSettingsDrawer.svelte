@@ -1,16 +1,10 @@
 <script lang="ts">
-	import type { ChatThinkingSelection, CustomInstructionPresetOption } from '$lib/client/chat';
+	import type { ChatThinkingSelection } from '$lib/client/chat';
 	import SelectField from '$lib/components/common/SelectField.svelte';
-
-	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 	interface Props {
 		open: boolean;
 		activeSessionId: string | null;
-		customInstructionPresets: CustomInstructionPresetOption[];
-		selectedCustomInstructionPresetId: string;
-		selectedCustomInstructionPreset: CustomInstructionPresetOption | undefined;
-		customInstruction: string;
 		thinkingOptions: readonly ChatThinkingSelection[];
 		selectedThinking: ChatThinkingSelection;
 		temperatureAuto: boolean;
@@ -18,26 +12,16 @@
 		settingsErrorText: string;
 		settingsDirty: boolean;
 		settingsSaveStatus: 'idle' | 'saving' | 'saved' | 'error';
-		presetActionStatus: PresetActionStatus;
 		onClose: () => void;
-		onSelectCustomInstructionPreset: (id: string) => void;
-		onCustomInstructionInput: (value: string) => void;
 		onThinkingChange: (value: ChatThinkingSelection) => void;
 		onTemperatureAutoChange: (checked: boolean) => void;
 		onTemperatureValueChange: (value: number) => void;
 		onSaveSessionSettings: () => void | Promise<void>;
-		onSaveCurrentCustomInstructionAsPreset: () => void | Promise<void>;
-		onToggleSelectedCustomInstructionPresetDefault: () => void | Promise<void>;
-		onDeleteSelectedCustomInstructionPreset: () => void | Promise<void>;
 	}
 
 	let {
 		open,
 		activeSessionId,
-		customInstructionPresets,
-		selectedCustomInstructionPresetId,
-		selectedCustomInstructionPreset,
-		customInstruction,
 		thinkingOptions,
 		selectedThinking,
 		temperatureAuto,
@@ -45,29 +29,17 @@
 		settingsErrorText,
 		settingsDirty,
 		settingsSaveStatus,
-		presetActionStatus,
 		onClose,
-		onSelectCustomInstructionPreset,
-		onCustomInstructionInput,
 		onThinkingChange,
 		onTemperatureAutoChange,
 		onTemperatureValueChange,
-		onSaveSessionSettings,
-		onSaveCurrentCustomInstructionAsPreset,
-		onToggleSelectedCustomInstructionPresetDefault,
-		onDeleteSelectedCustomInstructionPreset
+		onSaveSessionSettings
 	}: Props = $props();
 
 	function optionLabel(value: ChatThinkingSelection): string {
 		return value === 'auto' ? 'Auto' : value;
 	}
 
-	const presetSelectOptions = $derived(
-		customInstructionPresets.map((preset) => ({
-			value: preset.id,
-			label: `${preset.isDefault ? 'Default - ' : ''}${preset.name}`
-		}))
-	);
 	const thinkingSelectOptions = $derived(
 		thinkingOptions.map((option) => ({ value: option, label: optionLabel(option) }))
 	);
@@ -112,76 +84,6 @@
 		}}
 	>
 		<div class="flex-1 space-y-6 px-gutter py-5">
-			<div class="space-y-3">
-				<div class="space-y-2">
-					<div class="flex items-center justify-between gap-3">
-						<label
-							for="custom-instruction-preset"
-							class="font-label-md text-label-md uppercase text-text-muted"
-						>
-							Preset
-						</label>
-						<div class="flex items-center gap-1">
-							<button
-								type="button"
-								class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-35"
-								aria-label="Save custom instruction as preset"
-								title="Save as preset"
-								disabled={customInstruction.trim().length === 0 || presetActionStatus === 'saving'}
-								onclick={() => void onSaveCurrentCustomInstructionAsPreset()}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">bookmark_add</span>
-							</button>
-							<button
-								type="button"
-								class={[
-									'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-35',
-									selectedCustomInstructionPreset?.isDefault ? 'text-primary' : ''
-								]}
-								aria-label={selectedCustomInstructionPreset?.isDefault
-									? 'Unset default custom instruction preset'
-									: 'Set custom instruction preset as default'}
-								title={selectedCustomInstructionPreset?.isDefault ? 'Unset default' : 'Set default'}
-								disabled={!selectedCustomInstructionPreset || presetActionStatus === 'saving'}
-								onclick={() => void onToggleSelectedCustomInstructionPresetDefault()}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">star</span>
-							</button>
-							<button
-								type="button"
-								class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-error disabled:opacity-35"
-								aria-label="Delete custom instruction preset"
-								title="Delete preset"
-								disabled={!selectedCustomInstructionPreset || presetActionStatus === 'saving'}
-								onclick={() => void onDeleteSelectedCustomInstructionPreset()}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
-							</button>
-						</div>
-					</div>
-					<SelectField
-						id="custom-instruction-preset"
-						value={selectedCustomInstructionPresetId}
-						options={presetSelectOptions}
-						placeholder="Custom"
-						ariaLabel="Custom instruction preset"
-						onChange={onSelectCustomInstructionPreset}
-					/>
-				</div>
-
-				<label class="block space-y-2">
-					<span class="font-label-md text-label-md uppercase text-text-muted">Custom Instruction</span>
-					<textarea
-						value={customInstruction}
-						class="custom-scrollbar min-h-44 w-full resize-none rounded-lg border border-border-subtle bg-surface-container px-3 py-2.5 font-body-sm text-body-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-outline"
-						placeholder="Empty"
-						aria-label="Custom instruction"
-						oninput={(event) =>
-							onCustomInstructionInput((event.currentTarget as HTMLTextAreaElement).value)}
-					></textarea>
-				</label>
-			</div>
-
 			<label class="block space-y-2">
 				<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
 				<SelectField

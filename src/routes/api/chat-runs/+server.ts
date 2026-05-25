@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { parseJsonRequest } from '$lib/server/api';
 import { ActiveChatRunError, startChatRun } from '$lib/server/chat/runs';
-import { customInstructionSchema, temperatureSchema } from '$lib/server/chat/settings';
+import { temperatureSchema } from '$lib/server/chat/settings';
 import { THINKING_LEVELS } from '$lib/shared/thinking';
 
 const chatRunRequestSchema = z.object({
@@ -13,7 +13,6 @@ const chatRunRequestSchema = z.object({
 	providerConnectionId: z.string().uuid().optional().nullable(),
 	modelId: z.string().min(1).optional().nullable(),
 	thinkingLevel: z.enum(THINKING_LEVELS).optional().nullable(),
-	customInstruction: customInstructionSchema.optional(),
 	temperature: temperatureSchema.optional()
 });
 

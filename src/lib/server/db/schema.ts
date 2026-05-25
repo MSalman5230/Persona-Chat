@@ -86,24 +86,6 @@ export const mcpServers = pgTable(
 	})
 );
 
-export const customInstructionPresets = pgTable(
-	'custom_instruction_presets',
-	{
-		id: uuid('id').defaultRandom().primaryKey(),
-		name: text('name').notNull(),
-		instruction: text('instruction').notNull(),
-		isDefault: boolean('is_default').notNull().default(false),
-		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-	},
-	(table) => ({
-		nameIdx: uniqueIndex('custom_instruction_presets_name_idx').on(table.name),
-		defaultIdx: uniqueIndex('custom_instruction_presets_default_idx')
-			.on(table.isDefault)
-			.where(sql`${table.isDefault} = true`)
-	})
-);
-
 export const agents = pgTable(
 	'agents',
 	{
@@ -138,7 +120,6 @@ export const chatSessions = pgTable(
 		providerId: text('provider_id'),
 		modelId: text('model_id'),
 		thinkingLevel: text('thinking_level'),
-		customInstruction: text('custom_instruction').notNull().default(''),
 		temperature: real('temperature'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()

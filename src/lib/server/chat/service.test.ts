@@ -361,8 +361,7 @@ describe('chat turn thinking settings', () => {
 			return {
 				provider: { id: 'provider-1', providerId: 'openai' },
 				model: { id: 'model-1' },
-				session: { dispose: vi.fn() },
-				syntheticMessageCount: 0
+				session: { dispose: vi.fn() }
 			};
 		});
 
@@ -399,8 +398,7 @@ describe('chat turn thinking settings', () => {
 			return {
 				provider: { id: 'provider-1', providerId: 'openai' },
 				model: { id: 'model-1' },
-				session: { dispose: vi.fn() },
-				syntheticMessageCount: 0
+				session: { dispose: vi.fn() }
 			};
 		});
 
@@ -413,7 +411,6 @@ describe('chat turn thinking settings', () => {
 				modelId: 'model-1',
 				thinkingLevel: 'high',
 				agentId: null,
-				customInstruction: '',
 				temperature: null
 			})),
 			listChatMessages: vi.fn(async () => []),
@@ -436,15 +433,14 @@ describe('chat turn thinking settings', () => {
 	});
 });
 
-describe('chat turn agent instructions', () => {
-	it('passes selected agent and custom instruction to runtime without adding it to stored history', async () => {
+describe('chat turn agents', () => {
+	it('passes selected agent to runtime without adding synthetic history', async () => {
 		vi.resetModules();
 		const runtimeInputs: Array<{
 			agent?: { systemPrompt: string };
-			customInstruction?: string;
 			history?: unknown[];
 		}> = [];
-		const updateInputs: Array<{ agentId?: string | null; customInstruction?: string }> = [];
+		const updateInputs: Array<{ agentId?: string | null }> = [];
 		const agent = {
 			id: '00000000-0000-4000-8000-000000000010',
 			name: 'Researcher',
@@ -455,17 +451,16 @@ describe('chat turn agent instructions', () => {
 			createdAt: new Date(),
 			updatedAt: new Date()
 		};
-		const updateChatSession = vi.fn(async (_id: string, input: { agentId?: string | null; customInstruction?: string }) => {
+		const updateChatSession = vi.fn(async (_id: string, input: { agentId?: string | null }) => {
 			updateInputs.push(input);
 		});
 		const createServerAgentSession = vi.fn(
-			async (input: { agent?: { systemPrompt: string }; customInstruction?: string; history?: unknown[] }) => {
+			async (input: { agent?: { systemPrompt: string }; history?: unknown[] }) => {
 				runtimeInputs.push(input);
 				return {
 					provider: { id: 'provider-1', providerId: 'openai' },
 					model: { id: 'model-1' },
-					session: { dispose: vi.fn() },
-					syntheticMessageCount: 1
+					session: { dispose: vi.fn() }
 				};
 			}
 		);
@@ -479,7 +474,6 @@ describe('chat turn agent instructions', () => {
 				providerId: 'openai',
 				modelId: 'model-1',
 				thinkingLevel: null,
-				customInstruction: '',
 				temperature: null
 			})),
 			listChatMessages: vi.fn(async () => [
@@ -499,20 +493,16 @@ describe('chat turn agent instructions', () => {
 		const turn = await prepareChatTurn({
 			sessionId: 'session-1',
 			message: 'hello',
-			agentId: agent.id,
-			customInstruction: 'Use citations.'
+			agentId: agent.id
 		});
 
 		expect(runtimeInputs[0]).toMatchObject({
-			agent: { systemPrompt: 'You are a careful researcher.' },
-			customInstruction: 'Use citations.'
+			agent: { systemPrompt: 'You are a careful researcher.' }
 		});
 		expect(runtimeInputs[0]?.history).toHaveLength(1);
 		expect(turn.historyCount).toBe(1);
-		expect(turn.runtimeMessageOffset).toBe(2);
 		expect(updateInputs[0]).toMatchObject({
-			agentId: agent.id,
-			customInstruction: 'Use citations.'
+			agentId: agent.id
 		});
 		vi.doUnmock('$lib/server/repositories/chat');
 		vi.doUnmock('$lib/server/repositories/agents');
