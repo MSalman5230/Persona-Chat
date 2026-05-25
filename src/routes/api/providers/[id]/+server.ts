@@ -2,7 +2,6 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { readJsonRequest, rethrowValidationAsBadRequest } from '$lib/server/api';
-import { requireAdmin } from '$lib/server/auth/guards';
 import {
 	deleteProviderConnection,
 	getProviderConnection,
@@ -10,16 +9,14 @@ import {
 } from '$lib/server/repositories/providers';
 import type { ProviderUpdateInput } from '$lib/server/repositories/providers';
 
-export const GET: RequestHandler = async ({ locals, params }) => {
-	await requireAdmin(locals);
+export const GET: RequestHandler = async ({ params }) => {
 	const provider = await getProviderConnection(params.id);
 	if (!provider) error(404, 'Provider connection not found');
 	const { secret: _secret, ...publicProvider } = provider;
 	return json({ provider: publicProvider });
 };
 
-export const PATCH: RequestHandler = async ({ locals, params, request }) => {
-	await requireAdmin(locals);
+export const PATCH: RequestHandler = async ({ params, request }) => {
 	const body = (await readJsonRequest(
 		request,
 		'Invalid provider connection update'
@@ -32,8 +29,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 	}
 };
 
-export const DELETE: RequestHandler = async ({ locals, params }) => {
-	await requireAdmin(locals);
+export const DELETE: RequestHandler = async ({ params }) => {
 	await deleteProviderConnection(params.id);
 	return json({ ok: true });
 };

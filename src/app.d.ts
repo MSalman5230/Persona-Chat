@@ -30,6 +30,7 @@ declare global {
 	namespace App {
 		// interface Error {}
 		interface Locals {
+			isAdmin: boolean;
 			session: AuthSession | null;
 			user: AuthUser | null;
 		}

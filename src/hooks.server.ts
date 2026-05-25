@@ -29,10 +29,13 @@ function isApiPath(pathname: string): boolean {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+	const pathname = event.url.pathname;
+	const authPath = isAuthPath(event.url.toString(), auth.options);
+
+	event.locals.isAdmin = false;
 	event.locals.user = null;
 	event.locals.session = null;
 
-	const authPath = isAuthPath(event.url.toString(), auth.options);
 	const currentSession = await auth.api
 		.getSession({ headers: event.request.headers })
 		.catch(() => null);
@@ -42,14 +45,22 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event.locals.user = currentSession.user;
 	}
 
-	if (!authPath && !isPublicPath(event.url.pathname)) {
+	if (
+		!authPath &&
+		event.locals.user &&
+		(!isApiPath(pathname) || isAdminPath(pathname))
+	) {
+		event.locals.isAdmin = await hasAdminAccess(event.locals.user.id);
+	}
+
+	if (!authPath && !isPublicPath(pathname)) {
 		if (!event.locals.user) {
-			if (isApiPath(event.url.pathname)) return jsonError(401, 'Authentication required');
-			redirectToLogin(event.url.pathname, event.url.search);
+			if (isApiPath(pathname)) return jsonError(401, 'Authentication required');
+			redirectToLogin(pathname, event.url.search);
 		}
 
-		if (isAdminPath(event.url.pathname) && !(await hasAdminAccess(event.locals.user.id))) {
-			if (isApiPath(event.url.pathname)) return jsonError(403, 'Admin access required');
+		if (isAdminPath(pathname) && !event.locals.isAdmin) {
+			if (isApiPath(pathname)) return jsonError(403, 'Admin access required');
 			return Response.redirect(new URL('/', event.url), 303);
 		}
 	}

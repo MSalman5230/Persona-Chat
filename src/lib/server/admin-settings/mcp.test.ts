@@ -6,31 +6,11 @@ const mocks = vi.hoisted(() => ({
 	getMcpServer: vi.fn(),
 	listMcpServers: vi.fn(),
 	updateMcpServer: vi.fn(),
-	createProviderConnection: vi.fn(),
-	deleteProviderConnection: vi.fn(),
-	getProviderConnection: vi.fn(),
-	listProviderConnections: vi.fn(),
-	updateProviderConnection: vi.fn(),
-	createProviderRuntime: vi.fn(),
-	getSupportedProviders: vi.fn(),
-	providerPayloadFromForm: vi.fn(),
 	testMcpServer: vi.fn()
 }));
 
 vi.mock('$lib/server/mcp/adapter', () => ({
 	testMcpServer: mocks.testMcpServer
-}));
-
-vi.mock('$lib/server/providers/catalog', () => ({
-	getSupportedProviders: mocks.getSupportedProviders
-}));
-
-vi.mock('$lib/server/providers/runtime', () => ({
-	createProviderRuntime: mocks.createProviderRuntime
-}));
-
-vi.mock('$lib/server/providers/settings-form', () => ({
-	providerPayloadFromForm: mocks.providerPayloadFromForm
 }));
 
 vi.mock('$lib/server/repositories/mcp', () => ({
@@ -41,28 +21,9 @@ vi.mock('$lib/server/repositories/mcp', () => ({
 	updateMcpServer: mocks.updateMcpServer
 }));
 
-vi.mock('$lib/server/repositories/providers', () => ({
-	createProviderConnection: mocks.createProviderConnection,
-	deleteProviderConnection: mocks.deleteProviderConnection,
-	getProviderConnection: mocks.getProviderConnection,
-	listProviderConnections: mocks.listProviderConnections,
-	updateProviderConnection: mocks.updateProviderConnection
-}));
+import { syncAdminMcpJson, testAdminMcpServer } from './mcp';
 
-import { actions } from './+page.server';
-
-function formRequest(values: Record<string, string>) {
-	const form = new FormData();
-	for (const [key, value] of Object.entries(values)) {
-		form.set(key, value);
-	}
-	return new Request('http://localhost/settings', {
-		method: 'POST',
-		body: form
-	});
-}
-
-describe('settings page actions', () => {
+describe('admin MCP settings use cases', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.listMcpServers.mockResolvedValue([
@@ -82,18 +43,17 @@ describe('settings page actions', () => {
 	});
 
 	it('syncs MCP JSON and deletes saved servers omitted from the submitted JSON', async () => {
-		const result = await actions.saveMcpJson({
-			request: formRequest({
-				mcpJson: JSON.stringify({
+		await expect(
+			syncAdminMcpJson(
+				JSON.stringify({
 					mcpServers: {
 						svelte: { command: 'pnpm', args: ['dlx', '@sveltejs/mcp'] },
 						remote: { url: 'https://mcp.example.test/mcp' }
 					}
 				})
-			})
-		} as never);
+			)
+		).resolves.toBe('Saved 2 MCP servers, deleted 1 MCP server');
 
-		expect(result).toMatchObject({ ok: true, message: 'Saved 2 MCP servers, deleted 1 MCP server' });
 		expect(mocks.updateMcpServer).toHaveBeenCalledWith(
 			'00000000-0000-0000-0000-000000000001',
 			expect.objectContaining({
@@ -116,20 +76,31 @@ describe('settings page actions', () => {
 	});
 
 	it('does not mutate MCP servers when submitted JSON is invalid', async () => {
-		const result = await actions.saveMcpJson({
-			request: formRequest({ mcpJson: '{"mcpServers":' })
-		} as never);
+		await expect(syncAdminMcpJson('{"mcpServers":')).rejects.toThrow(/Invalid MCP JSON/);
 
-		expect(result).toMatchObject({
-			status: 400,
-			data: {
-				error: expect.stringMatching(/Invalid MCP JSON/),
-				mcpJson: '{"mcpServers":'
-			}
-		});
 		expect(mocks.listMcpServers).not.toHaveBeenCalled();
 		expect(mocks.updateMcpServer).not.toHaveBeenCalled();
 		expect(mocks.createMcpServer).not.toHaveBeenCalled();
 		expect(mocks.deleteMcpServer).not.toHaveBeenCalled();
+	});
+
+	it('returns the MCP server test message', async () => {
+		mocks.getMcpServer.mockResolvedValue({ id: 'mcp-1', name: 'Svelte' });
+		mocks.testMcpServer.mockResolvedValue([{ name: 'list-components' }, { name: 'get-docs' }]);
+
+		await expect(testAdminMcpServer('mcp-1')).resolves.toBe('Svelte returned 2 tool(s)');
+		expect(mocks.testMcpServer).toHaveBeenCalledWith({ id: 'mcp-1', name: 'Svelte' });
+	});
+
+	it('rejects MCP server tests without an id', async () => {
+		await expect(testAdminMcpServer('')).rejects.toThrow('MCP server ID is required');
+		expect(mocks.getMcpServer).not.toHaveBeenCalled();
+	});
+
+	it('rejects MCP server tests for missing servers', async () => {
+		mocks.getMcpServer.mockResolvedValue(undefined);
+
+		await expect(testAdminMcpServer('missing-mcp')).rejects.toThrow('MCP server not found');
+		expect(mocks.testMcpServer).not.toHaveBeenCalled();
 	});
 });

@@ -2,7 +2,7 @@ import { error, redirect } from '@sveltejs/kit';
 
 import { auth } from '$lib/server/auth';
 
-type LocalsLike = Pick<App.Locals, 'user' | 'session'>;
+type LocalsLike = Pick<App.Locals, 'user'>;
 
 export function safeRedirectPath(value: string | null | undefined, fallback = '/'): string {
 	if (!value) return fallback;
@@ -30,12 +30,6 @@ export async function hasAdminAccess(userId: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-export async function requireAdmin(locals: LocalsLike): Promise<NonNullable<App.Locals['user']>> {
-	const user = requireUser(locals);
-	if (!(await hasAdminAccess(user.id))) error(403, 'Admin access required');
-	return user;
 }
 
 export function redirectToLogin(pathname: string, search = ''): never {

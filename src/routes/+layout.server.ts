@@ -1,8 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 
-import { hasAdminAccess } from '$lib/server/auth/guards';
-
-export const load: LayoutServerLoad = async ({ locals }) => ({
+export const load: LayoutServerLoad = ({ locals }) => ({
 	user: locals.user
 		? {
 				id: locals.user.id,
@@ -11,5 +9,5 @@ export const load: LayoutServerLoad = async ({ locals }) => ({
 				image: locals.user.image ?? null
 			}
 		: null,
-	isAdmin: locals.user ? await hasAdminAccess(locals.user.id) : false
+	isAdmin: locals.isAdmin
 });
