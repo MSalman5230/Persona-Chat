@@ -1,7 +1,9 @@
 import { createAgentSession, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 
 import { buildProgressiveMcpToolDefinitions } from '$lib/server/mcp/adapter';
+import { getEnabledMcpServerBySlug, listEnabledMcpServers } from '$lib/server/repositories/mcp';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
+import type { Agent } from '$lib/server/agents';
 
 import { appTools } from './tools';
 import { createServerResourceLoader } from './resource-loader';
@@ -11,6 +13,7 @@ export type AgentRuntimeInput = {
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
+	agent?: Pick<Agent, 'systemPrompt' | 'toolNames' | 'mcpServerIds'> | null;
 	systemPrompt?: string;
 	temperature?: number | null;
 	history?: PersistedAgentMessage[];
@@ -22,6 +25,27 @@ export type PersistedAgentMessage = {
 	[key: string]: unknown;
 };
 
+function appToolsForAgent(agent: AgentRuntimeInput['agent']) {
+	if (!agent) return appTools;
+	const allowed = new Set(agent.toolNames);
+	return appTools.filter((tool) => allowed.has(tool.name));
+}
+
+function mcpToolsForAgent(agent: AgentRuntimeInput['agent']) {
+	if (!agent) return buildProgressiveMcpToolDefinitions();
+	if (agent.mcpServerIds.length === 0) return [];
+
+	const allowedServerIds = new Set(agent.mcpServerIds);
+	return buildProgressiveMcpToolDefinitions({
+		listEnabledServers: async () =>
+			(await listEnabledMcpServers()).filter((server) => allowedServerIds.has(server.id)),
+		getEnabledServerBySlug: async (slug) => {
+			const server = await getEnabledMcpServerBySlug(slug);
+			return server && allowedServerIds.has(server.id) ? server : undefined;
+		}
+	});
+}
+
 export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 	const provider = await createProviderRuntime(input);
 	const sessionManager = SessionManager.inMemory(process.cwd());
@@ -32,8 +56,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 		}
 	}
 
-	const mcpTools = buildProgressiveMcpToolDefinitions();
-	const customTools = [...appTools, ...mcpTools];
+	const customTools = [...appToolsForAgent(input.agent), ...mcpToolsForAgent(input.agent)];
 	const allowedToolNames = customTools.map((tool) => tool.name);
 	const settingsManager = SettingsManager.inMemory({
 		defaultProvider: provider.row.providerId,
@@ -56,7 +79,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 		settingsManager,
 		sessionStartEvent: { type: 'session_start', reason: 'startup' }
 	});
-	applySessionSystemPrompt(result.session, input.systemPrompt ?? '');
+	applySessionSystemPrompt(result.session, input.agent?.systemPrompt ?? input.systemPrompt ?? '');
 	applySessionStreamSettings(result.session, input.temperature ?? null);
 
 	return {

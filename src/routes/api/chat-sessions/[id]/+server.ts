@@ -3,13 +3,16 @@ import type { RequestHandler } from './$types';
 
 import { parseJsonRequest } from '$lib/server/api';
 import { resolveActiveChatRun } from '$lib/server/chat/runs';
+import {
+	ChatSessionSettingsValidationError,
+	updateChatSessionSettings
+} from '$lib/server/chat/session-settings';
 import { serializeChatMessages } from '$lib/server/chat/service';
 import { chatSessionSettingsPatchSchema } from '$lib/server/chat/settings';
 import {
 	deleteChatSession,
 	getChatSession,
-	listChatMessages,
-	updateChatSession
+	listChatMessages
 } from '$lib/server/repositories/chat';
 
 export const GET: RequestHandler = async ({ params }) => {
@@ -34,15 +37,16 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		chatSessionSettingsPatchSchema,
 		'Invalid chat session settings'
 	);
-	await updateChatSession(session.id, body);
+	try {
+		const updatedSession = await updateChatSessionSettings(session, body);
 
-	return json({
-		session: {
-			...session,
-			...body,
-			updatedAt: new Date()
-		}
-	});
+		return json({
+			session: updatedSession
+		});
+	} catch (cause) {
+		if (cause instanceof ChatSessionSettingsValidationError) error(400, cause.message);
+		throw cause;
+	}
 };
 
 export const DELETE: RequestHandler = async ({ params }) => {

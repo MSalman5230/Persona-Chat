@@ -275,6 +275,9 @@ describe('chat service display helpers', () => {
 			updateChatSession: vi.fn(),
 			upsertChatMessages
 		}));
+		vi.doMock('$lib/server/repositories/agents', () => ({
+			getAgent: vi.fn()
+		}));
 		vi.doMock('$lib/server/agent/runtime', () => ({
 			createServerAgentSession: vi.fn()
 		}));
@@ -334,6 +337,7 @@ describe('chat service display helpers', () => {
 			])
 		);
 		vi.doUnmock('$lib/server/repositories/chat');
+		vi.doUnmock('$lib/server/repositories/agents');
 		vi.doUnmock('$lib/server/agent/runtime');
 	});
 });
@@ -355,9 +359,9 @@ describe('chat turn thinking settings', () => {
 		const createServerAgentSession = vi.fn(async (input: { thinkingLevel?: string | null }) => {
 			runtimeInputs.push(input);
 			return {
-			provider: { id: 'provider-1', providerId: 'openai' },
-			model: { id: 'model-1' },
-			session: { dispose: vi.fn() }
+				provider: { id: 'provider-1', providerId: 'openai' },
+				model: { id: 'model-1' },
+				session: { dispose: vi.fn() }
 			};
 		});
 
@@ -367,6 +371,9 @@ describe('chat turn thinking settings', () => {
 			createChatSession,
 			updateChatSession: vi.fn()
 		}));
+		vi.doMock('$lib/server/repositories/agents', () => ({
+			getAgent: vi.fn()
+		}));
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
 		const { prepareChatTurn } = await import('./service');
@@ -375,6 +382,7 @@ describe('chat turn thinking settings', () => {
 		expect(runtimeInputs[0]?.thinkingLevel).toBe('high');
 		expect(createdSessions[0]?.thinkingLevel).toBe('high');
 		vi.doUnmock('$lib/server/repositories/chat');
+		vi.doUnmock('$lib/server/repositories/agents');
 		vi.doUnmock('$lib/server/agent/runtime');
 	});
 
@@ -388,9 +396,9 @@ describe('chat turn thinking settings', () => {
 		const createServerAgentSession = vi.fn(async (input: { thinkingLevel?: string | null }) => {
 			runtimeInputs.push(input);
 			return {
-			provider: { id: 'provider-1', providerId: 'openai' },
-			model: { id: 'model-1' },
-			session: { dispose: vi.fn() }
+				provider: { id: 'provider-1', providerId: 'openai' },
+				model: { id: 'model-1' },
+				session: { dispose: vi.fn() }
 			};
 		});
 
@@ -402,12 +410,15 @@ describe('chat turn thinking settings', () => {
 				providerId: 'openai',
 				modelId: 'model-1',
 				thinkingLevel: 'high',
-				systemPrompt: '',
+				agentId: null,
 				temperature: null
 			})),
 			listChatMessages: vi.fn(async () => []),
 			createChatSession: vi.fn(),
 			updateChatSession
+		}));
+		vi.doMock('$lib/server/repositories/agents', () => ({
+			getAgent: vi.fn()
 		}));
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
@@ -417,6 +428,84 @@ describe('chat turn thinking settings', () => {
 		expect(runtimeInputs[0]?.thinkingLevel).toBeNull();
 		expect(updateInputs[0]?.thinkingLevel).toBeNull();
 		vi.doUnmock('$lib/server/repositories/chat');
+		vi.doUnmock('$lib/server/repositories/agents');
+		vi.doUnmock('$lib/server/agent/runtime');
+	});
+});
+
+describe('chat turn agents', () => {
+	it('passes selected agent to runtime without adding synthetic history', async () => {
+		vi.resetModules();
+		const runtimeInputs: Array<{
+			agent?: { systemPrompt: string };
+			history?: unknown[];
+		}> = [];
+		const updateInputs: Array<{ agentId?: string | null }> = [];
+		const agent = {
+			id: '00000000-0000-4000-8000-000000000010',
+			name: 'Researcher',
+			systemPrompt: 'You are a careful researcher.',
+			toolNames: ['current_datetime'],
+			mcpServerIds: [],
+			isDefault: false,
+			createdAt: new Date(),
+			updatedAt: new Date()
+		};
+		const updateChatSession = vi.fn(async (_id: string, input: { agentId?: string | null }) => {
+			updateInputs.push(input);
+		});
+		const createServerAgentSession = vi.fn(
+			async (input: { agent?: { systemPrompt: string }; history?: unknown[] }) => {
+				runtimeInputs.push(input);
+				return {
+					provider: { id: 'provider-1', providerId: 'openai' },
+					model: { id: 'model-1' },
+					session: { dispose: vi.fn() }
+				};
+			}
+		);
+
+		vi.doMock('$lib/server/repositories/chat', () => ({
+			getChatSession: vi.fn(async () => ({
+				id: 'session-1',
+				title: 'Existing chat',
+				agentId: null,
+				providerConnectionId: 'provider-1',
+				providerId: 'openai',
+				modelId: 'model-1',
+				thinkingLevel: null,
+				temperature: null
+			})),
+			listChatMessages: vi.fn(async () => [
+				{
+					piMessage: { role: 'user', content: [{ type: 'text', text: 'Earlier' }] }
+				}
+			]),
+			createChatSession: vi.fn(),
+			updateChatSession
+		}));
+		vi.doMock('$lib/server/repositories/agents', () => ({
+			getAgent: vi.fn(async () => agent)
+		}));
+		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
+
+		const { prepareChatTurn } = await import('./service');
+		const turn = await prepareChatTurn({
+			sessionId: 'session-1',
+			message: 'hello',
+			agentId: agent.id
+		});
+
+		expect(runtimeInputs[0]).toMatchObject({
+			agent: { systemPrompt: 'You are a careful researcher.' }
+		});
+		expect(runtimeInputs[0]?.history).toHaveLength(1);
+		expect(turn.historyCount).toBe(1);
+		expect(updateInputs[0]).toMatchObject({
+			agentId: agent.id
+		});
+		vi.doUnmock('$lib/server/repositories/chat');
+		vi.doUnmock('$lib/server/repositories/agents');
 		vi.doUnmock('$lib/server/agent/runtime');
 	});
 });

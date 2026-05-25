@@ -1,53 +1,47 @@
 <script lang="ts">
 	import {
-		DEFAULT_MANUAL_TEMPERATURE,
 		CHAT_THINKING_OPTIONS,
+		DEFAULT_MANUAL_TEMPERATURE,
 		chatThinkingSelectionFromServer,
 		clampTemperature,
 		createLocalUiMessage,
 		isRecord,
 		mergeToolEventIntoMessages,
 		modelOptionsForProvider,
-		presetIdForPrompt,
 		responseErrorMessage,
 		setConversationTurnThoughtExpanded,
-		sortSystemPromptPresets,
 		temperatureFromServer,
 		thinkingLevelForRequest,
 		uiMessageFromServer,
 		uiMessagesFromServerSnapshot,
 		upsertUiMessageFromServer,
-		type ChatThinkingSelection,
+		type ChatAgentOption,
 		type ChatProviderOption,
-		type SystemPromptPresetOption,
+		type ChatThinkingSelection,
 		type UiMessage
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
 	import ChatSidebar from '$lib/components/chat/ChatSidebar.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import DesktopHeader from '$lib/components/chat/DesktopHeader.svelte';
 	import MessageList from '$lib/components/chat/MessageList.svelte';
 	import MobileHeader from '$lib/components/chat/MobileHeader.svelte';
 	import SessionSettingsDrawer from '$lib/components/chat/SessionSettingsDrawer.svelte';
-	import TextPromptDialog from '$lib/components/common/TextPromptDialog.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { onMount, tick, untrack } from 'svelte';
 
 	let { data } = $props();
 
-	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 	type ChatSessionSummary = { id: string; title: string };
-	type PendingConfirmation =
-		| { kind: 'chat'; chat: ChatSessionSummary }
-		| { kind: 'preset'; preset: SystemPromptPresetOption };
+	type PendingConfirmation = { kind: 'chat'; chat: ChatSessionSummary };
 	type ChatSessionDetails = {
 		id: string;
 		title: string;
+		agentId: string | null;
 		providerConnectionId: string | null;
 		modelId: string | null;
 		thinkingLevel: string | null;
-		systemPrompt: string;
 		temperature: number | null;
 	};
 	type ActiveRun = { id: string; sessionId: string; status: string; errorText: string | null };
@@ -56,12 +50,16 @@
 	let sidebarOpen = $state(false);
 	let settingsOpen = $state(false);
 	let pendingConfirmation = $state<PendingConfirmation | null>(null);
-	let presetNameDialogOpen = $state(false);
 	let sessions = $state<ChatSessionSummary[]>(untrack(() => data.sessions));
 	let activeRun = $state<ActiveRun | null>(untrack(() => data.activeRun));
 	let isStreaming = $state(Boolean(untrack(() => data.activeRun)));
 	let activeSessionId = $state<string | null>(untrack(() => data.activeSession?.id ?? null));
 	let loadedSessionId = $state<string | null>(untrack(() => data.activeSession?.id ?? null));
+	let selectedAgentIdOverride = $state<string | null>(
+		untrack(() =>
+			data.activeSession ? (data.activeSession.agentId ?? '') : (data.defaultAgentId ?? '')
+		)
+	);
 	let selectedProviderIdOverride = $state<string | null>(
 		untrack(() => data.activeSession?.providerConnectionId ?? null)
 	);
@@ -69,34 +67,16 @@
 	let selectedThinking = $state<ChatThinkingSelection>(
 		untrack(() => chatThinkingSelectionFromServer(data.activeSession?.thinkingLevel))
 	);
-	let systemPromptPresets = $state<SystemPromptPresetOption[]>(
-		untrack(() => data.systemPromptPresets)
-	);
-	let selectedSystemPromptPresetId = $state(
-		untrack(() =>
-			presetIdForPrompt(
-				data.systemPromptPresets,
-				data.activeSession?.systemPrompt ?? data.defaultSystemPrompt?.prompt ?? ''
-			)
-		)
-	);
-	let systemPrompt = $state(
-		untrack(() => data.activeSession?.systemPrompt ?? data.defaultSystemPrompt?.prompt ?? '')
-	);
 	let temperatureAuto = $state(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature) === null)
 	);
 	let temperatureValue = $state(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature) ?? DEFAULT_MANUAL_TEMPERATURE)
 	);
-	let lastSavedSystemPrompt = $state(
-		untrack(() => data.activeSession?.systemPrompt ?? data.defaultSystemPrompt?.prompt ?? '')
-	);
 	let lastSavedTemperature = $state<number | null>(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature))
 	);
 	let settingsSaveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
-	let presetActionStatus = $state<PresetActionStatus>('idle');
 	let settingsErrorText = $state('');
 	let errorText = $state(untrack(() => data.interruptedRun?.errorText ?? ''));
 	let messages = $state<UiMessage[]>(
@@ -107,6 +87,13 @@
 	let eventSource: EventSource | null = null;
 	let connectedRunId: string | null = null;
 
+	const agentOptions = $derived(data.agents as ChatAgentOption[]);
+	const selectedAgentId = $derived.by(() => {
+		if (!selectedAgentIdOverride) return '';
+		return agentOptions.some((agent) => agent.id === selectedAgentIdOverride)
+			? selectedAgentIdOverride
+			: '';
+	});
 	const providerOptions = $derived(data.providers as ChatProviderOption[]);
 	const selectedProviderId = $derived(selectedProviderIdOverride ?? data.defaultProviderId ?? '');
 	const selectedProvider = $derived(
@@ -130,32 +117,16 @@
 		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
 	);
 	const currentTemperature = $derived(temperatureAuto ? null : clampTemperature(temperatureValue));
-	const selectedSystemPromptPreset = $derived(
-		systemPromptPresets.find((preset) => preset.id === selectedSystemPromptPresetId)
-	);
-	const defaultSystemPromptPreset = $derived(
-		systemPromptPresets.find((preset) => preset.isDefault) ?? null
-	);
-	const defaultSystemPromptText = $derived(defaultSystemPromptPreset?.prompt ?? '');
 	const settingsDirty = $derived(
-		activeSessionId !== null &&
-			(systemPrompt !== lastSavedSystemPrompt || currentTemperature !== lastSavedTemperature)
+		activeSessionId !== null && currentTemperature !== lastSavedTemperature
 	);
 	const confirmationDialog = $derived.by(() => {
 		if (!pendingConfirmation) return null;
 
-		if (pendingConfirmation.kind === 'chat') {
-			return {
-				title: 'Delete chat?',
-				description: `Delete "${pendingConfirmation.chat.title}"? This cannot be undone.`,
-				confirmLabel: 'Delete chat'
-			};
-		}
-
 		return {
-			title: 'Delete preset?',
-			description: `Delete "${pendingConfirmation.preset.name}"?`,
-			confirmLabel: 'Delete preset'
+			title: 'Delete chat?',
+			description: `Delete "${pendingConfirmation.chat.title}"? This cannot be undone.`,
+			confirmLabel: 'Delete chat'
 		};
 	});
 
@@ -186,35 +157,25 @@
 		activeRun = data.activeRun;
 		isStreaming = Boolean(data.activeRun);
 		sessions = data.sessions;
-		systemPromptPresets = data.systemPromptPresets;
+		selectedAgentIdOverride = session ? (session.agentId ?? '') : (data.defaultAgentId ?? '');
 		selectedProviderIdOverride = session?.providerConnectionId ?? null;
 		selectedModelOverride = session?.modelId ?? null;
 		selectedThinking = chatThinkingSelectionFromServer(session?.thinkingLevel);
-		resetSessionSettings({
-			systemPrompt: session?.systemPrompt ?? defaultSystemPromptText,
-			temperature: temperatureFromServer(session?.temperature)
-		});
+		resetSessionSettings(temperatureFromServer(session?.temperature));
 		messages = data.messages.map((item: Record<string, unknown>) => uiMessageFromServer(item));
 		errorText = data.interruptedRun?.errorText ?? '';
 	}
 
-	function resetSessionSettings(settings?: { systemPrompt?: string; temperature?: number | null }) {
-		const nextSystemPrompt = settings?.systemPrompt ?? '';
-		const nextTemperature = settings?.temperature ?? null;
-
-		systemPrompt = nextSystemPrompt;
-		selectedSystemPromptPresetId = presetIdForPrompt(systemPromptPresets, nextSystemPrompt);
-		temperatureAuto = nextTemperature === null;
-		temperatureValue = nextTemperature ?? DEFAULT_MANUAL_TEMPERATURE;
-		lastSavedSystemPrompt = nextSystemPrompt;
-		lastSavedTemperature = nextTemperature;
+	function resetSessionSettings(temperature: number | null = null) {
+		temperatureAuto = temperature === null;
+		temperatureValue = temperature ?? DEFAULT_MANUAL_TEMPERATURE;
+		lastSavedTemperature = temperature;
 		settingsSaveStatus = 'idle';
 		settingsErrorText = '';
 	}
 
 	function markSettingsChanged() {
 		if (settingsSaveStatus === 'saved' || settingsSaveStatus === 'error') settingsSaveStatus = 'idle';
-		if (presetActionStatus === 'saved' || presetActionStatus === 'error') presetActionStatus = 'idle';
 		settingsErrorText = '';
 	}
 
@@ -239,8 +200,9 @@
 		errorText = '';
 		sidebarOpen = false;
 		settingsOpen = false;
+		selectedAgentIdOverride = data.defaultAgentId ?? '';
 		selectedThinking = 'auto';
-		resetSessionSettings({ systemPrompt: defaultSystemPromptText, temperature: null });
+		resetSessionSettings();
 	}
 
 	function newChat() {
@@ -283,10 +245,12 @@
 		}
 	}
 
-	function updateSystemPrompt(value: string) {
-		systemPrompt = value;
-		selectedSystemPromptPresetId = presetIdForPrompt(systemPromptPresets, systemPrompt);
-		markSettingsChanged();
+	async function confirmPendingDeletion() {
+		const confirmation = pendingConfirmation;
+		if (!confirmation) return;
+
+		pendingConfirmation = null;
+		await confirmDeleteChat(confirmation.chat);
 	}
 
 	function updateTemperatureAuto(checked: boolean) {
@@ -300,18 +264,17 @@
 	}
 
 	function updateSavedSessionSettings(payload: {
-		systemPrompt?: string;
+		agentId?: string | null;
 		temperature?: number | null;
 	}) {
-		const savedSystemPrompt = payload.systemPrompt ?? systemPrompt;
-		const savedTemperature =
-			payload.temperature !== undefined ? temperatureFromServer(payload.temperature) : currentTemperature;
+		if (payload.agentId !== undefined) selectedAgentIdOverride = payload.agentId ?? '';
 
-		systemPrompt = savedSystemPrompt;
-		temperatureAuto = savedTemperature === null;
-		temperatureValue = savedTemperature ?? temperatureValue;
-		lastSavedSystemPrompt = savedSystemPrompt;
-		lastSavedTemperature = savedTemperature;
+		if (payload.temperature !== undefined) {
+			const savedTemperature = temperatureFromServer(payload.temperature);
+			temperatureAuto = savedTemperature === null;
+			temperatureValue = savedTemperature ?? temperatureValue;
+			lastSavedTemperature = savedTemperature;
+		}
 	}
 
 	async function saveSessionSettings() {
@@ -325,7 +288,6 @@
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					systemPrompt,
 					temperature: currentTemperature
 				})
 			});
@@ -333,7 +295,9 @@
 			if (!response.ok) throw new Error('Settings save failed');
 
 			const payload = (await response.json()) as {
-				session: { systemPrompt?: string; temperature?: number | null };
+				session: {
+					temperature?: number | null;
+				};
 			};
 			updateSavedSessionSettings(payload.session);
 			settingsSaveStatus = 'saved';
@@ -343,127 +307,29 @@
 		}
 	}
 
-	function applySystemPromptPresetUpdate(preset: SystemPromptPresetOption) {
-		systemPromptPresets = sortSystemPromptPresets(
-			systemPromptPresets.map((item) => ({
-				...item,
-				isDefault: preset.isDefault ? false : item.isDefault,
-				...(item.id === preset.id ? preset : {})
-			}))
-		);
-	}
-
-	function selectSystemPromptPreset(id: string) {
-		selectedSystemPromptPresetId = id;
-		const preset = systemPromptPresets.find((item) => item.id === id);
-		if (!preset) return;
-
-		systemPrompt = preset.prompt;
-		markSettingsChanged();
-	}
-
-	function saveCurrentSystemPromptAsPreset() {
-		if (presetActionStatus === 'saving') return;
-		if (systemPrompt.trim().length === 0) {
-			settingsErrorText = 'System prompt is required';
-			presetActionStatus = 'error';
-			return;
-		}
-
-		presetNameDialogOpen = true;
-	}
-
-	async function confirmSaveCurrentSystemPromptAsPreset(name: string) {
-		presetNameDialogOpen = false;
-		presetActionStatus = 'saving';
-		settingsErrorText = '';
+	async function selectAgent(id: string) {
+		const previousAgentId = selectedAgentIdOverride ?? '';
+		selectedAgentIdOverride = id;
+		if (!activeSessionId) return;
 
 		try {
-			const response = await fetch('/api/system-prompts', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name, prompt: systemPrompt })
-			});
-			if (!response.ok) {
-				throw new Error(await responseErrorMessage(response, 'Unable to save preset'));
-			}
-
-			const payload = (await response.json()) as { preset: SystemPromptPresetOption };
-			systemPromptPresets = sortSystemPromptPresets([
-				...systemPromptPresets.filter((preset) => preset.id !== payload.preset.id),
-				payload.preset
-			]);
-			selectedSystemPromptPresetId = payload.preset.id;
-			presetActionStatus = 'saved';
-		} catch (error) {
-			presetActionStatus = 'error';
-			settingsErrorText = error instanceof Error ? error.message : 'Unable to save preset';
-		}
-	}
-
-	async function toggleSelectedSystemPromptPresetDefault() {
-		const preset = selectedSystemPromptPreset;
-		if (!preset || presetActionStatus === 'saving') return;
-
-		presetActionStatus = 'saving';
-		settingsErrorText = '';
-
-		try {
-			const response = await fetch(`/api/system-prompts/${preset.id}`, {
+			const response = await fetch(`/api/chat-sessions/${activeSessionId}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ isDefault: !preset.isDefault })
+				body: JSON.stringify({ agentId: id || null })
 			});
+
 			if (!response.ok) {
-				throw new Error(await responseErrorMessage(response, 'Unable to update preset'));
+				throw new Error(await responseErrorMessage(response, 'Agent save failed'));
 			}
 
-			const payload = (await response.json()) as { preset: SystemPromptPresetOption };
-			applySystemPromptPresetUpdate(payload.preset);
-			selectedSystemPromptPresetId = payload.preset.id;
-			presetActionStatus = 'saved';
+			const payload = (await response.json()) as {
+				session: { agentId?: string | null };
+			};
+			updateSavedSessionSettings({ agentId: payload.session.agentId ?? null });
 		} catch (error) {
-			presetActionStatus = 'error';
-			settingsErrorText = error instanceof Error ? error.message : 'Unable to update preset';
-		}
-	}
-
-	async function deleteSelectedSystemPromptPreset() {
-		const preset = selectedSystemPromptPreset;
-		if (!preset || presetActionStatus === 'saving') return;
-
-		pendingConfirmation = { kind: 'preset', preset };
-	}
-
-	async function confirmDeleteSelectedSystemPromptPreset(preset: SystemPromptPresetOption) {
-		presetActionStatus = 'saving';
-		settingsErrorText = '';
-
-		try {
-			const response = await fetch(`/api/system-prompts/${preset.id}`, { method: 'DELETE' });
-			if (!response.ok) {
-				throw new Error(await responseErrorMessage(response, 'Unable to delete preset'));
-			}
-
-			systemPromptPresets = systemPromptPresets.filter((item) => item.id !== preset.id);
-			selectedSystemPromptPresetId = '';
-			presetActionStatus = 'saved';
-		} catch (error) {
-			presetActionStatus = 'error';
-			settingsErrorText = error instanceof Error ? error.message : 'Unable to delete preset';
-		}
-	}
-
-	async function confirmPendingDeletion() {
-		const confirmation = pendingConfirmation;
-		if (!confirmation) return;
-
-		pendingConfirmation = null;
-
-		if (confirmation.kind === 'chat') {
-			await confirmDeleteChat(confirmation.chat);
-		} else {
-			await confirmDeleteSelectedSystemPromptPreset(confirmation.preset);
+			selectedAgentIdOverride = previousAgentId;
+			errorText = error instanceof Error ? error.message : 'Agent save failed';
 		}
 	}
 
@@ -523,7 +389,7 @@
 				title: typeof payload.title === 'string' ? payload.title : 'New chat'
 			});
 			updateSavedSessionSettings({
-				systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : systemPrompt,
+				agentId: typeof payload.agentId === 'string' ? payload.agentId : null,
 				temperature: temperatureFromServer(payload.temperature)
 			});
 			if ('thinkingLevel' in payload) {
@@ -644,10 +510,10 @@
 				body: JSON.stringify({
 					sessionId: activeSessionId,
 					message: prompt,
+					agentId: selectedAgentId || null,
 					providerConnectionId: selectedProviderId || null,
 					modelId: selectedModel || null,
 					thinkingLevel: thinkingLevelForRequest(selectedThinking),
-					systemPrompt,
 					temperature: currentTemperature
 				})
 			});
@@ -667,7 +533,7 @@
 			setActiveRun(payload.run);
 			upsertSessionSummary(payload.session);
 			updateSavedSessionSettings({
-				systemPrompt: payload.session.systemPrompt,
+				agentId: payload.session.agentId,
 				temperature: temperatureFromServer(payload.session.temperature)
 			});
 			selectedThinking = chatThinkingSelectionFromServer(payload.session.thinkingLevel);
@@ -711,6 +577,8 @@
 			]}
 		>
 			<DesktopHeader
+				{agentOptions}
+				{selectedAgentId}
 				{providerOptions}
 				{selectedProviderId}
 				{selectedModelOptions}
@@ -718,6 +586,7 @@
 				{thinkingOptions}
 				{selectedThinking}
 				{settingsOpen}
+				onSelectAgent={selectAgent}
 				onSelectProvider={selectProvider}
 				onSelectModel={selectModel}
 				onSelectThinking={selectThinking}
@@ -748,10 +617,6 @@
 		<SessionSettingsDrawer
 			open={settingsOpen}
 			{activeSessionId}
-			{systemPromptPresets}
-			{selectedSystemPromptPresetId}
-			{selectedSystemPromptPreset}
-			{systemPrompt}
 			{thinkingOptions}
 			{selectedThinking}
 			{temperatureAuto}
@@ -759,17 +624,11 @@
 			{settingsErrorText}
 			{settingsDirty}
 			{settingsSaveStatus}
-			{presetActionStatus}
 			onClose={() => (settingsOpen = false)}
-			onSelectSystemPromptPreset={selectSystemPromptPreset}
-			onSystemPromptInput={updateSystemPrompt}
 			onThinkingChange={selectThinking}
 			onTemperatureAutoChange={updateTemperatureAuto}
 			onTemperatureValueChange={updateTemperatureValue}
 			onSaveSessionSettings={saveSessionSettings}
-			onSaveCurrentSystemPromptAsPreset={saveCurrentSystemPromptAsPreset}
-			onToggleSelectedSystemPromptPresetDefault={toggleSelectedSystemPromptPresetDefault}
-			onDeleteSelectedSystemPromptPreset={deleteSelectedSystemPromptPreset}
 		/>
 	</div>
 
@@ -781,15 +640,5 @@
 		variant="danger"
 		onCancel={() => (pendingConfirmation = null)}
 		onConfirm={confirmPendingDeletion}
-	/>
-
-	<TextPromptDialog
-		open={presetNameDialogOpen}
-		title="Save preset"
-		description="Name this system prompt preset."
-		label="Preset name"
-		confirmLabel="Save preset"
-		onCancel={() => (presetNameDialogOpen = false)}
-		onConfirm={(name) => void confirmSaveCurrentSystemPromptAsPreset(name)}
 	/>
 </div>

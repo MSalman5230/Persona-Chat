@@ -3,8 +3,8 @@ import { error } from '@sveltejs/kit';
 import { resolveActiveChatRun } from '$lib/server/chat/runs';
 import { serializeChatMessages } from '$lib/server/chat/service';
 import { getChatSession, listChatMessages, listChatSessions } from '$lib/server/repositories/chat';
+import { listAgentOptions } from '$lib/server/repositories/agents';
 import { listProviderConnections } from '$lib/server/repositories/providers';
-import { listSystemPromptPresets } from '$lib/server/repositories/system-prompts';
 import { isRecord } from '$lib/server/json';
 
 function isHttpError(cause: unknown): boolean {
@@ -13,13 +13,13 @@ function isHttpError(cause: unknown): boolean {
 
 export async function loadChatPageData(sessionId: string | null = null) {
 	try {
-		const [providers, sessions, systemPromptPresets] = await Promise.all([
+		const [providers, sessions, agents] = await Promise.all([
 			listProviderConnections(),
 			listChatSessions(),
-			listSystemPromptPresets()
+			listAgentOptions()
 		]);
 		const defaultProvider = providers.find((provider) => provider.isDefault) ?? providers[0];
-		const defaultSystemPrompt = systemPromptPresets.find((preset) => preset.isDefault) ?? null;
+		const defaultAgent = agents.find((agent) => agent.isDefault) ?? null;
 		const activeSession = sessionId ? await getChatSession(sessionId) : null;
 
 		if (sessionId && !activeSession) error(404, 'Chat session not found');
@@ -32,8 +32,8 @@ export async function loadChatPageData(sessionId: string | null = null) {
 		return {
 			providers,
 			sessions,
-			systemPromptPresets,
-			defaultSystemPrompt,
+			agents,
+			defaultAgentId: defaultAgent?.id ?? null,
 			defaultProviderId: defaultProvider?.id ?? null,
 			defaultModel: defaultProvider?.defaultModel ?? null,
 			activeSession,
@@ -48,8 +48,8 @@ export async function loadChatPageData(sessionId: string | null = null) {
 		return {
 			providers: [],
 			sessions: [],
-			systemPromptPresets: [],
-			defaultSystemPrompt: null,
+			agents: [],
+			defaultAgentId: null,
 			defaultProviderId: null,
 			defaultModel: null,
 			activeSession: null,

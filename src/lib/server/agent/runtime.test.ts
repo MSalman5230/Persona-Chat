@@ -51,6 +51,63 @@ describe('agent runtime session settings', () => {
 		});
 	});
 
+	it('loads stored history without synthetic messages', async () => {
+		vi.resetModules();
+		const appendedMessages: unknown[] = [];
+		const createAgentSession = vi.fn(async () => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} }
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({
+					appendMessage: vi.fn((message) => appendedMessages.push(message))
+				})
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				row: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: undefined,
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers: vi.fn(),
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		const runtime = await createServerAgentSession({
+			history: [{ role: 'assistant', content: [{ type: 'text', text: 'Earlier answer.' }] }]
+		});
+
+		expect(appendedMessages[0]).toMatchObject({
+			role: 'assistant',
+			content: [{ type: 'text', text: 'Earlier answer.' }]
+		});
+		expect(appendedMessages).toHaveLength(1);
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
+	});
+
 	it('starts chat with stable progressive MCP meta-tools only', async () => {
 		vi.resetModules();
 		const listEnabledMcpServers = vi.fn(async () => {
@@ -108,6 +165,132 @@ describe('agent runtime session settings', () => {
 		]);
 		expect(options.customTools.map((tool) => tool.name)).toEqual(options.tools);
 		expect(listEnabledMcpServers).not.toHaveBeenCalled();
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
+	});
+
+	it('filters app tools and MCP meta-tools through selected agent permissions', async () => {
+		vi.resetModules();
+		const createAgentSession = vi.fn(async (options: Record<string, unknown>) => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} },
+			options
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({ appendMessage: vi.fn() })
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				row: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: undefined,
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers: vi.fn(),
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		const runtime = await createServerAgentSession({
+			agent: {
+				systemPrompt: 'Agent prompt.',
+				toolNames: ['current_datetime'],
+				mcpServerIds: ['00000000-0000-4000-8000-000000000010']
+			}
+		});
+		const options = createAgentSession.mock.calls[0][0] as {
+			tools: string[];
+			customTools: Array<{ name: string }>;
+		};
+
+		expect(options.customTools.map((tool) => tool.name)).toEqual([
+			'current_datetime',
+			'mcp_list_servers',
+			'mcp_list_tools',
+			'mcp_call_tool'
+		]);
+		expect(runtime.allowedToolNames).toEqual(options.tools);
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
+	});
+
+	it('can disable all app and MCP tools for an agent', async () => {
+		vi.resetModules();
+		const createAgentSession = vi.fn(async (options: Record<string, unknown>) => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} },
+			options
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({ appendMessage: vi.fn() })
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				row: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: undefined,
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers: vi.fn(),
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		const runtime = await createServerAgentSession({
+			agent: {
+				systemPrompt: '',
+				toolNames: [],
+				mcpServerIds: []
+			}
+		});
+		const options = createAgentSession.mock.calls[0][0] as {
+			tools: string[];
+			customTools: Array<{ name: string }>;
+		};
+
+		expect(options.tools).toEqual([]);
+		expect(options.customTools).toEqual([]);
+		expect(runtime.allowedToolNames).toEqual([]);
 		vi.doUnmock('@earendil-works/pi-coding-agent');
 		vi.doUnmock('$lib/server/providers/runtime');
 		vi.doUnmock('$lib/server/repositories/mcp');

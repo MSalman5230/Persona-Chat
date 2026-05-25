@@ -78,10 +78,9 @@ export type ChatProviderOption = {
 	favoriteModels: string[];
 };
 
-export type SystemPromptPresetOption = {
+export type ChatAgentOption = {
 	id: string;
 	name: string;
-	prompt: string;
 	isDefault: boolean;
 };
 
@@ -94,22 +93,6 @@ export function clampTemperature(value: number): number {
 
 export function temperatureFromServer(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) ? clampTemperature(value) : null;
-}
-
-export function sortSystemPromptPresets(
-	presets: SystemPromptPresetOption[]
-): SystemPromptPresetOption[] {
-	return [...presets].sort((a, b) => {
-		if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
-		return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
-	});
-}
-
-export function presetIdForPrompt(
-	presets: SystemPromptPresetOption[],
-	prompt: string
-): string {
-	return presets.find((preset) => preset.prompt === prompt)?.id ?? '';
 }
 
 export function roleFromServer(role: unknown): UiMessage['role'] {

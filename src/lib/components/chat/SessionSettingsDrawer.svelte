@@ -1,16 +1,10 @@
 <script lang="ts">
-	import type { ChatThinkingSelection, SystemPromptPresetOption } from '$lib/client/chat';
+	import type { ChatThinkingSelection } from '$lib/client/chat';
 	import SelectField from '$lib/components/common/SelectField.svelte';
-
-	type PresetActionStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 	interface Props {
 		open: boolean;
 		activeSessionId: string | null;
-		systemPromptPresets: SystemPromptPresetOption[];
-		selectedSystemPromptPresetId: string;
-		selectedSystemPromptPreset: SystemPromptPresetOption | undefined;
-		systemPrompt: string;
 		thinkingOptions: readonly ChatThinkingSelection[];
 		selectedThinking: ChatThinkingSelection;
 		temperatureAuto: boolean;
@@ -18,26 +12,16 @@
 		settingsErrorText: string;
 		settingsDirty: boolean;
 		settingsSaveStatus: 'idle' | 'saving' | 'saved' | 'error';
-		presetActionStatus: PresetActionStatus;
 		onClose: () => void;
-		onSelectSystemPromptPreset: (id: string) => void;
-		onSystemPromptInput: (value: string) => void;
 		onThinkingChange: (value: ChatThinkingSelection) => void;
 		onTemperatureAutoChange: (checked: boolean) => void;
 		onTemperatureValueChange: (value: number) => void;
 		onSaveSessionSettings: () => void | Promise<void>;
-		onSaveCurrentSystemPromptAsPreset: () => void | Promise<void>;
-		onToggleSelectedSystemPromptPresetDefault: () => void | Promise<void>;
-		onDeleteSelectedSystemPromptPreset: () => void | Promise<void>;
 	}
 
 	let {
 		open,
 		activeSessionId,
-		systemPromptPresets,
-		selectedSystemPromptPresetId,
-		selectedSystemPromptPreset,
-		systemPrompt,
 		thinkingOptions,
 		selectedThinking,
 		temperatureAuto,
@@ -45,29 +29,17 @@
 		settingsErrorText,
 		settingsDirty,
 		settingsSaveStatus,
-		presetActionStatus,
 		onClose,
-		onSelectSystemPromptPreset,
-		onSystemPromptInput,
 		onThinkingChange,
 		onTemperatureAutoChange,
 		onTemperatureValueChange,
-		onSaveSessionSettings,
-		onSaveCurrentSystemPromptAsPreset,
-		onToggleSelectedSystemPromptPresetDefault,
-		onDeleteSelectedSystemPromptPreset
+		onSaveSessionSettings
 	}: Props = $props();
 
 	function optionLabel(value: ChatThinkingSelection): string {
 		return value === 'auto' ? 'Auto' : value;
 	}
 
-	const presetSelectOptions = $derived(
-		systemPromptPresets.map((preset) => ({
-			value: preset.id,
-			label: `${preset.isDefault ? 'Default - ' : ''}${preset.name}`
-		}))
-	);
 	const thinkingSelectOptions = $derived(
 		thinkingOptions.map((option) => ({ value: option, label: optionLabel(option) }))
 	);
@@ -112,72 +84,6 @@
 		}}
 	>
 		<div class="flex-1 space-y-6 px-gutter py-5">
-			<div class="space-y-3">
-				<div class="space-y-2">
-					<div class="flex items-center justify-between gap-3">
-						<label for="system-prompt-preset" class="font-label-md text-label-md uppercase text-text-muted">
-							Preset
-						</label>
-						<div class="flex items-center gap-1">
-							<button
-								type="button"
-								class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-35"
-								aria-label="Save system prompt as preset"
-								title="Save as preset"
-								disabled={systemPrompt.trim().length === 0 || presetActionStatus === 'saving'}
-								onclick={() => void onSaveCurrentSystemPromptAsPreset()}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">bookmark_add</span>
-							</button>
-							<button
-								type="button"
-								class={[
-									'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary disabled:opacity-35',
-									selectedSystemPromptPreset?.isDefault ? 'text-primary' : ''
-								]}
-								aria-label={selectedSystemPromptPreset?.isDefault
-									? 'Unset default prompt preset'
-									: 'Set prompt preset as default'}
-								title={selectedSystemPromptPreset?.isDefault ? 'Unset default' : 'Set default'}
-								disabled={!selectedSystemPromptPreset || presetActionStatus === 'saving'}
-								onclick={() => void onToggleSelectedSystemPromptPresetDefault()}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">star</span>
-							</button>
-							<button
-								type="button"
-								class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle text-text-muted transition-colors hover:bg-surface-container-high hover:text-error disabled:opacity-35"
-								aria-label="Delete prompt preset"
-								title="Delete preset"
-								disabled={!selectedSystemPromptPreset || presetActionStatus === 'saving'}
-								onclick={() => void onDeleteSelectedSystemPromptPreset()}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
-							</button>
-						</div>
-					</div>
-					<SelectField
-						id="system-prompt-preset"
-						value={selectedSystemPromptPresetId}
-						options={presetSelectOptions}
-						placeholder="Custom"
-						ariaLabel="System prompt preset"
-						onChange={onSelectSystemPromptPreset}
-					/>
-				</div>
-
-				<label class="block space-y-2">
-					<span class="font-label-md text-label-md uppercase text-text-muted">System Prompt</span>
-					<textarea
-						value={systemPrompt}
-						class="custom-scrollbar min-h-44 w-full resize-none rounded-lg border border-border-subtle bg-surface-container px-3 py-2.5 font-body-sm text-body-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-outline"
-						placeholder="Empty"
-						aria-label="System prompt"
-						oninput={(event) => onSystemPromptInput((event.currentTarget as HTMLTextAreaElement).value)}
-					></textarea>
-				</label>
-			</div>
-
 			<label class="block space-y-2">
 				<span class="font-label-md text-label-md uppercase text-text-muted">Thinking</span>
 				<SelectField

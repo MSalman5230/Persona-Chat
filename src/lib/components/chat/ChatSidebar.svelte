@@ -85,6 +85,13 @@
 
 	<div class="space-y-1 border-t border-border-subtle px-3 pt-4">
 		<a
+			href={resolve('/agents')}
+			class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+		>
+			<span class="material-symbols-outlined" aria-hidden="true">group</span>
+			<span class="font-body-sm text-body-sm">Agents</span>
+		</a>
+		<a
 			href={resolve('/settings')}
 			class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
 		>

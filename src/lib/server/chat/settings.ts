@@ -5,22 +5,25 @@ export const TEMPERATURE_MAX = 2;
 export const DEFAULT_MANUAL_TEMPERATURE = 0.7;
 export const BLANK_SYSTEM_PROMPT_SENTINEL = '__persona_internal_blank_system_prompt__';
 
-export const systemPromptSchema = z.string();
 export const temperatureSchema = z.number().finite().min(TEMPERATURE_MIN).max(TEMPERATURE_MAX).nullable();
+export const nullableAgentIdSchema = z.string().uuid().nullable();
 
 export const chatSessionSettingsSchema = z
 	.object({
-		systemPrompt: systemPromptSchema,
+		agentId: nullableAgentIdSchema.optional(),
 		temperature: temperatureSchema
 	})
 	.strict();
 
 export const chatSessionSettingsPatchSchema = chatSessionSettingsSchema.partial().refine(
-	(value) => value.systemPrompt !== undefined || value.temperature !== undefined,
+	(value) =>
+		value.agentId !== undefined ||
+		value.temperature !== undefined,
 	{ message: 'At least one session setting is required' }
 );
 
 export type ChatSessionSettings = z.infer<typeof chatSessionSettingsSchema>;
+export type ChatSessionSettingsPatch = z.infer<typeof chatSessionSettingsPatchSchema>;
 
 export function piSystemPromptFromSessionPrompt(systemPrompt: string): string {
 	return systemPrompt.length > 0 ? systemPrompt : BLANK_SYSTEM_PROMPT_SENTINEL;

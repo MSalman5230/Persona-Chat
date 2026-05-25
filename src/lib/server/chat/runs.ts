@@ -25,10 +25,10 @@ import type { ThoughtTimingsByAssistant } from '$lib/server/chat/display';
 export type ChatRunInput = {
 	sessionId?: string | null;
 	message: string;
+	agentId?: string | null;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
-	systemPrompt?: string;
 	temperature?: number | null;
 };
 
@@ -306,7 +306,7 @@ async function executeChatRun(
 			providerId: turn.runtime.provider.providerId,
 			modelId: turn.runtime.model.id,
 			thinkingLevel: turn.chatSession.thinkingLevel,
-			systemPrompt: turn.chatSession.systemPrompt,
+			agentId: turn.chatSession.agentId,
 			temperature: turn.chatSession.temperature,
 			tools: turn.runtime.allowedToolNames
 		});
@@ -386,7 +386,8 @@ async function executeChatRun(
 			turn.runtime.session.messages as never,
 			turn.historyCount,
 			thoughtTimings,
-			liveRun.messageSnapshots
+			liveRun.messageSnapshots,
+			turn.historyCount + 1
 		);
 		await updateChatRunStatus(liveRun.run.id, 'completed');
 		await publishSnapshot(liveRun, null);

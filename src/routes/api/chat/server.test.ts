@@ -50,7 +50,7 @@ describe('legacy chat route', () => {
 			session: {
 				id: sessionId,
 				title: 'Hello',
-				systemPrompt: '',
+				agentId: null,
 				temperature: null
 			}
 		};
