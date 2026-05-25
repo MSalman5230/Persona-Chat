@@ -1,9 +1,8 @@
 import type { PageServerLoad } from './$types';
 
-import { authenticatedUser } from '$lib/server/auth-guard';
 import { loadChatPageData } from '$lib/server/chat/page-data';
+import { authenticatedAccess } from '$lib/server/resource-policy';
 
 export const load: PageServerLoad = async (event) => {
-	const user = authenticatedUser(event);
-	return loadChatPageData(user.id);
+	return loadChatPageData(authenticatedAccess(event));
 };

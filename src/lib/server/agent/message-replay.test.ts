@@ -71,4 +71,14 @@ describe('message replay', () => {
 
 		expect(appendMessage).not.toHaveBeenCalled();
 	});
+
+	it('skips legacy persisted rows with invalid unknown content blocks', () => {
+		const appendMessage = vi.fn();
+		replayHistory(
+			{ appendMessage },
+			[{ role: 'user', content: [{ type: 'unknown' }], timestamp: 2 }]
+		);
+
+		expect(appendMessage).not.toHaveBeenCalled();
+	});
 });

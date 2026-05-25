@@ -1,3 +1,4 @@
+import { toPersistedAgentMessage } from '$lib/server/agent/message-replay';
 import type { PersistedAgentMessage } from '$lib/server/agent/messages';
 import { isRecord } from '$lib/server/json';
 import {
@@ -135,7 +136,7 @@ export function normalizeAgentMessageForStorage(
 	return {
 		role: message.role,
 		contentText: display.text,
-		piMessage: message,
+		piMessage: toPersistedAgentMessage(message),
 		display
 	};
 }

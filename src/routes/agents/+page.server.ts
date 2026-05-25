@@ -1,9 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
-import { authenticatedUser } from '$lib/server/auth-guard';
 import { booleanFromForm, stringFromForm, stringsFromForm } from '$lib/server/forms';
-import { runtimeResourceFilter } from '$lib/server/resource-policy';
+import { authenticatedAccess } from '$lib/server/resource-policy';
 import {
 	createAgent,
 	deleteAgent,
@@ -25,12 +24,12 @@ function agentInputFromForm(form: FormData) {
 }
 
 export const load: PageServerLoad = async (event) => {
-	const user = authenticatedUser(event);
+	const access = authenticatedAccess(event);
 	try {
 		return {
-			agents: await listAgents(user.id),
+			agents: await listAgents(access.userId),
 			agentTools: listAvailableAgentTools(),
-			mcpServers: await listMcpServers(runtimeResourceFilter()),
+			mcpServers: await listMcpServers(access.resources.runtime),
 			loadError: null
 		};
 	} catch (error) {
@@ -45,27 +44,27 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	saveAgent: async (event) => {
-		const user = authenticatedUser(event);
+		const access = authenticatedAccess(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			const agent = id
-				? await updateAgent(user.id, id, agentInputFromForm(form))
-				: await createAgent(user.id, agentInputFromForm(form));
+				? await updateAgent(access.userId, id, agentInputFromForm(form))
+				: await createAgent(access.userId, agentInputFromForm(form));
 			return { ok: true, message: `${agent.name} saved` };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save agent' });
 		}
 	},
 	defaultAgent: async (event) => {
-		const user = authenticatedUser(event);
+		const access = authenticatedAccess(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('Agent ID is required');
-			const agent = await updateAgentDefault(user.id, id, { isDefault: true });
+			const agent = await updateAgentDefault(access.userId, id, { isDefault: true });
 			return { ok: true, message: `${agent.name} set as default` };
 		} catch (error) {
 			return fail(400, {
@@ -74,13 +73,13 @@ export const actions: Actions = {
 		}
 	},
 	deleteAgent: async (event) => {
-		const user = authenticatedUser(event);
+		const access = authenticatedAccess(event);
 		try {
 			const { request } = event;
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('Agent ID is required');
-			await deleteAgent(user.id, id);
+			await deleteAgent(access.userId, id);
 			return { ok: true, message: 'Agent deleted' };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to delete agent' });

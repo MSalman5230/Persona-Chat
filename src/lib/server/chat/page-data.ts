@@ -6,7 +6,7 @@ import { getChatSession, listChatMessages, listChatSessions } from '$lib/server/
 import { listAgentOptions } from '$lib/server/repositories/agents';
 import { listProviderConnections } from '$lib/server/repositories/providers';
 import { isRecord } from '$lib/server/json';
-import { runtimeResourceFilter } from '$lib/server/resource-policy';
+import type { AccessPolicy } from '$lib/server/resource-policy';
 import type { PublicProviderConnection } from '$lib/shared/providers';
 
 function isHttpError(cause: unknown): boolean {
@@ -24,17 +24,20 @@ function toChatProviderOption(connection: PublicProviderConnection) {
 	};
 }
 
-export async function loadChatPageData(userId: string, sessionId: string | null = null) {
+export async function loadChatPageData(
+	access: Pick<AccessPolicy, 'userId' | 'resources'>,
+	sessionId: string | null = null
+) {
 	try {
 		const [providerConnections, sessions, agents] = await Promise.all([
-			listProviderConnections({ userId, ...runtimeResourceFilter() }),
-			listChatSessions(userId),
-			listAgentOptions(userId)
+			listProviderConnections({ userId: access.userId, ...access.resources.runtime }),
+			listChatSessions(access.userId),
+			listAgentOptions(access.userId)
 		]);
 		const providers = providerConnections.map(toChatProviderOption);
 		const defaultProvider = providers.find((provider) => provider.isDefault) ?? providers[0];
 		const defaultAgent = agents.find((agent) => agent.isDefault) ?? null;
-		const activeSession = sessionId ? await getChatSession(userId, sessionId) : null;
+		const activeSession = sessionId ? await getChatSession(access.userId, sessionId) : null;
 
 		if (sessionId && !activeSession) error(404, 'Chat session not found');
 

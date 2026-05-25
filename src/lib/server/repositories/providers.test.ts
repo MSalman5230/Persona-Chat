@@ -5,6 +5,7 @@ import { encryptJson } from '$lib/server/crypto';
 import {
 	buildProviderConnectionPatch,
 	providerUpdateSchema,
+	resolveEffectiveDefaultProviderId,
 	resolveProviderConnectionViews,
 	resolveProviderConnectionView,
 	serializeProviderView,
@@ -84,7 +85,7 @@ function userProviderContext(
 describe('resolveProviderConnectionView', () => {
 	it('uses global provider values when no user preference exists', () => {
 		const provider = providerRow({ isDefault: true });
-		const view = resolveProviderConnectionView(provider, undefined, null);
+		const view = resolveProviderConnectionView(provider, undefined, provider.id);
 
 		expect(view.preference).toBeNull();
 		expect(view.provider.defaultModel).toBe('global-default');
@@ -103,6 +104,7 @@ describe('resolveProviderConnectionView', () => {
 		});
 		const view = resolveProviderConnectionView(provider, preference, null);
 
+		expect(view.effective.isDefault).toBe(false);
 		expect(view.provider.defaultModel).toBe('global-default');
 		expect(view.provider.favoriteModels).toEqual(['global-default']);
 		expect(view.preference?.defaultModel).toBe('user-default');
@@ -120,10 +122,10 @@ describe('resolveProviderConnectionView', () => {
 		expect(view.effective.isDefault).toBe(true);
 	});
 
-	it('falls back to the global default when the user has no default provider', () => {
+	it('marks the global default when the user has no default provider', () => {
 		const provider = providerRow({ isDefault: true });
 		const preference = preferenceRow({ isDefault: false });
-		const view = resolveProviderConnectionView(provider, preference, null);
+		const view = resolveProviderConnectionView(provider, preference, provider.id);
 
 		expect(view.provider.isDefault).toBe(true);
 		expect(view.preference?.isDefault).toBe(false);
@@ -218,6 +220,54 @@ describe('resolveProviderConnectionViews', () => {
 		);
 
 		expect(views[0].effective.isDefault).toBe(true);
+	});
+
+	it('uses the first visible provider when the user default is stale and no global default exists', () => {
+		const first = providerRow({
+			id: '00000000-0000-4000-8000-000000000011',
+			isDefault: false
+		});
+		const second = providerRow({
+			id: '00000000-0000-4000-8000-000000000022',
+			isDefault: false
+		});
+		const context = userProviderContext([
+			preferenceRow({
+				providerConnectionId: '00000000-0000-4000-8000-000000000099',
+				isDefault: true
+			})
+		]);
+
+		expect(resolveEffectiveDefaultProviderId([first, second], context)).toBe(first.id);
+
+		const views = resolveProviderConnectionViews([first, second], context);
+		expect(views.find((view) => view.provider.id === first.id)?.effective.isDefault).toBe(true);
+		expect(views.find((view) => view.provider.id === second.id)?.effective.isDefault).toBe(false);
+	});
+});
+
+describe('resolveEffectiveDefaultProviderId', () => {
+	it('prefers a visible user default over the global default', () => {
+		const globalDefault = providerRow({
+			id: '00000000-0000-4000-8000-000000000011',
+			isDefault: true
+		});
+		const userDefault = providerRow({
+			id: '00000000-0000-4000-8000-000000000022',
+			isDefault: false
+		});
+
+		expect(
+			resolveEffectiveDefaultProviderId(
+				[globalDefault, userDefault],
+				userProviderContext([
+					preferenceRow({
+						providerConnectionId: userDefault.id,
+						isDefault: true
+					})
+				])
+			)
+		).toBe(userDefault.id);
 	});
 });
 

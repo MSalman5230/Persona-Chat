@@ -1,10 +1,20 @@
 import type { RequestEvent } from '@sveltejs/kit';
 
 import { authenticatedUser, requireAdmin } from '$lib/server/auth-guard';
+import { isAdminRole } from '$lib/server/auth-role';
+
+/**
+ * Resource ownership model:
+ * - Providers and MCP servers are global shared infrastructure.
+ * - Agents, chats, and user provider preferences are user-owned.
+ * Non-admin visibility uses AccessPolicy.resources filters (enabledOnly), not row-level userId.
+ */
 
 export type ResourceFilter = {
 	enabledOnly: boolean;
 };
+
+export const RUNTIME_RESOURCE_FILTER: ResourceFilter = { enabledOnly: true };
 
 export type AccessPolicy = {
 	userId: string;
@@ -18,7 +28,7 @@ export type AccessPolicy = {
 function resourceFilters(isAdmin: boolean): AccessPolicy['resources'] {
 	return {
 		management: { enabledOnly: !isAdmin },
-		runtime: { enabledOnly: true }
+		runtime: RUNTIME_RESOURCE_FILTER
 	};
 }
 
@@ -32,7 +42,7 @@ export function buildAccessPolicy(userId: string, isAdmin: boolean): AccessPolic
 
 export function authenticatedAccess(event: RequestEvent): AccessPolicy {
 	const user = authenticatedUser(event);
-	return buildAccessPolicy(user.id, event.locals.isAdmin);
+	return buildAccessPolicy(user.id, isAdminRole(user.role));
 }
 
 export function adminAccess(event: RequestEvent): AccessPolicy {
@@ -41,5 +51,5 @@ export function adminAccess(event: RequestEvent): AccessPolicy {
 }
 
 export function runtimeResourceFilter(): ResourceFilter {
-	return { enabledOnly: true };
+	return RUNTIME_RESOURCE_FILTER;
 }

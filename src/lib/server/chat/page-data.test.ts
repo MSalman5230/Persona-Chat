@@ -34,9 +34,16 @@ vi.mock('$lib/server/chat/service', () => ({
 	serializeChatMessages: mocks.serializeChatMessages
 }));
 
+import { RUNTIME_RESOURCE_FILTER } from '$lib/server/resource-policy';
 import { loadChatPageData } from './page-data';
 
-const userId = 'user-1';
+const access = {
+	userId: 'user-1',
+	resources: {
+		management: { enabledOnly: true },
+		runtime: RUNTIME_RESOURCE_FILTER
+	}
+} as const;
 
 describe('loadChatPageData', () => {
 	beforeEach(() => {
@@ -85,11 +92,14 @@ describe('loadChatPageData', () => {
 	});
 
 	it('loads selector-only agent options for the chat page', async () => {
-		const data = await loadChatPageData(userId);
+		const data = await loadChatPageData(access);
 
-		expect(mocks.listAgentOptions).toHaveBeenCalledWith(userId);
-		expect(mocks.listProviderConnections).toHaveBeenCalledWith({ userId, enabledOnly: true });
-		expect(mocks.listChatSessions).toHaveBeenCalledWith(userId);
+		expect(mocks.listAgentOptions).toHaveBeenCalledWith(access.userId);
+		expect(mocks.listProviderConnections).toHaveBeenCalledWith({
+			userId: access.userId,
+			enabledOnly: true
+		});
+		expect(mocks.listChatSessions).toHaveBeenCalledWith(access.userId);
 		expect(mocks.listAgents).not.toHaveBeenCalled();
 		expect(data.defaultAgentId).toBe('agent-1');
 		expect(data.defaultProviderId).toBe('provider-1');

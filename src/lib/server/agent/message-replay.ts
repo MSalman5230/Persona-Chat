@@ -139,12 +139,26 @@ function isReplayableToolResultMessage(
 	);
 }
 
-export function isReplayableAgentMessage(message: PersistedAgentMessage): message is Message {
+export type ReplayablePersistedMessage = Message;
+
+function asPersistedAgentMessage(message: unknown): PersistedAgentMessage | null {
+	if (!isRecord(message) || typeof message.role !== 'string') return null;
+	return message as PersistedAgentMessage;
+}
+
+export function isReplayableAgentMessage(message: unknown): message is ReplayablePersistedMessage {
+	const persisted = asPersistedAgentMessage(message);
+	if (!persisted) return false;
+
 	return (
-		isReplayableUserMessage(message) ||
-		isReplayableAssistantMessage(message) ||
-		isReplayableToolResultMessage(message)
+		isReplayableUserMessage(persisted) ||
+		isReplayableAssistantMessage(persisted) ||
+		isReplayableToolResultMessage(persisted)
 	);
+}
+
+export function toPersistedAgentMessage(message: PersistedAgentMessage): PersistedAgentMessage {
+	return isReplayableAgentMessage(message) ? message : message;
 }
 
 export function replayHistory(

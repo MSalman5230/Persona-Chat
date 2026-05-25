@@ -12,12 +12,12 @@ import {
 } from '$lib/server/repositories/providers';
 
 export const GET: RequestHandler = async (event) => {
-	adminAccess(event);
+	const access = adminAccess(event);
 	const { params } = event;
-	const provider = await getProviderConnection(params.id);
-	if (!provider) error(404, 'Provider connection not found');
-	const { secret: _secret, ...publicProvider } = provider;
-	return json({ provider: publicProvider });
+	const row = await getProviderConnection(params.id);
+	if (!row) error(404, 'Provider connection not found');
+	const provider = await serializeProviderConnectionForUser(row, access.userId);
+	return json({ provider });
 };
 
 export const PATCH: RequestHandler = async (event) => {

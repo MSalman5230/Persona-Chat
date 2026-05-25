@@ -1,11 +1,11 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-import { requireAdmin } from '$lib/server/auth-guard';
+import { adminAccess } from '$lib/server/resource-policy';
 import { createProviderRuntime } from '$lib/server/providers/runtime';
 
 export const POST: RequestHandler = async (event) => {
-	requireAdmin(event);
+	adminAccess(event);
 	const { params, request } = event;
 	const body = (await request.json().catch(() => ({}))) as { modelId?: string; thinkingLevel?: string };
 	const runtime = await createProviderRuntime({

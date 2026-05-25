@@ -2,12 +2,12 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { readJsonRequest, rethrowValidationAsBadRequest } from '$lib/server/api';
-import { requireAdmin } from '$lib/server/auth-guard';
+import { adminAccess } from '$lib/server/resource-policy';
 import { deleteMcpServer, getMcpServer, updateMcpServer } from '$lib/server/repositories/mcp';
 import type { McpUpdateInput } from '$lib/server/repositories/mcp';
 
 export const GET: RequestHandler = async (event) => {
-	requireAdmin(event);
+	adminAccess(event);
 	const { params } = event;
 	const server = await getMcpServer(params.id);
 	if (!server) error(404, 'MCP server not found');
@@ -16,7 +16,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const PATCH: RequestHandler = async (event) => {
-	requireAdmin(event);
+	adminAccess(event);
 	const { params, request } = event;
 	const body = (await readJsonRequest(request, 'Invalid MCP server update')) as McpUpdateInput;
 	try {
@@ -28,7 +28,7 @@ export const PATCH: RequestHandler = async (event) => {
 };
 
 export const DELETE: RequestHandler = async (event) => {
-	requireAdmin(event);
+	adminAccess(event);
 	const { params } = event;
 	await deleteMcpServer(params.id);
 	return json({ ok: true });

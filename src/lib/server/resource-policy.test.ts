@@ -5,6 +5,7 @@ import {
 	adminAccess,
 	authenticatedAccess,
 	buildAccessPolicy,
+	RUNTIME_RESOURCE_FILTER,
 	runtimeResourceFilter
 } from './resource-policy';
 import { isAdminRole } from './auth-role';
@@ -37,12 +38,31 @@ describe('resource access policy', () => {
 		});
 	});
 
-	it('derives authenticated access from request locals', () => {
+	it('derives authenticated access from the user role', () => {
 		expect(authenticatedAccess(eventFor(regularUser))).toMatchObject({
 			userId: 'user-1',
 			isAdmin: false,
 			resources: {
 				management: { enabledOnly: true },
+				runtime: { enabledOnly: true }
+			}
+		});
+	});
+
+	it('derives admin status from user.role even when locals.isAdmin is stale', () => {
+		const staleLocalsEvent = {
+			locals: {
+				user: adminUser,
+				session: { id: 'session-1' },
+				isAdmin: false
+			}
+		} as RequestEvent;
+
+		expect(authenticatedAccess(staleLocalsEvent)).toMatchObject({
+			userId: 'admin-1',
+			isAdmin: true,
+			resources: {
+				management: { enabledOnly: false },
 				runtime: { enabledOnly: true }
 			}
 		});
@@ -65,6 +85,7 @@ describe('resource access policy', () => {
 	});
 
 	it('keeps the standalone runtime filter for non-request code paths', () => {
-		expect(runtimeResourceFilter()).toEqual({ enabledOnly: true });
+		expect(runtimeResourceFilter()).toEqual(RUNTIME_RESOURCE_FILTER);
+		expect(RUNTIME_RESOURCE_FILTER).toEqual({ enabledOnly: true });
 	});
 });

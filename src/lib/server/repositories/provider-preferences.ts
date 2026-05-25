@@ -10,7 +10,6 @@ import type {
 } from '$lib/shared/providers';
 
 import {
-	getDefaultProviderConnection,
 	getProviderConnection,
 	getProviderSecrets,
 	listProviderConnectionRows,
@@ -61,16 +60,26 @@ function serializePreference(
 	return publicPreference;
 }
 
+export function resolveEffectiveDefaultProviderId(
+	rows: ProviderConnectionRow[],
+	context: UserProviderContext
+): string | null {
+	if (context.userDefaultProviderId && rows.some((row) => row.id === context.userDefaultProviderId)) {
+		return context.userDefaultProviderId;
+	}
+
+	const globalDefault = rows.find((row) => row.isDefault);
+	if (globalDefault) return globalDefault.id;
+
+	return rows[0]?.id ?? null;
+}
+
 export function resolveProviderConnectionView(
 	row: ProviderConnectionRow,
 	preference: UserProviderPreferenceRow | undefined,
-	userDefaultProviderId: string | null
+	effectiveDefaultId: string | null
 ): ProviderConnectionView {
 	const resolvedPreference = preference ?? null;
-	const isDefault = userDefaultProviderId
-		? resolvedPreference?.providerConnectionId === userDefaultProviderId &&
-			resolvedPreference.isDefault === true
-		: row.isDefault;
 
 	return {
 		provider: row,
@@ -78,7 +87,7 @@ export function resolveProviderConnectionView(
 		effective: {
 			defaultModel: resolvedPreference?.defaultModel || row.defaultModel,
 			favoriteModels: resolvedPreference ? resolvedPreference.favoriteModels : row.favoriteModels,
-			isDefault
+			isDefault: effectiveDefaultId !== null && row.id === effectiveDefaultId
 		}
 	};
 }
@@ -112,30 +121,23 @@ async function loadUserProviderContext(userId: string): Promise<UserProviderCont
 function rowWithUserPreferences(
 	row: ProviderConnectionRow,
 	context: UserProviderContext,
-	userDefaultProviderId: string | null = context.userDefaultProviderId
+	effectiveDefaultId: string | null
 ): ProviderConnectionView {
 	const preference = context.preferencesByProvider.get(row.id);
-	return resolveProviderConnectionView(row, preference, userDefaultProviderId);
+	return resolveProviderConnectionView(row, preference, effectiveDefaultId);
 }
 
-export function resolveVisibleUserDefaultProviderId(
-	rows: ProviderConnectionRow[],
-	userDefaultProviderId: string | null
-): string | null {
-	if (!userDefaultProviderId) return null;
-	return rows.some((row) => row.id === userDefaultProviderId) ? userDefaultProviderId : null;
+function globalEffectiveDefaultId(rows: ProviderConnectionRow[]): string | null {
+	return rows.find((row) => row.isDefault)?.id ?? null;
 }
 
 export function resolveProviderConnectionViews(
 	rows: ProviderConnectionRow[],
 	context: UserProviderContext
 ): ProviderConnectionView[] {
-	const userDefaultProviderId = resolveVisibleUserDefaultProviderId(
-		rows,
-		context.userDefaultProviderId
-	);
+	const effectiveDefaultId = resolveEffectiveDefaultProviderId(rows, context);
 
-	return rows.map((row) => rowWithUserPreferences(row, context, userDefaultProviderId));
+	return rows.map((row) => rowWithUserPreferences(row, context, effectiveDefaultId));
 }
 
 export async function serializeProviderConnectionForUser(
@@ -143,11 +145,13 @@ export async function serializeProviderConnectionForUser(
 	userId?: string
 ): Promise<PublicProviderConnection> {
 	if (!userId) {
-		return serializeProviderView(resolveProviderConnectionView(row, undefined, null));
+		const effectiveDefaultId = row.isDefault ? row.id : null;
+		return serializeProviderView(resolveProviderConnectionView(row, undefined, effectiveDefaultId));
 	}
 
 	const context = await loadUserProviderContext(userId);
-	return serializeProviderView(rowWithUserPreferences(row, context));
+	const effectiveDefaultId = resolveEffectiveDefaultProviderId([row], context);
+	return serializeProviderView(rowWithUserPreferences(row, context, effectiveDefaultId));
 }
 
 export async function listProviderConnections(
@@ -159,8 +163,9 @@ export async function listProviderConnections(
 	const rows = await listProviderConnectionRows(options);
 
 	if (!options.userId) {
+		const effectiveDefaultId = globalEffectiveDefaultId(rows);
 		return rows.map((row) =>
-			serializeProviderView(resolveProviderConnectionView(row, undefined, null))
+			serializeProviderView(resolveProviderConnectionView(row, undefined, effectiveDefaultId))
 		);
 	}
 
@@ -177,25 +182,23 @@ export async function getProviderConnectionForUser(
 	if (!row?.enabled) return undefined;
 
 	const context = await loadUserProviderContext(userId);
-	return rowWithUserPreferences(row, context);
+	const rows = await listProviderConnectionRows({ enabledOnly: true });
+	const effectiveDefaultId = resolveEffectiveDefaultProviderId(rows, context);
+	return rowWithUserPreferences(row, context, effectiveDefaultId);
 }
 
 export async function getDefaultProviderConnectionForUser(
 	userId: string
 ): Promise<ProviderConnectionView | undefined> {
+	const rows = await listProviderConnectionRows({ enabledOnly: true });
+	if (rows.length === 0) return undefined;
+
 	const context = await loadUserProviderContext(userId);
+	const effectiveDefaultId = resolveEffectiveDefaultProviderId(rows, context);
+	const row = rows.find((candidate) => candidate.id === effectiveDefaultId);
+	if (!row) return undefined;
 
-	if (context.userDefaultProviderId) {
-		const row = await getProviderConnection(context.userDefaultProviderId);
-		if (row?.enabled) {
-			return rowWithUserPreferences(row, context);
-		}
-	}
-
-	const globalDefault = await getDefaultProviderConnection();
-	if (!globalDefault) return undefined;
-
-	return rowWithUserPreferences(globalDefault, context, null);
+	return rowWithUserPreferences(row, context, effectiveDefaultId);
 }
 
 export async function saveUserProviderPreference(
@@ -249,5 +252,7 @@ export async function saveUserProviderPreference(
 	});
 
 	const context = await loadUserProviderContext(userId);
-	return serializeProviderView(rowWithUserPreferences(provider, context));
+	const rows = await listProviderConnectionRows({ enabledOnly: true });
+	const effectiveDefaultId = resolveEffectiveDefaultProviderId(rows, context);
+	return serializeProviderView(rowWithUserPreferences(provider, context, effectiveDefaultId));
 }
