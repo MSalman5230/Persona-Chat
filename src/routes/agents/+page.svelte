@@ -150,11 +150,15 @@
 						<input class="settings-field" name="name" value={selectedAgent?.name ?? ''} />
 					</label>
 					<label class="mt-auto flex h-10 items-center gap-2 font-body-sm text-body-sm text-text-primary">
+						{#if selectedAgent?.isDefault}
+							<input type="hidden" name="isDefault" value="true" />
+						{/if}
 						<input
 							type="checkbox"
 							name="isDefault"
 							class="h-4 w-4 accent-primary"
 							checked={selectedAgent?.isDefault ?? data.agents.length === 0}
+							disabled={selectedAgent?.isDefault ?? false}
 						/>
 						<span>Default</span>
 					</label>

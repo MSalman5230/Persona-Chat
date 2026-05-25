@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
 	deleteChatSession: vi.fn(),
+	getAgent: vi.fn(),
 	getChatSession: vi.fn(),
 	listChatMessages: vi.fn(),
 	resolveActiveChatRun: vi.fn(),
@@ -13,6 +14,10 @@ vi.mock('$lib/server/repositories/chat', () => ({
 	getChatSession: mocks.getChatSession,
 	listChatMessages: mocks.listChatMessages,
 	updateChatSession: mocks.updateChatSession
+}));
+
+vi.mock('$lib/server/repositories/agents', () => ({
+	getAgent: mocks.getAgent
 }));
 
 vi.mock('$lib/server/chat/runs', () => ({
@@ -37,6 +42,16 @@ function jsonRequest(body: unknown): Request {
 describe('chat session PATCH route', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.getAgent.mockResolvedValue({
+			id: '00000000-0000-4000-8000-000000000003',
+			name: 'Researcher',
+			systemPrompt: '',
+			toolNames: [],
+			mcpServerIds: [],
+			isDefault: false,
+			createdAt: new Date('2026-05-21T00:00:00.000Z'),
+			updatedAt: new Date('2026-05-21T00:00:00.000Z')
+		});
 		mocks.getChatSession.mockResolvedValue(session);
 		mocks.updateChatSession.mockResolvedValue(undefined);
 	});
@@ -59,6 +74,34 @@ describe('chat session PATCH route', () => {
 			}
 		});
 		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, payload);
+	});
+
+	it('clears the selected agent without validating an agent record', async () => {
+		const response = await PATCH({
+			params: { id: session.id },
+			request: jsonRequest({ agentId: null })
+		} as never);
+
+		expect(response.status).toBe(200);
+		expect(mocks.getAgent).not.toHaveBeenCalled();
+		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, { agentId: null });
+	});
+
+	it('returns 400 when the selected agent does not exist', async () => {
+		mocks.getAgent.mockResolvedValue(undefined);
+		const agentId = '00000000-0000-4000-8000-000000000099';
+
+		await expect(
+			PATCH({
+				params: { id: session.id },
+				request: jsonRequest({ agentId })
+			} as never)
+		).rejects.toMatchObject({
+			status: 400,
+			body: { message: 'Selected agent does not exist' }
+		});
+		expect(mocks.getAgent).toHaveBeenCalledWith(agentId);
+		expect(mocks.updateChatSession).not.toHaveBeenCalled();
 	});
 
 	it('returns 404 when patching a missing chat session', async () => {

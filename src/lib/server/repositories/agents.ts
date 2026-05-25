@@ -17,6 +17,7 @@ import { agents } from '$lib/server/db/schema';
 import { listMcpServers } from './mcp';
 
 export type AgentRow = typeof agents.$inferSelect;
+type AgentDatabase = Pick<typeof db, 'delete' | 'insert' | 'select' | 'update'>;
 
 const appToolNames = appTools.map((tool) => tool.name);
 const appToolNameSet = new Set(appToolNames);
@@ -55,30 +56,80 @@ function duplicateNameMessage(name: string): string {
 	return `An agent named "${name}" already exists`;
 }
 
-async function hasAnyAgents(): Promise<boolean> {
-	const rows = await db.select({ id: agents.id }).from(agents).limit(1);
+async function hasAnyAgents(database: AgentDatabase = db): Promise<boolean> {
+	const rows = await database.select({ id: agents.id }).from(agents).limit(1);
 	return rows.length > 0;
 }
 
-async function ensureUniqueName(name: string, existingId?: string): Promise<void> {
-	const rows = await db.select({ id: agents.id }).from(agents).where(eq(agents.name, name)).limit(1);
+async function ensureUniqueName(
+	name: string,
+	existingId?: string,
+	database: AgentDatabase = db
+): Promise<void> {
+	const rows = await database
+		.select({ id: agents.id })
+		.from(agents)
+		.where(eq(agents.name, name))
+		.limit(1);
 	if (rows.length > 0 && rows[0].id !== existingId) throw new Error(duplicateNameMessage(name));
 }
 
-async function clearOtherDefaultAgents(id: string): Promise<void> {
-	await db
+async function getAgentRow(id: string, database: AgentDatabase = db): Promise<AgentRow | undefined> {
+	const [row] = await database.select().from(agents).where(eq(agents.id, id)).limit(1);
+	return row;
+}
+
+async function getDefaultAgentRow(database: AgentDatabase = db): Promise<AgentRow | undefined> {
+	const [row] = await database.select().from(agents).where(eq(agents.isDefault, true)).limit(1);
+	return row;
+}
+
+async function clearOtherDefaultAgents(
+	id: string,
+	database: AgentDatabase = db
+): Promise<void> {
+	await database
 		.update(agents)
 		.set({ isDefault: false, updatedAt: new Date() })
 		.where(and(eq(agents.isDefault, true), ne(agents.id, id)));
 }
 
-async function promoteFallbackDefault(): Promise<void> {
-	const [fallback] = await db.select().from(agents).orderBy(asc(agents.createdAt)).limit(1);
-	if (!fallback) return;
-	await db
+async function setAgentAsDefault(id: string, database: AgentDatabase = db): Promise<AgentRow> {
+	await clearOtherDefaultAgents(id, database);
+	const [row] = await database
 		.update(agents)
 		.set({ isDefault: true, updatedAt: new Date() })
-		.where(eq(agents.id, fallback.id));
+		.where(eq(agents.id, id))
+		.returning();
+	if (!row) throw new Error('Agent not found');
+	return row;
+}
+
+async function promoteFallbackDefault(
+	database: AgentDatabase = db,
+	excludeId?: string
+): Promise<void> {
+	const [fallback] = excludeId
+		? await database
+				.select()
+				.from(agents)
+				.where(ne(agents.id, excludeId))
+				.orderBy(asc(agents.createdAt))
+				.limit(1)
+		: await database.select().from(agents).orderBy(asc(agents.createdAt)).limit(1);
+	const fallbackId = fallback?.id ?? (excludeId ? (await getAgentRow(excludeId, database))?.id : undefined);
+	if (!fallbackId) return;
+	await setAgentAsDefault(fallbackId, database);
+}
+
+async function ensureDefaultAgent(database: AgentDatabase = db): Promise<void> {
+	const defaultRow = await getDefaultAgentRow(database);
+	if (defaultRow) return;
+	await promoteFallbackDefault(database);
+}
+
+async function deleteAgentRow(id: string, database: AgentDatabase = db): Promise<void> {
+	await database.delete(agents).where(eq(agents.id, id));
 }
 
 export function listAvailableAgentTools(): AgentToolOption[] {
@@ -106,87 +157,105 @@ export async function listAgentOptions(): Promise<AgentOption[]> {
 }
 
 export async function getAgent(id: string): Promise<Agent | undefined> {
-	const [row] = await db.select().from(agents).where(eq(agents.id, id)).limit(1);
+	const row = await getAgentRow(id);
 	return row ? serializeAgent(row) : undefined;
 }
 
 export async function getDefaultAgent(): Promise<Agent | null> {
-	const [row] = await db.select().from(agents).where(eq(agents.isDefault, true)).limit(1);
+	const row = await getDefaultAgentRow();
 	return row ? serializeAgent(row) : null;
 }
 
 export async function createAgent(input: AgentInput): Promise<Agent> {
-	const hadAgents = await hasAnyAgents();
 	const parsed = await normalizeAgentInput(input, { create: true });
-	await ensureUniqueName(parsed.name);
 
-	const shouldDefault = parsed.isDefault ?? !hadAgents;
-	const [row] = await db
-		.insert(agents)
-		.values({
-			name: parsed.name,
-			systemPrompt: parsed.systemPrompt,
-			toolNames: parsed.toolNames,
-			mcpServerIds: parsed.mcpServerIds,
-			isDefault: shouldDefault
-		})
-		.returning();
+	return db.transaction(async (tx) => {
+		const hadAgents = await hasAnyAgents(tx);
+		await ensureUniqueName(parsed.name, undefined, tx);
+		const shouldDefault = parsed.isDefault ?? !hadAgents;
+		const [row] = await tx
+			.insert(agents)
+			.values({
+				name: parsed.name,
+				systemPrompt: parsed.systemPrompt,
+				toolNames: parsed.toolNames,
+				mcpServerIds: parsed.mcpServerIds,
+				isDefault: false
+			})
+			.returning();
+		if (!row) throw new Error('Unable to create agent');
 
-	if (shouldDefault) await clearOtherDefaultAgents(row.id);
-	return serializeAgent(row);
+		if (shouldDefault) return serializeAgent(await setAgentAsDefault(row.id, tx));
+
+		await ensureDefaultAgent(tx);
+		return serializeAgent((await getAgentRow(row.id, tx)) ?? row);
+	});
 }
 
 export async function updateAgent(id: string, input: AgentInput): Promise<Agent> {
-	const current = await getAgent(id);
-	if (!current) throw new Error('Agent not found');
-
 	const parsed = await normalizeAgentInput(input, { create: false });
-	await ensureUniqueName(parsed.name, id);
 
-	if (parsed.isDefault) await clearOtherDefaultAgents(id);
-	const [row] = await db
-		.update(agents)
-		.set({
-			name: parsed.name,
-			systemPrompt: parsed.systemPrompt,
-			toolNames: parsed.toolNames,
-			mcpServerIds: parsed.mcpServerIds,
-			...(parsed.isDefault !== undefined ? { isDefault: parsed.isDefault } : {}),
-			updatedAt: new Date()
-		})
-		.where(eq(agents.id, id))
-		.returning();
+	return db.transaction(async (tx) => {
+		const current = await getAgentRow(id, tx);
+		if (!current) throw new Error('Agent not found');
+		await ensureUniqueName(parsed.name, id, tx);
 
-	return serializeAgent(row);
+		const nextDefault =
+			current.isDefault && parsed.isDefault === false ? true : parsed.isDefault;
+		if (nextDefault) await clearOtherDefaultAgents(id, tx);
+		const [row] = await tx
+			.update(agents)
+			.set({
+				name: parsed.name,
+				systemPrompt: parsed.systemPrompt,
+				toolNames: parsed.toolNames,
+				mcpServerIds: parsed.mcpServerIds,
+				...(nextDefault !== undefined ? { isDefault: nextDefault } : {}),
+				updatedAt: new Date()
+			})
+			.where(eq(agents.id, id))
+			.returning();
+		if (!row) throw new Error('Agent not found');
+
+		await ensureDefaultAgent(tx);
+		const updated = await getAgentRow(id, tx);
+		if (!updated) throw new Error('Agent not found');
+		return serializeAgent(updated);
+	});
 }
 
 export async function updateAgentDefault(
 	id: string,
 	input: AgentDefaultPatchInput
 ): Promise<Agent> {
-	const current = await getAgent(id);
-	if (!current) throw new Error('Agent not found');
-
 	const parsed = agentDefaultPatchSchema.parse(input);
-	if (parsed.isDefault) await clearOtherDefaultAgents(id);
-	const [row] = await db
-		.update(agents)
-		.set({ isDefault: parsed.isDefault, updatedAt: new Date() })
-		.where(eq(agents.id, id))
-		.returning();
 
-	if (!parsed.isDefault) {
-		const defaultRow = await getDefaultAgent();
-		if (!defaultRow) await promoteFallbackDefault();
-	}
+	return db.transaction(async (tx) => {
+		const current = await getAgentRow(id, tx);
+		if (!current) throw new Error('Agent not found');
 
-	return serializeAgent(row);
+		if (parsed.isDefault) return serializeAgent(await setAgentAsDefault(id, tx));
+
+		const [row] = await tx
+			.update(agents)
+			.set({ isDefault: false, updatedAt: new Date() })
+			.where(eq(agents.id, id))
+			.returning();
+		if (!row) throw new Error('Agent not found');
+		const defaultRow = await getDefaultAgentRow(tx);
+		if (!defaultRow) await promoteFallbackDefault(tx, id);
+		const updated = await getAgentRow(id, tx);
+		if (!updated) throw new Error('Agent not found');
+		return serializeAgent(updated);
+	});
 }
 
 export async function deleteAgent(id: string): Promise<void> {
-	const current = await getAgent(id);
-	if (!current) return;
+	await db.transaction(async (tx) => {
+		const current = await getAgentRow(id, tx);
+		if (!current) return;
 
-	await db.delete(agents).where(eq(agents.id, id));
-	if (current.isDefault) await promoteFallbackDefault();
+		await deleteAgentRow(id, tx);
+		if (current.isDefault) await promoteFallbackDefault(tx);
+	});
 }

@@ -23,6 +23,7 @@ export const chatSessionSettingsPatchSchema = chatSessionSettingsSchema.partial(
 );
 
 export type ChatSessionSettings = z.infer<typeof chatSessionSettingsSchema>;
+export type ChatSessionSettingsPatch = z.infer<typeof chatSessionSettingsPatchSchema>;
 
 export function piSystemPromptFromSessionPrompt(systemPrompt: string): string {
 	return systemPrompt.length > 0 ? systemPrompt : BLANK_SYSTEM_PROMPT_SENTINEL;
