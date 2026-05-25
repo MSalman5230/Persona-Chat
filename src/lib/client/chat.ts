@@ -25,6 +25,16 @@ export type UiTurnThought = UiThought & {
 	thoughtKey: string;
 };
 
+export type UiTurnThoughtSource = {
+	sourceKey: string;
+	contentIndex: number;
+};
+
+export type UiMergedTurnThought = UiThought & {
+	thoughtKey: string;
+	sources: UiTurnThoughtSource[];
+};
+
 export type UiTurnTool = UiTool & {
 	sourceKey: string;
 	toolKey: string;
@@ -406,6 +416,52 @@ export function groupMessagesIntoConversationTurns(messages: UiMessage[]): UiCon
 	}
 
 	return turns;
+}
+
+export function mergeTurnThoughtsForDisplay(
+	thoughts: UiTurnThought[],
+	turnKey: string,
+	now = Date.now()
+): UiMergedTurnThought[] {
+	if (thoughts.length === 0) return [];
+
+	let durationMs = 0;
+	let hasDuration = false;
+	for (const thought of thoughts) {
+		const duration = thoughtDurationMs(thought, now);
+		if (duration !== undefined) {
+			durationMs += duration;
+			hasDuration = true;
+		}
+	}
+
+	const status = thoughts.some((thought) => thought.status === 'thinking') ? 'thinking' : 'thought';
+	const redacted = thoughts.every((thought) => thought.redacted);
+	const expanded = status === 'thinking' || thoughts.some((thought) => thought.expanded);
+	const text = thoughts
+		.filter((thought) => !thought.redacted)
+		.map((thought) => thought.text.trim())
+		.filter(Boolean)
+		.join('\n\n');
+	const sources = thoughts.map((thought) => ({
+		sourceKey: thought.sourceKey,
+		contentIndex: thought.contentIndex
+	}));
+	const startedAt = status === 'thinking' && hasDuration ? now - durationMs : undefined;
+
+	return [
+		{
+			contentIndex: thoughts[0].contentIndex,
+			text,
+			status,
+			...(hasDuration ? { durationMs } : {}),
+			redacted,
+			expanded,
+			...(startedAt !== undefined ? { startedAt } : {}),
+			thoughtKey: `${turnKey}:thoughts`,
+			sources
+		}
+	];
 }
 
 export function shouldShowAssistantTurnPlaceholder(

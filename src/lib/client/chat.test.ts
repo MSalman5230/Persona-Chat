@@ -6,6 +6,7 @@ import {
 	createLocalUiMessage,
 	formatDuration,
 	groupMessagesIntoConversationTurns,
+	mergeTurnThoughtsForDisplay,
 	mergeToolEventIntoMessages,
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
@@ -420,6 +421,139 @@ describe('chat client helpers', () => {
 		]);
 		expect(turns[0].tools.map(toolActivityLabel)).toEqual(['tool:current_datetime']);
 		expect(JSON.stringify(turns[0])).not.toContain('7:15 PM"}');
+	});
+
+	it('merges turn thoughts into one display thought', () => {
+		const turns = groupMessagesIntoConversationTurns([
+			{ clientKey: 'user-1', sequence: 1, role: 'user', text: 'time?', thoughts: [], tools: [] },
+			{
+				clientKey: 'assistant-2',
+				sequence: 2,
+				role: 'assistant',
+				text: '',
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Need current time.',
+						status: 'thought',
+						durationMs: 500,
+						redacted: false,
+						expanded: false
+					}
+				],
+				tools: []
+			},
+			{
+				clientKey: 'assistant-4',
+				sequence: 4,
+				role: 'assistant',
+				text: 'It is 7:15 PM.',
+				thoughts: [
+					{
+						contentIndex: 0,
+						text: 'Summarize the result.',
+						status: 'thought',
+						durationMs: 1500,
+						redacted: false,
+						expanded: true
+					}
+				],
+				tools: []
+			}
+		]);
+
+		const merged = mergeTurnThoughtsForDisplay(turns[0].thoughts, turns[0].key, 5000);
+
+		expect(merged).toHaveLength(1);
+		expect(merged[0]).toMatchObject({
+			contentIndex: 0,
+			text: 'Need current time.\n\nSummarize the result.',
+			status: 'thought',
+			durationMs: 2000,
+			redacted: false,
+			expanded: true,
+			thoughtKey: `${turns[0].key}:thoughts`,
+			sources: [
+				{ sourceKey: 'assistant-2', contentIndex: 0 },
+				{ sourceKey: 'assistant-4', contentIndex: 0 }
+			]
+		});
+		expect(thoughtLabel(merged[0], 5000)).toBe('Thought for 2s');
+	});
+
+	it('keeps merged display thoughts active when any source is thinking', () => {
+		const merged = mergeTurnThoughtsForDisplay(
+			[
+				{
+					sourceKey: 'assistant-2',
+					thoughtKey: 'assistant-2:thought:0',
+					contentIndex: 0,
+					text: 'Prepared earlier.',
+					status: 'thought',
+					durationMs: 1000,
+					redacted: false,
+					expanded: false
+				},
+				{
+					sourceKey: 'assistant-4',
+					thoughtKey: 'assistant-4:thought:0',
+					contentIndex: 0,
+					text: 'Still thinking',
+					status: 'thinking',
+					redacted: false,
+					expanded: false,
+					startedAt: 3000
+				}
+			],
+			'turn:user-1',
+			5000
+		);
+
+		expect(merged[0]).toMatchObject({
+			text: 'Prepared earlier.\n\nStill thinking',
+			status: 'thinking',
+			durationMs: 3000,
+			startedAt: 2000,
+			expanded: true
+		});
+		expect(thoughtLabel(merged[0], 5000)).toBe('Thinking... 3s');
+	});
+
+	it('keeps all-redacted merged thoughts redacted', () => {
+		const merged = mergeTurnThoughtsForDisplay(
+			[
+				{
+					sourceKey: 'assistant-2',
+					thoughtKey: 'assistant-2:thought:0',
+					contentIndex: 0,
+					text: '',
+					status: 'thought',
+					durationMs: 500,
+					redacted: true,
+					expanded: false
+				},
+				{
+					sourceKey: 'assistant-4',
+					thoughtKey: 'assistant-4:thought:0',
+					contentIndex: 1,
+					text: '',
+					status: 'thought',
+					durationMs: 500,
+					redacted: true,
+					expanded: false
+				}
+			],
+			'turn:user-1',
+			5000
+		);
+
+		expect(merged[0]).toMatchObject({
+			text: '',
+			status: 'thought',
+			durationMs: 1000,
+			redacted: true,
+			expanded: false
+		});
 	});
 
 	it('formats durations, thought labels, and tool labels', () => {

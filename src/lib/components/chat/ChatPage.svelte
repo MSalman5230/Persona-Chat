@@ -19,7 +19,8 @@
 		type ChatThinkingSelection,
 		type ChatProviderOption,
 		type SystemPromptPresetOption,
-		type UiMessage
+		type UiMessage,
+		type UiTurnThoughtSource
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -221,12 +222,14 @@
 		messages = upsertUiMessageFromServer(messages, payload);
 	}
 
-	function toggleThought(sourceKey: string, contentIndex: number) {
-		const messageIndex = messages.findIndex((item) => item.clientKey === sourceKey);
-		const thought = messages[messageIndex]?.thoughts.find(
-			(item) => item.contentIndex === contentIndex
-		);
-		if (thought) thought.expanded = !thought.expanded;
+	function toggleThought(sources: UiTurnThoughtSource[], expanded: boolean) {
+		for (const source of sources) {
+			const messageIndex = messages.findIndex((item) => item.clientKey === source.sourceKey);
+			const thought = messages[messageIndex]?.thoughts.find(
+				(item) => item.contentIndex === source.contentIndex
+			);
+			if (thought) thought.expanded = expanded;
+		}
 	}
 
 	function openSettingsSidebar() {
