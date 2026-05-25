@@ -245,7 +245,7 @@ vi.mock('$lib/server/db', () => ({
 }));
 
 vi.mock('./mcp', () => ({
-	listMcpServersForUser: vi.fn(async () => [])
+	listEnabledMcpServerOptions: vi.fn(async () => [])
 }));
 
 import {

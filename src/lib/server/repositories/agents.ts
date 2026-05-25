@@ -14,7 +14,7 @@ import {
 import { appTools } from '$lib/server/agent/tools';
 import { db } from '$lib/server/db';
 import { agents } from '$lib/server/db/schema';
-import { listMcpServersForUser } from './mcp';
+import { listEnabledMcpServerOptions } from './mcp';
 
 export type AgentRow = typeof agents.$inferSelect;
 type AgentDatabase = Pick<typeof db, 'delete' | 'insert' | 'select' | 'update'>;
@@ -36,7 +36,7 @@ function defaultToolNames(toolNames: string[] | undefined): string[] {
 }
 
 async function normalizeMcpServerIds(ids: string[]): Promise<string[]> {
-	const allowed = new Set((await listMcpServersForUser()).map((server) => server.id));
+	const allowed = new Set((await listEnabledMcpServerOptions()).map((server) => server.id));
 	return uniqueStrings(ids).filter((id) => allowed.has(id));
 }
 

@@ -155,7 +155,6 @@ export const userSettings = pgTable('user_settings', {
 		{ onDelete: 'set null' }
 	),
 	defaultThinkingLevel: text('default_thinking_level'),
-	preferences: jsonb('preferences').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
 	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 });

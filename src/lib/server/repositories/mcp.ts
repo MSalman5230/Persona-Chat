@@ -37,7 +37,7 @@ export type PublicMcpServer = Omit<McpServerRow, 'secret'> & {
 	hasEnvSecrets: boolean;
 	hasHeaderSecrets: boolean;
 };
-export type UserMcpServerOption = Pick<
+export type EnabledMcpServerOption = Pick<
 	PublicMcpServer,
 	'id' | 'name' | 'slug' | 'transport' | 'enabled' | 'status' | 'lastError'
 >;
@@ -83,7 +83,7 @@ export async function listMcpServers(): Promise<PublicMcpServer[]> {
 	return rows.map(serializeMcp);
 }
 
-export async function listMcpServersForUser(): Promise<UserMcpServerOption[]> {
+export async function listEnabledMcpServerOptions(): Promise<EnabledMcpServerOption[]> {
 	const rows = await db
 		.select()
 		.from(mcpServers)

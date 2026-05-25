@@ -22,6 +22,13 @@ export type ProviderRuntime = {
 	thinkingLevel: ThinkingLevel | undefined;
 };
 
+type ProviderRuntimeInput = {
+	userId?: string | null;
+	providerConnectionId?: string | null;
+	modelId?: string | null;
+	thinkingLevel?: string | null;
+};
+
 function toThinkingLevel(value: string | null | undefined): ThinkingLevel | undefined {
 	return isThinkingLevel(value) ? value : undefined;
 }
@@ -65,19 +72,22 @@ function registerCustomProvider(row: ProviderConnectionRow, registry: ModelRegis
 	});
 }
 
-export async function createProviderRuntime(input?: {
-	userId?: string | null;
-	providerConnectionId?: string | null;
-	modelId?: string | null;
-	thinkingLevel?: string | null;
-}): Promise<ProviderRuntime> {
-	const row = input?.userId
-		? input.providerConnectionId
-			? await getProviderConnectionForUser(input.userId, input.providerConnectionId)
-			: await getDefaultProviderConnectionForUser(input.userId)
-		: input?.providerConnectionId
-			? await getProviderConnection(input.providerConnectionId)
-			: await getDefaultProviderConnection();
+async function resolveProviderRow(
+	input: ProviderRuntimeInput | undefined
+): Promise<ProviderConnectionRow | undefined> {
+	if (input?.userId) {
+		return input.providerConnectionId
+			? getProviderConnectionForUser(input.userId, input.providerConnectionId)
+			: getDefaultProviderConnectionForUser(input.userId);
+	}
+
+	return input?.providerConnectionId
+		? getProviderConnection(input.providerConnectionId)
+		: getDefaultProviderConnection();
+}
+
+export async function createProviderRuntime(input?: ProviderRuntimeInput): Promise<ProviderRuntime> {
+	const row = await resolveProviderRow(input);
 
 	if (!row || !row.enabled) {
 		throw new Error('No enabled provider connection is configured');

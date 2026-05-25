@@ -11,7 +11,7 @@ import {
 	updateAgent,
 	updateAgentDefault
 } from '$lib/server/repositories/agents';
-import { listMcpServersForUser } from '$lib/server/repositories/mcp';
+import { listEnabledMcpServerOptions } from '$lib/server/repositories/mcp';
 
 function stringsFromForm(form: FormData, key: string): string[] {
 	return form.getAll(key).filter((value): value is string => typeof value === 'string');
@@ -33,7 +33,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 		return {
 			agents: await listAgents(user.id),
 			agentTools: listAvailableAgentTools(),
-			mcpServers: await listMcpServersForUser(),
+			mcpServers: await listEnabledMcpServerOptions(),
 			loadError: null
 		};
 	} catch (error) {

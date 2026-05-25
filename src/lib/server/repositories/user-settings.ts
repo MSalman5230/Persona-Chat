@@ -39,6 +39,11 @@ const providerPreferenceSchema = z.object({
 });
 
 type ProviderPreferenceRow = typeof userProviderPreferences.$inferSelect;
+type ProviderPreferenceSelection = Pick<
+	ProviderPreferenceRow,
+	'providerConnectionId' | 'defaultModel' | 'favoriteModels'
+>;
+type UserSettingsRow = typeof userSettings.$inferSelect;
 
 function modelIdsForProvider(row: Pick<ProviderConnectionRow, 'defaultModel' | 'models'>): string[] {
 	const models = uniqueTrimmedStrings(row.models);
@@ -52,15 +57,15 @@ function normalizeFavoriteModels(models: string[], favoriteModels: string[]): st
 }
 
 function preferenceForProvider(
-	prefs: ProviderPreferenceRow[],
+	prefs: ProviderPreferenceSelection[],
 	providerId: string
-): ProviderPreferenceRow | undefined {
+): ProviderPreferenceSelection | undefined {
 	return prefs.find((pref) => pref.providerConnectionId === providerId);
 }
 
 function applyProviderPreference<TProvider extends ProviderConnectionRow | UserProviderOption>(
 	provider: TProvider,
-	preference: ProviderPreferenceRow | undefined
+	preference: ProviderPreferenceSelection | undefined
 ): TProvider {
 	if (!preference) return provider;
 
@@ -79,7 +84,7 @@ function applyProviderPreference<TProvider extends ProviderConnectionRow | UserP
 
 function toUserProviderOption(
 	provider: ProviderConnectionRow,
-	preference: ProviderPreferenceRow | undefined
+	preference: ProviderPreferenceSelection | undefined
 ): UserProviderOption {
 	const safeProvider = applyProviderPreference(provider, preference);
 	return {
@@ -110,7 +115,27 @@ async function listUserProviderPreferenceRows(userId: string): Promise<ProviderP
 		.where(eq(userProviderPreferences.userId, userId));
 }
 
-export async function listProviderConnectionsForUser(userId: string): Promise<UserProviderOption[]> {
+export function resolveEffectiveProvider<TProvider extends ProviderConnectionRow | UserProviderOption>(
+	settings: Pick<UserSettingsRow, 'defaultProviderConnectionId'> | null | undefined,
+	providers: TProvider[],
+	preferences: ProviderPreferenceSelection[] = []
+): TProvider | undefined {
+	const provider =
+		(settings?.defaultProviderConnectionId
+			? providers.find((row) => row.id === settings.defaultProviderConnectionId)
+			: undefined) ??
+		providers.find((row) => row.isDefault) ??
+		providers[0];
+
+	return provider
+		? applyProviderPreference(provider, preferenceForProvider(preferences, provider.id))
+		: undefined;
+}
+
+async function listEffectiveProviderRowsForUser(userId: string): Promise<{
+	providers: ProviderConnectionRow[];
+	preferences: ProviderPreferenceRow[];
+}> {
 	const [providers, preferences] = await Promise.all([
 		db
 			.select()
@@ -119,6 +144,26 @@ export async function listProviderConnectionsForUser(userId: string): Promise<Us
 			.orderBy(desc(providerConnections.createdAt)),
 		listUserProviderPreferenceRows(userId)
 	]);
+
+	return { providers, preferences };
+}
+
+async function getUserProviderContext(userId: string): Promise<{
+	settings: UserSettingsRow | undefined;
+	providers: ProviderConnectionRow[];
+	preferences: ProviderPreferenceRow[];
+}> {
+	const [settings, providerContext] = await Promise.all([
+		getUserSettingsRow(userId),
+		listEffectiveProviderRowsForUser(userId)
+	]);
+	const { providers, preferences } = providerContext;
+
+	return { settings, providers, preferences };
+}
+
+export async function listProviderConnectionsForUser(userId: string): Promise<UserProviderOption[]> {
+	const { providers, preferences } = await listEffectiveProviderRowsForUser(userId);
 
 	return providers.map((provider) =>
 		toUserProviderOption(provider, preferenceForProvider(preferences, provider.id))
@@ -146,35 +191,16 @@ export async function getProviderConnectionForUser(
 export async function getDefaultProviderConnectionForUser(
 	userId: string
 ): Promise<ProviderConnectionRow | undefined> {
-	const settings = await getUserSettingsRow(userId);
-	if (settings?.defaultProviderConnectionId) {
-		const selected = await getProviderConnectionForUser(userId, settings.defaultProviderConnectionId);
-		if (selected) return selected;
-	}
-
-	const [providers, preferences] = await Promise.all([
-		db
-			.select()
-			.from(providerConnections)
-			.where(eq(providerConnections.enabled, true))
-			.orderBy(desc(providerConnections.createdAt)),
-		listUserProviderPreferenceRows(userId)
-	]);
-	const provider = providers.find((row) => row.isDefault) ?? providers[0];
-	return provider ? applyProviderPreference(provider, preferenceForProvider(preferences, provider.id)) : undefined;
+	const { settings, providers, preferences } = await getUserProviderContext(userId);
+	return resolveEffectiveProvider(settings, providers, preferences);
 }
 
 export async function getEffectiveUserSettings(userId: string): Promise<EffectiveUserSettings> {
-	const [settings, providers] = await Promise.all([
-		getUserSettingsRow(userId),
-		listProviderConnectionsForUser(userId)
-	]);
-	const selectedProvider =
-		(settings?.defaultProviderConnectionId
-			? providers.find((provider) => provider.id === settings.defaultProviderConnectionId)
-			: undefined) ??
-		providers.find((provider) => provider.isDefault) ??
-		providers[0];
+	const { settings, providers, preferences } = await getUserProviderContext(userId);
+	const userProviders = providers.map((provider) =>
+		toUserProviderOption(provider, preferenceForProvider(preferences, provider.id))
+	);
+	const selectedProvider = resolveEffectiveProvider(settings, providers, preferences);
 
 	const defaultThinkingLevel = isThinkingLevel(settings?.defaultThinkingLevel)
 		? settings.defaultThinkingLevel
@@ -183,7 +209,7 @@ export async function getEffectiveUserSettings(userId: string): Promise<Effectiv
 			: null;
 
 	return {
-		providers,
+		providers: userProviders,
 		defaultProviderId: selectedProvider?.id ?? null,
 		defaultModel: selectedProvider?.defaultModel ?? null,
 		defaultThinkingLevel
