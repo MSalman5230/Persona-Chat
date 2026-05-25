@@ -29,13 +29,11 @@
 	import MessageList from '$lib/components/chat/MessageList.svelte';
 	import MobileHeader from '$lib/components/chat/MobileHeader.svelte';
 	import SessionSettingsDrawer from '$lib/components/chat/SessionSettingsDrawer.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { onMount, tick, untrack } from 'svelte';
 
 	let { data } = $props();
 
 	type ChatSessionSummary = { id: string; title: string };
-	type PendingConfirmation = { kind: 'chat'; chat: ChatSessionSummary };
 	type ChatSessionDetails = {
 		id: string;
 		title: string;
@@ -51,7 +49,6 @@
 	let sidebarOpen = $state(false);
 	let settingsOpen = $state(false);
 	let logoutPending = $state(false);
-	let pendingConfirmation = $state<PendingConfirmation | null>(null);
 	let sessions = $state<ChatSessionSummary[]>(untrack(() => data.sessions));
 	let activeRun = $state<ActiveRun | null>(untrack(() => data.activeRun));
 	let isStreaming = $state(Boolean(untrack(() => data.activeRun)));
@@ -122,15 +119,6 @@
 	const settingsDirty = $derived(
 		activeSessionId !== null && currentTemperature !== lastSavedTemperature
 	);
-	const confirmationDialog = $derived.by(() => {
-		if (!pendingConfirmation) return null;
-
-		return {
-			title: 'Delete chat?',
-			description: `Delete "${pendingConfirmation.chat.title}"? This cannot be undone.`,
-			confirmLabel: 'Delete chat'
-		};
-	});
 
 	onMount(() => {
 		const interval = window.setInterval(() => {
@@ -215,10 +203,6 @@
 		tick().then(() => focusChatInput?.());
 	}
 
-	function deleteChat(chat: ChatSessionSummary) {
-		pendingConfirmation = { kind: 'chat', chat };
-	}
-
 	async function confirmDeleteChat(chat: ChatSessionSummary) {
 		const wasActive = activeSessionId === chat.id;
 		errorText = '';
@@ -245,14 +229,6 @@
 		} catch (error) {
 			errorText = error instanceof Error ? error.message : 'Unable to delete chat';
 		}
-	}
-
-	async function confirmPendingDeletion() {
-		const confirmation = pendingConfirmation;
-		if (!confirmation) return;
-
-		pendingConfirmation = null;
-		await confirmDeleteChat(confirmation.chat);
 	}
 
 	function updateTemperatureAuto(checked: boolean) {
@@ -585,7 +561,7 @@
 			{sessions}
 			{activeSessionId}
 			onNewChat={newChat}
-			onDeleteChat={deleteChat}
+			onDeleteChat={confirmDeleteChat}
 			onClose={() => (sidebarOpen = false)}
 			onLogout={logout}
 			{logoutPending}
@@ -652,14 +628,4 @@
 			onSaveSessionSettings={saveSessionSettings}
 		/>
 	</div>
-
-	<ConfirmDialog
-		open={confirmationDialog !== null}
-		title={confirmationDialog?.title ?? ''}
-		description={confirmationDialog?.description ?? ''}
-		confirmLabel={confirmationDialog?.confirmLabel ?? 'Delete'}
-		variant="danger"
-		onCancel={() => (pendingConfirmation = null)}
-		onConfirm={confirmPendingDeletion}
-	/>
 </div>

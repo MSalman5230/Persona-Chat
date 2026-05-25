@@ -1,5 +1,5 @@
 <script lang="ts">
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import ConfirmActionButton from '$lib/components/common/ConfirmActionButton.svelte';
 
 	interface Props {
 		action: string;
@@ -25,41 +25,24 @@
 		idField = 'id'
 	}: Props = $props();
 
-	let deleteForm: HTMLFormElement | null = null;
-	let open = $state(false);
-
-	function requestDelete(event: SubmitEvent) {
-		event.preventDefault();
-		deleteForm = event.currentTarget as HTMLFormElement;
-		open = true;
-	}
-
-	function cancelDelete() {
-		open = false;
-		deleteForm = null;
-	}
+	const componentId = $props.id();
+	const formId = `${componentId}-delete-form`;
 
 	function confirmDelete() {
-		const form = deleteForm;
-		open = false;
-		deleteForm = null;
-		form?.submit();
+		const form = document.getElementById(formId);
+		if (form instanceof HTMLFormElement) form.requestSubmit();
 	}
 </script>
 
-<form method="POST" {action} onsubmit={requestDelete}>
+<form id={formId} method="POST" {action}>
 	<input type="hidden" name={idField} value={id} />
-	<button class={buttonClass} aria-label={buttonLabel}>
-		<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">{icon}</span>
-	</button>
+	<ConfirmActionButton
+		{title}
+		{description}
+		{confirmLabel}
+		{buttonLabel}
+		{buttonClass}
+		{icon}
+		onConfirm={confirmDelete}
+	/>
 </form>
-
-<ConfirmDialog
-	{open}
-	{title}
-	{description}
-	{confirmLabel}
-	variant="danger"
-	onCancel={cancelDelete}
-	onConfirm={confirmDelete}
-/>

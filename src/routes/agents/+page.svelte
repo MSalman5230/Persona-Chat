@@ -2,7 +2,7 @@
 	import { applyAction, deserialize } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import ConfirmActionButton from '$lib/components/common/ConfirmActionButton.svelte';
 	import '$lib/components/settings/settings.css';
 	import { untrack } from 'svelte';
 	import type { PageProps } from './$types';
@@ -12,7 +12,6 @@
 	type Agent = (typeof data.agents)[number];
 
 	let selectedAgentId = $state(untrack(() => data.agents[0]?.id ?? ''));
-	let pendingDeleteAgent = $state<Agent | null>(null);
 
 	const selectedAgent = $derived.by(() => {
 		if (!selectedAgentId) return undefined;
@@ -25,19 +24,9 @@
 		selectedAgentId = '';
 	}
 
-	function requestDeleteAgent(agent: Agent) {
-		pendingDeleteAgent = agent;
-	}
-
-	function cancelDeleteAgent() {
-		pendingDeleteAgent = null;
-	}
-
-	async function confirmDeleteAgent() {
-		if (!pendingDeleteAgent) return;
-
+	async function confirmDeleteAgent(agent: Agent) {
 		const body = new FormData();
-		body.set('id', pendingDeleteAgent.id);
+		body.set('id', agent.id);
 		const response = await fetch('?/deleteAgent', {
 			method: 'POST',
 			body,
@@ -48,7 +37,6 @@
 
 		if (result.type === 'success') {
 			selectedAgentId = '';
-			pendingDeleteAgent = null;
 			await invalidateAll();
 		}
 	}
@@ -255,14 +243,14 @@
 							>
 								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">star</span>
 							</button>
-							<button
-								type="button"
-								class="settings-icon-button danger"
-								aria-label="Delete agent"
-								onclick={() => requestDeleteAgent(selectedAgent)}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
-							</button>
+							<ConfirmActionButton
+								title="Delete agent?"
+								description={`Delete "${selectedAgent.name}"? Saved chats will keep their messages.`}
+								confirmLabel="Delete agent"
+								buttonLabel="Delete agent"
+								buttonClass="settings-icon-button danger"
+								onConfirm={() => confirmDeleteAgent(selectedAgent)}
+							/>
 						{/if}
 					</div>
 					<button class="settings-primary-button inline-flex items-center gap-2">
@@ -274,13 +262,3 @@
 		</section>
 	</div>
 </div>
-
-<ConfirmDialog
-	open={pendingDeleteAgent !== null}
-	title="Delete agent?"
-	description={pendingDeleteAgent ? `Delete "${pendingDeleteAgent.name}"? Saved chats will keep their messages.` : ''}
-	confirmLabel="Delete agent"
-	variant="danger"
-	onCancel={cancelDeleteAgent}
-	onConfirm={confirmDeleteAgent}
-/>

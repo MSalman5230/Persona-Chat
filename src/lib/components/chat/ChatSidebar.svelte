@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import ConfirmActionButton from '$lib/components/common/ConfirmActionButton.svelte';
 
 	type ChatSession = {
 		id: string;
@@ -11,7 +12,7 @@
 		sessions: ChatSession[];
 		activeSessionId: string | null;
 		onNewChat: () => void;
-		onDeleteChat: (chat: ChatSession) => void;
+		onDeleteChat: (chat: ChatSession) => void | Promise<void>;
 		onClose: () => void;
 		onLogout: () => void | Promise<void>;
 		logoutPending?: boolean;
@@ -78,15 +79,15 @@
 					>
 						<span class="truncate font-body-sm text-body-sm">{chat.title}</span>
 					</a>
-					<button
-						type="button"
-						class="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted opacity-100 transition-[background-color,color,opacity] duration-200 hover:bg-error-container/40 hover:text-error focus-visible:bg-error-container/40 focus-visible:text-error focus-visible:outline focus-visible:outline-1 focus-visible:outline-error md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
-						aria-label={`Delete chat ${chat.title}`}
-						title={`Delete ${chat.title}`}
-						onclick={() => onDeleteChat(chat)}
-					>
-						<span class="material-symbols-outlined !text-[18px]" aria-hidden="true">delete</span>
-					</button>
+					<ConfirmActionButton
+						title="Delete chat?"
+						description={`Delete "${chat.title}"? This cannot be undone.`}
+						confirmLabel="Delete chat"
+						buttonLabel={`Delete chat ${chat.title}`}
+						buttonTitle={`Delete ${chat.title}`}
+						buttonClass="mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-muted opacity-100 transition-[background-color,color,opacity] duration-200 hover:bg-error-container/40 hover:text-error focus-visible:bg-error-container/40 focus-visible:text-error focus-visible:outline focus-visible:outline-1 focus-visible:outline-error md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+						onConfirm={() => onDeleteChat(chat)}
+					/>
 				</div>
 			{:else}
 				<p class="px-4 py-2 font-body-sm text-body-sm text-text-muted">No chats yet.</p>
