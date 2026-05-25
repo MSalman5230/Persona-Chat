@@ -8,6 +8,7 @@ import {
 	type Agent,
 	type AgentDefaultPatchInput,
 	type AgentInput,
+	type AgentOption,
 	type AgentToolOption
 } from '$lib/server/agents';
 import { appTools } from '$lib/server/agent/tools';
@@ -91,6 +92,17 @@ export function listAvailableAgentTools(): AgentToolOption[] {
 export async function listAgents(): Promise<Agent[]> {
 	const rows = await db.select().from(agents);
 	return orderAgents(rows.map(serializeAgent));
+}
+
+export async function listAgentOptions(): Promise<AgentOption[]> {
+	const rows = await db
+		.select({
+			id: agents.id,
+			name: agents.name,
+			isDefault: agents.isDefault
+		})
+		.from(agents);
+	return orderAgents(rows);
 }
 
 export async function getAgent(id: string): Promise<Agent | undefined> {

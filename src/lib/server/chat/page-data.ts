@@ -3,7 +3,7 @@ import { error } from '@sveltejs/kit';
 import { resolveActiveChatRun } from '$lib/server/chat/runs';
 import { serializeChatMessages } from '$lib/server/chat/service';
 import { getChatSession, listChatMessages, listChatSessions } from '$lib/server/repositories/chat';
-import { listAgents } from '$lib/server/repositories/agents';
+import { listAgentOptions } from '$lib/server/repositories/agents';
 import { listProviderConnections } from '$lib/server/repositories/providers';
 import { isRecord } from '$lib/server/json';
 
@@ -16,7 +16,7 @@ export async function loadChatPageData(sessionId: string | null = null) {
 		const [providers, sessions, agents] = await Promise.all([
 			listProviderConnections(),
 			listChatSessions(),
-			listAgents()
+			listAgentOptions()
 		]);
 		const defaultProvider = providers.find((provider) => provider.isDefault) ?? providers[0];
 		const defaultAgent = agents.find((agent) => agent.isDefault) ?? null;

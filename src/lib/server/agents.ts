@@ -14,6 +14,8 @@ export type Agent = {
 	updatedAt: Date | string;
 };
 
+export type AgentOption = Pick<Agent, 'id' | 'name' | 'isDefault'>;
+
 export type AgentToolOption = {
 	name: string;
 	label: string;

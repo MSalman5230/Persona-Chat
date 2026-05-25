@@ -81,9 +81,6 @@ export type ChatProviderOption = {
 export type ChatAgentOption = {
 	id: string;
 	name: string;
-	systemPrompt: string;
-	toolNames: string[];
-	mcpServerIds: string[];
 	isDefault: boolean;
 };
 
