@@ -37,22 +37,24 @@ export async function getChatSession(id: string): Promise<ChatSessionRow | undef
 
 export async function createChatSession(input: {
 	title: string;
+	agentId: string | null;
 	providerConnectionId: string | null;
 	providerId: string | null;
 	modelId: string | null;
 	thinkingLevel: string | null;
-	systemPrompt: string;
+	customInstruction: string;
 	temperature: number | null;
 }): Promise<ChatSessionRow> {
 	const [row] = await db
 		.insert(chatSessions)
 		.values({
 			title: input.title || 'New chat',
+			agentId: input.agentId,
 			providerConnectionId: input.providerConnectionId,
 			providerId: input.providerId,
 			modelId: input.modelId,
 			thinkingLevel: input.thinkingLevel,
-			systemPrompt: input.systemPrompt,
+			customInstruction: input.customInstruction,
 			temperature: input.temperature
 		})
 		.returning();
@@ -63,11 +65,12 @@ export async function updateChatSession(
 	id: string,
 	input: Partial<{
 		title: string;
+		agentId: string | null;
 		providerConnectionId: string | null;
 		providerId: string | null;
 		modelId: string | null;
 		thinkingLevel: string | null;
-		systemPrompt: string;
+		customInstruction: string;
 		temperature: number | null;
 	}>
 ): Promise<void> {

@@ -1,9 +1,16 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { ChatProviderOption, ChatThinkingSelection, ModelOption } from '$lib/client/chat';
+	import type {
+		ChatAgentOption,
+		ChatProviderOption,
+		ChatThinkingSelection,
+		ModelOption
+	} from '$lib/client/chat';
 	import SelectField from '$lib/components/common/SelectField.svelte';
 
 	interface Props {
+		agentOptions: ChatAgentOption[];
+		selectedAgentId: string;
 		providerOptions: ChatProviderOption[];
 		selectedProviderId: string;
 		selectedModelOptions: ModelOption[];
@@ -11,6 +18,7 @@
 		thinkingOptions: readonly ChatThinkingSelection[];
 		selectedThinking: ChatThinkingSelection;
 		settingsOpen: boolean;
+		onSelectAgent: (id: string) => void | Promise<void>;
 		onSelectProvider: (id: string) => void;
 		onSelectModel: (id: string) => void;
 		onSelectThinking: (value: ChatThinkingSelection) => void;
@@ -18,6 +26,8 @@
 	}
 
 	let {
+		agentOptions,
+		selectedAgentId,
 		providerOptions,
 		selectedProviderId,
 		selectedModelOptions,
@@ -25,6 +35,7 @@
 		thinkingOptions,
 		selectedThinking,
 		settingsOpen,
+		onSelectAgent,
 		onSelectProvider,
 		onSelectModel,
 		onSelectThinking,
@@ -38,6 +49,12 @@
 	const providerSelectOptions = $derived(
 		providerOptions.map((provider) => ({ value: provider.id, label: provider.name }))
 	);
+	const agentSelectOptions = $derived(
+		agentOptions.map((agent) => ({
+			value: agent.id,
+			label: `${agent.isDefault ? 'Default - ' : ''}${agent.name}`
+		}))
+	);
 	const modelSelectOptions = $derived(
 		selectedModelOptions.map((model) => ({ value: model.id, label: model.name }))
 	);
@@ -48,6 +65,14 @@
 
 <header class="sticky top-0 z-30 hidden h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-gutter backdrop-blur-md md:flex">
 	<div class="flex items-center gap-2">
+		<SelectField
+			class="w-auto max-w-44"
+			value={selectedAgentId}
+			options={agentSelectOptions}
+			placeholder="No agent"
+			ariaLabel="Agent"
+			onChange={onSelectAgent}
+		/>
 		<SelectField
 			class="w-auto max-w-44"
 			value={selectedProviderId}

@@ -78,10 +78,19 @@ export type ChatProviderOption = {
 	favoriteModels: string[];
 };
 
-export type SystemPromptPresetOption = {
+export type ChatAgentOption = {
 	id: string;
 	name: string;
-	prompt: string;
+	systemPrompt: string;
+	toolNames: string[];
+	mcpServerIds: string[];
+	isDefault: boolean;
+};
+
+export type CustomInstructionPresetOption = {
+	id: string;
+	name: string;
+	instruction: string;
 	isDefault: boolean;
 };
 
@@ -96,20 +105,20 @@ export function temperatureFromServer(value: unknown): number | null {
 	return typeof value === 'number' && Number.isFinite(value) ? clampTemperature(value) : null;
 }
 
-export function sortSystemPromptPresets(
-	presets: SystemPromptPresetOption[]
-): SystemPromptPresetOption[] {
+export function sortCustomInstructionPresets(
+	presets: CustomInstructionPresetOption[]
+): CustomInstructionPresetOption[] {
 	return [...presets].sort((a, b) => {
 		if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
 		return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
 	});
 }
 
-export function presetIdForPrompt(
-	presets: SystemPromptPresetOption[],
-	prompt: string
+export function presetIdForInstruction(
+	presets: CustomInstructionPresetOption[],
+	instruction: string
 ): string {
-	return presets.find((preset) => preset.prompt === prompt)?.id ?? '';
+	return presets.find((preset) => preset.instruction === instruction)?.id ?? '';
 }
 
 export function roleFromServer(role: unknown): UiMessage['role'] {

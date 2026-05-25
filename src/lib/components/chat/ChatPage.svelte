@@ -8,18 +8,19 @@
 		isRecord,
 		mergeToolEventIntoMessages,
 		modelOptionsForProvider,
-		presetIdForPrompt,
+		presetIdForInstruction,
 		responseErrorMessage,
 		setConversationTurnThoughtExpanded,
-		sortSystemPromptPresets,
+		sortCustomInstructionPresets,
 		temperatureFromServer,
 		thinkingLevelForRequest,
 		uiMessageFromServer,
 		uiMessagesFromServerSnapshot,
 		upsertUiMessageFromServer,
+		type ChatAgentOption,
 		type ChatThinkingSelection,
 		type ChatProviderOption,
-		type SystemPromptPresetOption,
+		type CustomInstructionPresetOption,
 		type UiMessage
 	} from '$lib/client/chat';
 	import { afterNavigate, goto } from '$app/navigation';
@@ -40,14 +41,15 @@
 	type ChatSessionSummary = { id: string; title: string };
 	type PendingConfirmation =
 		| { kind: 'chat'; chat: ChatSessionSummary }
-		| { kind: 'preset'; preset: SystemPromptPresetOption };
+		| { kind: 'preset'; preset: CustomInstructionPresetOption };
 	type ChatSessionDetails = {
 		id: string;
 		title: string;
+		agentId: string | null;
 		providerConnectionId: string | null;
 		modelId: string | null;
 		thinkingLevel: string | null;
-		systemPrompt: string;
+		customInstruction: string;
 		temperature: number | null;
 	};
 	type ActiveRun = { id: string; sessionId: string; status: string; errorText: string | null };
@@ -62,6 +64,11 @@
 	let isStreaming = $state(Boolean(untrack(() => data.activeRun)));
 	let activeSessionId = $state<string | null>(untrack(() => data.activeSession?.id ?? null));
 	let loadedSessionId = $state<string | null>(untrack(() => data.activeSession?.id ?? null));
+	let selectedAgentIdOverride = $state<string | null>(
+		untrack(() =>
+			data.activeSession ? (data.activeSession.agentId ?? '') : (data.defaultAgentId ?? '')
+		)
+	);
 	let selectedProviderIdOverride = $state<string | null>(
 		untrack(() => data.activeSession?.providerConnectionId ?? null)
 	);
@@ -69,19 +76,19 @@
 	let selectedThinking = $state<ChatThinkingSelection>(
 		untrack(() => chatThinkingSelectionFromServer(data.activeSession?.thinkingLevel))
 	);
-	let systemPromptPresets = $state<SystemPromptPresetOption[]>(
-		untrack(() => data.systemPromptPresets)
+	let customInstructionPresets = $state<CustomInstructionPresetOption[]>(
+		untrack(() => data.customInstructionPresets)
 	);
-	let selectedSystemPromptPresetId = $state(
+	let selectedCustomInstructionPresetId = $state(
 		untrack(() =>
-			presetIdForPrompt(
-				data.systemPromptPresets,
-				data.activeSession?.systemPrompt ?? data.defaultSystemPrompt?.prompt ?? ''
+			presetIdForInstruction(
+				data.customInstructionPresets,
+				data.activeSession?.customInstruction ?? data.defaultCustomInstruction?.instruction ?? ''
 			)
 		)
 	);
-	let systemPrompt = $state(
-		untrack(() => data.activeSession?.systemPrompt ?? data.defaultSystemPrompt?.prompt ?? '')
+	let customInstruction = $state(
+		untrack(() => data.activeSession?.customInstruction ?? data.defaultCustomInstruction?.instruction ?? '')
 	);
 	let temperatureAuto = $state(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature) === null)
@@ -89,8 +96,8 @@
 	let temperatureValue = $state(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature) ?? DEFAULT_MANUAL_TEMPERATURE)
 	);
-	let lastSavedSystemPrompt = $state(
-		untrack(() => data.activeSession?.systemPrompt ?? data.defaultSystemPrompt?.prompt ?? '')
+	let lastSavedCustomInstruction = $state(
+		untrack(() => data.activeSession?.customInstruction ?? data.defaultCustomInstruction?.instruction ?? '')
 	);
 	let lastSavedTemperature = $state<number | null>(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature))
@@ -107,6 +114,13 @@
 	let eventSource: EventSource | null = null;
 	let connectedRunId: string | null = null;
 
+	const agentOptions = $derived(data.agents as ChatAgentOption[]);
+	const selectedAgentId = $derived.by(() => {
+		if (!selectedAgentIdOverride) return '';
+		return agentOptions.some((agent) => agent.id === selectedAgentIdOverride)
+			? selectedAgentIdOverride
+			: '';
+	});
 	const providerOptions = $derived(data.providers as ChatProviderOption[]);
 	const selectedProviderId = $derived(selectedProviderIdOverride ?? data.defaultProviderId ?? '');
 	const selectedProvider = $derived(
@@ -130,16 +144,17 @@
 		messages.some((item) => item.tools.some((tool) => tool.status === 'running'))
 	);
 	const currentTemperature = $derived(temperatureAuto ? null : clampTemperature(temperatureValue));
-	const selectedSystemPromptPreset = $derived(
-		systemPromptPresets.find((preset) => preset.id === selectedSystemPromptPresetId)
+	const selectedCustomInstructionPreset = $derived(
+		customInstructionPresets.find((preset) => preset.id === selectedCustomInstructionPresetId)
 	);
-	const defaultSystemPromptPreset = $derived(
-		systemPromptPresets.find((preset) => preset.isDefault) ?? null
+	const defaultCustomInstructionPreset = $derived(
+		customInstructionPresets.find((preset) => preset.isDefault) ?? null
 	);
-	const defaultSystemPromptText = $derived(defaultSystemPromptPreset?.prompt ?? '');
+	const defaultCustomInstructionText = $derived(defaultCustomInstructionPreset?.instruction ?? '');
 	const settingsDirty = $derived(
 		activeSessionId !== null &&
-			(systemPrompt !== lastSavedSystemPrompt || currentTemperature !== lastSavedTemperature)
+			(customInstruction !== lastSavedCustomInstruction ||
+				currentTemperature !== lastSavedTemperature)
 	);
 	const confirmationDialog = $derived.by(() => {
 		if (!pendingConfirmation) return null;
@@ -186,27 +201,34 @@
 		activeRun = data.activeRun;
 		isStreaming = Boolean(data.activeRun);
 		sessions = data.sessions;
-		systemPromptPresets = data.systemPromptPresets;
+		customInstructionPresets = data.customInstructionPresets;
+		selectedAgentIdOverride = session ? (session.agentId ?? '') : (data.defaultAgentId ?? '');
 		selectedProviderIdOverride = session?.providerConnectionId ?? null;
 		selectedModelOverride = session?.modelId ?? null;
 		selectedThinking = chatThinkingSelectionFromServer(session?.thinkingLevel);
 		resetSessionSettings({
-			systemPrompt: session?.systemPrompt ?? defaultSystemPromptText,
+			customInstruction: session?.customInstruction ?? defaultCustomInstructionText,
 			temperature: temperatureFromServer(session?.temperature)
 		});
 		messages = data.messages.map((item: Record<string, unknown>) => uiMessageFromServer(item));
 		errorText = data.interruptedRun?.errorText ?? '';
 	}
 
-	function resetSessionSettings(settings?: { systemPrompt?: string; temperature?: number | null }) {
-		const nextSystemPrompt = settings?.systemPrompt ?? '';
+	function resetSessionSettings(settings?: {
+		customInstruction?: string;
+		temperature?: number | null;
+	}) {
+		const nextCustomInstruction = settings?.customInstruction ?? '';
 		const nextTemperature = settings?.temperature ?? null;
 
-		systemPrompt = nextSystemPrompt;
-		selectedSystemPromptPresetId = presetIdForPrompt(systemPromptPresets, nextSystemPrompt);
+		customInstruction = nextCustomInstruction;
+		selectedCustomInstructionPresetId = presetIdForInstruction(
+			customInstructionPresets,
+			nextCustomInstruction
+		);
 		temperatureAuto = nextTemperature === null;
 		temperatureValue = nextTemperature ?? DEFAULT_MANUAL_TEMPERATURE;
-		lastSavedSystemPrompt = nextSystemPrompt;
+		lastSavedCustomInstruction = nextCustomInstruction;
 		lastSavedTemperature = nextTemperature;
 		settingsSaveStatus = 'idle';
 		settingsErrorText = '';
@@ -239,8 +261,9 @@
 		errorText = '';
 		sidebarOpen = false;
 		settingsOpen = false;
+		selectedAgentIdOverride = data.defaultAgentId ?? '';
 		selectedThinking = 'auto';
-		resetSessionSettings({ systemPrompt: defaultSystemPromptText, temperature: null });
+		resetSessionSettings({ customInstruction: defaultCustomInstructionText, temperature: null });
 	}
 
 	function newChat() {
@@ -283,9 +306,12 @@
 		}
 	}
 
-	function updateSystemPrompt(value: string) {
-		systemPrompt = value;
-		selectedSystemPromptPresetId = presetIdForPrompt(systemPromptPresets, systemPrompt);
+	function updateCustomInstruction(value: string) {
+		customInstruction = value;
+		selectedCustomInstructionPresetId = presetIdForInstruction(
+			customInstructionPresets,
+			customInstruction
+		);
 		markSettingsChanged();
 	}
 
@@ -300,17 +326,19 @@
 	}
 
 	function updateSavedSessionSettings(payload: {
-		systemPrompt?: string;
+		agentId?: string | null;
+		customInstruction?: string;
 		temperature?: number | null;
 	}) {
-		const savedSystemPrompt = payload.systemPrompt ?? systemPrompt;
+		const savedCustomInstruction = payload.customInstruction ?? customInstruction;
 		const savedTemperature =
 			payload.temperature !== undefined ? temperatureFromServer(payload.temperature) : currentTemperature;
 
-		systemPrompt = savedSystemPrompt;
+		if (payload.agentId !== undefined) selectedAgentIdOverride = payload.agentId ?? '';
+		customInstruction = savedCustomInstruction;
 		temperatureAuto = savedTemperature === null;
 		temperatureValue = savedTemperature ?? temperatureValue;
-		lastSavedSystemPrompt = savedSystemPrompt;
+		lastSavedCustomInstruction = savedCustomInstruction;
 		lastSavedTemperature = savedTemperature;
 	}
 
@@ -325,7 +353,7 @@
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					systemPrompt,
+					customInstruction,
 					temperature: currentTemperature
 				})
 			});
@@ -333,7 +361,11 @@
 			if (!response.ok) throw new Error('Settings save failed');
 
 			const payload = (await response.json()) as {
-				session: { systemPrompt?: string; temperature?: number | null };
+				session: {
+					agentId?: string | null;
+					customInstruction?: string;
+					temperature?: number | null;
+				};
 			};
 			updateSavedSessionSettings(payload.session);
 			settingsSaveStatus = 'saved';
@@ -343,9 +375,9 @@
 		}
 	}
 
-	function applySystemPromptPresetUpdate(preset: SystemPromptPresetOption) {
-		systemPromptPresets = sortSystemPromptPresets(
-			systemPromptPresets.map((item) => ({
+	function applyCustomInstructionPresetUpdate(preset: CustomInstructionPresetOption) {
+		customInstructionPresets = sortCustomInstructionPresets(
+			customInstructionPresets.map((item) => ({
 				...item,
 				isDefault: preset.isDefault ? false : item.isDefault,
 				...(item.id === preset.id ? preset : {})
@@ -353,19 +385,19 @@
 		);
 	}
 
-	function selectSystemPromptPreset(id: string) {
-		selectedSystemPromptPresetId = id;
-		const preset = systemPromptPresets.find((item) => item.id === id);
+	function selectCustomInstructionPreset(id: string) {
+		selectedCustomInstructionPresetId = id;
+		const preset = customInstructionPresets.find((item) => item.id === id);
 		if (!preset) return;
 
-		systemPrompt = preset.prompt;
+		customInstruction = preset.instruction;
 		markSettingsChanged();
 	}
 
-	function saveCurrentSystemPromptAsPreset() {
+	function saveCurrentCustomInstructionAsPreset() {
 		if (presetActionStatus === 'saving') return;
-		if (systemPrompt.trim().length === 0) {
-			settingsErrorText = 'System prompt is required';
+		if (customInstruction.trim().length === 0) {
+			settingsErrorText = 'Custom instruction is required';
 			presetActionStatus = 'error';
 			return;
 		}
@@ -373,27 +405,27 @@
 		presetNameDialogOpen = true;
 	}
 
-	async function confirmSaveCurrentSystemPromptAsPreset(name: string) {
+	async function confirmSaveCurrentCustomInstructionAsPreset(name: string) {
 		presetNameDialogOpen = false;
 		presetActionStatus = 'saving';
 		settingsErrorText = '';
 
 		try {
-			const response = await fetch('/api/system-prompts', {
+			const response = await fetch('/api/custom-instructions', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name, prompt: systemPrompt })
+				body: JSON.stringify({ name, instruction: customInstruction })
 			});
 			if (!response.ok) {
 				throw new Error(await responseErrorMessage(response, 'Unable to save preset'));
 			}
 
-			const payload = (await response.json()) as { preset: SystemPromptPresetOption };
-			systemPromptPresets = sortSystemPromptPresets([
-				...systemPromptPresets.filter((preset) => preset.id !== payload.preset.id),
+			const payload = (await response.json()) as { preset: CustomInstructionPresetOption };
+			customInstructionPresets = sortCustomInstructionPresets([
+				...customInstructionPresets.filter((preset) => preset.id !== payload.preset.id),
 				payload.preset
 			]);
-			selectedSystemPromptPresetId = payload.preset.id;
+			selectedCustomInstructionPresetId = payload.preset.id;
 			presetActionStatus = 'saved';
 		} catch (error) {
 			presetActionStatus = 'error';
@@ -401,15 +433,15 @@
 		}
 	}
 
-	async function toggleSelectedSystemPromptPresetDefault() {
-		const preset = selectedSystemPromptPreset;
+	async function toggleSelectedCustomInstructionPresetDefault() {
+		const preset = selectedCustomInstructionPreset;
 		if (!preset || presetActionStatus === 'saving') return;
 
 		presetActionStatus = 'saving';
 		settingsErrorText = '';
 
 		try {
-			const response = await fetch(`/api/system-prompts/${preset.id}`, {
+			const response = await fetch(`/api/custom-instructions/${preset.id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ isDefault: !preset.isDefault })
@@ -418,9 +450,9 @@
 				throw new Error(await responseErrorMessage(response, 'Unable to update preset'));
 			}
 
-			const payload = (await response.json()) as { preset: SystemPromptPresetOption };
-			applySystemPromptPresetUpdate(payload.preset);
-			selectedSystemPromptPresetId = payload.preset.id;
+			const payload = (await response.json()) as { preset: CustomInstructionPresetOption };
+			applyCustomInstructionPresetUpdate(payload.preset);
+			selectedCustomInstructionPresetId = payload.preset.id;
 			presetActionStatus = 'saved';
 		} catch (error) {
 			presetActionStatus = 'error';
@@ -428,25 +460,25 @@
 		}
 	}
 
-	async function deleteSelectedSystemPromptPreset() {
-		const preset = selectedSystemPromptPreset;
+	async function deleteSelectedCustomInstructionPreset() {
+		const preset = selectedCustomInstructionPreset;
 		if (!preset || presetActionStatus === 'saving') return;
 
 		pendingConfirmation = { kind: 'preset', preset };
 	}
 
-	async function confirmDeleteSelectedSystemPromptPreset(preset: SystemPromptPresetOption) {
+	async function confirmDeleteSelectedCustomInstructionPreset(preset: CustomInstructionPresetOption) {
 		presetActionStatus = 'saving';
 		settingsErrorText = '';
 
 		try {
-			const response = await fetch(`/api/system-prompts/${preset.id}`, { method: 'DELETE' });
+			const response = await fetch(`/api/custom-instructions/${preset.id}`, { method: 'DELETE' });
 			if (!response.ok) {
 				throw new Error(await responseErrorMessage(response, 'Unable to delete preset'));
 			}
 
-			systemPromptPresets = systemPromptPresets.filter((item) => item.id !== preset.id);
-			selectedSystemPromptPresetId = '';
+			customInstructionPresets = customInstructionPresets.filter((item) => item.id !== preset.id);
+			selectedCustomInstructionPresetId = '';
 			presetActionStatus = 'saved';
 		} catch (error) {
 			presetActionStatus = 'error';
@@ -463,7 +495,33 @@
 		if (confirmation.kind === 'chat') {
 			await confirmDeleteChat(confirmation.chat);
 		} else {
-			await confirmDeleteSelectedSystemPromptPreset(confirmation.preset);
+			await confirmDeleteSelectedCustomInstructionPreset(confirmation.preset);
+		}
+	}
+
+	async function selectAgent(id: string) {
+		const previousAgentId = selectedAgentIdOverride ?? '';
+		selectedAgentIdOverride = id;
+		if (!activeSessionId) return;
+
+		try {
+			const response = await fetch(`/api/chat-sessions/${activeSessionId}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ agentId: id || null })
+			});
+
+			if (!response.ok) {
+				throw new Error(await responseErrorMessage(response, 'Agent save failed'));
+			}
+
+			const payload = (await response.json()) as {
+				session: { agentId?: string | null };
+			};
+			updateSavedSessionSettings({ agentId: payload.session.agentId ?? null });
+		} catch (error) {
+			selectedAgentIdOverride = previousAgentId;
+			errorText = error instanceof Error ? error.message : 'Agent save failed';
 		}
 	}
 
@@ -523,7 +581,11 @@
 				title: typeof payload.title === 'string' ? payload.title : 'New chat'
 			});
 			updateSavedSessionSettings({
-				systemPrompt: typeof payload.systemPrompt === 'string' ? payload.systemPrompt : systemPrompt,
+				agentId: typeof payload.agentId === 'string' ? payload.agentId : null,
+				customInstruction:
+					typeof payload.customInstruction === 'string'
+						? payload.customInstruction
+						: customInstruction,
 				temperature: temperatureFromServer(payload.temperature)
 			});
 			if ('thinkingLevel' in payload) {
@@ -644,10 +706,11 @@
 				body: JSON.stringify({
 					sessionId: activeSessionId,
 					message: prompt,
+					agentId: selectedAgentId || null,
 					providerConnectionId: selectedProviderId || null,
 					modelId: selectedModel || null,
 					thinkingLevel: thinkingLevelForRequest(selectedThinking),
-					systemPrompt,
+					customInstruction,
 					temperature: currentTemperature
 				})
 			});
@@ -667,7 +730,8 @@
 			setActiveRun(payload.run);
 			upsertSessionSummary(payload.session);
 			updateSavedSessionSettings({
-				systemPrompt: payload.session.systemPrompt,
+				agentId: payload.session.agentId,
+				customInstruction: payload.session.customInstruction,
 				temperature: temperatureFromServer(payload.session.temperature)
 			});
 			selectedThinking = chatThinkingSelectionFromServer(payload.session.thinkingLevel);
@@ -711,6 +775,8 @@
 			]}
 		>
 			<DesktopHeader
+				{agentOptions}
+				{selectedAgentId}
 				{providerOptions}
 				{selectedProviderId}
 				{selectedModelOptions}
@@ -718,6 +784,7 @@
 				{thinkingOptions}
 				{selectedThinking}
 				{settingsOpen}
+				onSelectAgent={selectAgent}
 				onSelectProvider={selectProvider}
 				onSelectModel={selectModel}
 				onSelectThinking={selectThinking}
@@ -748,10 +815,10 @@
 		<SessionSettingsDrawer
 			open={settingsOpen}
 			{activeSessionId}
-			{systemPromptPresets}
-			{selectedSystemPromptPresetId}
-			{selectedSystemPromptPreset}
-			{systemPrompt}
+			{customInstructionPresets}
+			{selectedCustomInstructionPresetId}
+			{selectedCustomInstructionPreset}
+			{customInstruction}
 			{thinkingOptions}
 			{selectedThinking}
 			{temperatureAuto}
@@ -761,15 +828,15 @@
 			{settingsSaveStatus}
 			{presetActionStatus}
 			onClose={() => (settingsOpen = false)}
-			onSelectSystemPromptPreset={selectSystemPromptPreset}
-			onSystemPromptInput={updateSystemPrompt}
+			onSelectCustomInstructionPreset={selectCustomInstructionPreset}
+			onCustomInstructionInput={updateCustomInstruction}
 			onThinkingChange={selectThinking}
 			onTemperatureAutoChange={updateTemperatureAuto}
 			onTemperatureValueChange={updateTemperatureValue}
 			onSaveSessionSettings={saveSessionSettings}
-			onSaveCurrentSystemPromptAsPreset={saveCurrentSystemPromptAsPreset}
-			onToggleSelectedSystemPromptPresetDefault={toggleSelectedSystemPromptPresetDefault}
-			onDeleteSelectedSystemPromptPreset={deleteSelectedSystemPromptPreset}
+			onSaveCurrentCustomInstructionAsPreset={saveCurrentCustomInstructionAsPreset}
+			onToggleSelectedCustomInstructionPresetDefault={toggleSelectedCustomInstructionPresetDefault}
+			onDeleteSelectedCustomInstructionPreset={deleteSelectedCustomInstructionPreset}
 		/>
 	</div>
 
@@ -786,10 +853,10 @@
 	<TextPromptDialog
 		open={presetNameDialogOpen}
 		title="Save preset"
-		description="Name this system prompt preset."
+		description="Name this custom instruction preset."
 		label="Preset name"
 		confirmLabel="Save preset"
 		onCancel={() => (presetNameDialogOpen = false)}
-		onConfirm={(name) => void confirmSaveCurrentSystemPromptAsPreset(name)}
+		onConfirm={(name) => void confirmSaveCurrentCustomInstructionAsPreset(name)}
 	/>
 </div>

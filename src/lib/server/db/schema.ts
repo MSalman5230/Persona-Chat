@@ -86,19 +86,39 @@ export const mcpServers = pgTable(
 	})
 );
 
-export const systemPromptPresets = pgTable(
-	'system_prompt_presets',
+export const customInstructionPresets = pgTable(
+	'custom_instruction_presets',
 	{
 		id: uuid('id').defaultRandom().primaryKey(),
 		name: text('name').notNull(),
-		prompt: text('prompt').notNull(),
+		instruction: text('instruction').notNull(),
 		isDefault: boolean('is_default').notNull().default(false),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => ({
-		nameIdx: uniqueIndex('system_prompt_presets_name_idx').on(table.name),
-		defaultIdx: uniqueIndex('system_prompt_presets_default_idx')
+		nameIdx: uniqueIndex('custom_instruction_presets_name_idx').on(table.name),
+		defaultIdx: uniqueIndex('custom_instruction_presets_default_idx')
+			.on(table.isDefault)
+			.where(sql`${table.isDefault} = true`)
+	})
+);
+
+export const agents = pgTable(
+	'agents',
+	{
+		id: uuid('id').defaultRandom().primaryKey(),
+		name: text('name').notNull(),
+		systemPrompt: text('system_prompt').notNull().default(''),
+		toolNames: jsonb('tool_names').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+		mcpServerIds: jsonb('mcp_server_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+		isDefault: boolean('is_default').notNull().default(false),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		nameIdx: uniqueIndex('agents_name_idx').on(table.name),
+		defaultIdx: uniqueIndex('agents_default_idx')
 			.on(table.isDefault)
 			.where(sql`${table.isDefault} = true`)
 	})
@@ -109,13 +129,16 @@ export const chatSessions = pgTable(
 	{
 		id: uuid('id').defaultRandom().primaryKey(),
 		title: text('title').notNull().default('New chat'),
+		agentId: uuid('agent_id').references(() => agents.id, {
+			onDelete: 'set null'
+		}),
 		providerConnectionId: uuid('provider_connection_id').references(() => providerConnections.id, {
 			onDelete: 'set null'
 		}),
 		providerId: text('provider_id'),
 		modelId: text('model_id'),
 		thinkingLevel: text('thinking_level'),
-		systemPrompt: text('system_prompt').notNull().default(''),
+		customInstruction: text('custom_instruction').notNull().default(''),
 		temperature: real('temperature'),
 		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()

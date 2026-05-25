@@ -6,21 +6,19 @@ import {
 	listCustomInstructionPresets
 } from '$lib/server/repositories/custom-instructions';
 import type { CustomInstructionPresetCreateInput } from '$lib/server/repositories/custom-instructions';
-import { isRecord } from '$lib/server/json';
 
 export const GET: RequestHandler = async () => {
-	const customInstructions = await listCustomInstructionPresets();
-	return json({ customInstructions, systemPrompts: customInstructions });
+	return json({ customInstructions: await listCustomInstructionPresets() });
 };
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
-		const raw = await readJsonRequest(request, 'Unable to save custom instruction preset');
-		const payload =
-			isRecord(raw) && typeof raw.prompt === 'string' && raw.instruction === undefined
-				? { ...raw, instruction: raw.prompt }
-				: raw;
-		const preset = await createCustomInstructionPreset(payload as CustomInstructionPresetCreateInput);
+		const preset = await createCustomInstructionPreset(
+			(await readJsonRequest(
+				request,
+				'Unable to save custom instruction preset'
+			)) as CustomInstructionPresetCreateInput
+		);
 		return json({ preset }, { status: 201 });
 	} catch (cause) {
 		error(400, apiErrorMessage(cause, 'Unable to save custom instruction preset'));

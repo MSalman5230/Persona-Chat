@@ -19,12 +19,64 @@ vi.mock('$lib/server/chat/runs', () => ({
 	resolveActiveChatRun: mocks.resolveActiveChatRun
 }));
 
-import { DELETE } from './+server';
+import { DELETE, PATCH } from './+server';
 
 const session = {
 	id: '00000000-0000-4000-8000-000000000001',
 	title: 'Planning'
 };
+
+function jsonRequest(body: unknown): Request {
+	return new Request(`http://localhost/api/chat-sessions/${session.id}`, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body)
+	});
+}
+
+describe('chat session PATCH route', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mocks.getChatSession.mockResolvedValue(session);
+		mocks.updateChatSession.mockResolvedValue(undefined);
+	});
+
+	it('updates agent and custom instruction settings', async () => {
+		const payload = {
+			agentId: '00000000-0000-4000-8000-000000000003',
+			customInstruction: 'Use citations.',
+			temperature: null
+		};
+		const response = await PATCH({
+			params: { id: session.id },
+			request: jsonRequest(payload)
+		} as never);
+
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			session: {
+				...session,
+				...payload
+			}
+		});
+		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, payload);
+	});
+
+	it('returns 404 when patching a missing chat session', async () => {
+		mocks.getChatSession.mockResolvedValue(undefined);
+
+		await expect(
+			PATCH({
+				params: { id: session.id },
+				request: jsonRequest({ agentId: null })
+			} as never)
+		).rejects.toMatchObject({
+			status: 404,
+			body: { message: 'Chat session not found' }
+		});
+		expect(mocks.updateChatSession).not.toHaveBeenCalled();
+	});
+});
 
 describe('chat session DELETE route', () => {
 	beforeEach(() => {

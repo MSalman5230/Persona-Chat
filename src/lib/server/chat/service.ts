@@ -7,6 +7,7 @@ import {
 	upsertChatMessages,
 	type ChatMessageRow
 } from '$lib/server/repositories/chat';
+import { getAgent } from '$lib/server/repositories/agents';
 import {
 	hydrateChatMessageDisplay,
 	normalizeAgentMessageForStorage,
@@ -23,16 +24,20 @@ function titleFromPrompt(prompt: string): string {
 export async function prepareChatTurn(input: {
 	sessionId?: string | null;
 	message: string;
+	agentId?: string | null;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
-	systemPrompt?: string;
+	customInstruction?: string;
 	temperature?: number | null;
 }) {
 	const existing = input.sessionId ? await getChatSession(input.sessionId) : undefined;
 	const historyRows = existing ? await listChatMessages(existing.id) : [];
 	const history = historyRows.map((row) => row.piMessage);
-	const systemPrompt = input.systemPrompt ?? existing?.systemPrompt ?? '';
+	const agentId = input.agentId !== undefined ? input.agentId : (existing?.agentId ?? null);
+	const agent = agentId ? await getAgent(agentId) : null;
+	if (agentId && !agent) throw new Error('Agent not found');
+	const customInstruction = input.customInstruction ?? existing?.customInstruction ?? '';
 	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
 	const thinkingLevel =
 		input.thinkingLevel !== undefined ? input.thinkingLevel : (existing?.thinkingLevel ?? null);
@@ -40,39 +45,44 @@ export async function prepareChatTurn(input: {
 		providerConnectionId: input.providerConnectionId ?? existing?.providerConnectionId,
 		modelId: input.modelId ?? existing?.modelId,
 		thinkingLevel,
-		systemPrompt,
+		agent,
+		customInstruction,
 		temperature,
 		history
 	});
+	const runtimeMessageOffset = history.length + runtime.syntheticMessageCount;
 
 	let chatSession =
 		existing ??
 		(await createChatSession({
 			title: titleFromPrompt(input.message),
+			agentId,
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
 			thinkingLevel,
-			systemPrompt,
+			customInstruction,
 			temperature
 		}));
 
 	if (existing) {
 		await updateChatSession(existing.id, {
+			agentId,
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
 			thinkingLevel,
-			systemPrompt,
+			customInstruction,
 			temperature
 		});
 		chatSession = {
 			...existing,
+			agentId,
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
 			modelId: runtime.model.id,
 			thinkingLevel,
-			systemPrompt,
+			customInstruction,
 			temperature
 		};
 	}
@@ -80,7 +90,8 @@ export async function prepareChatTurn(input: {
 	return {
 		chatSession,
 		runtime,
-		historyCount: history.length
+		historyCount: history.length,
+		runtimeMessageOffset
 	};
 }
 
@@ -89,16 +100,17 @@ export async function upsertAgentMessages(
 	messages: AgentMessage[],
 	historyCount: number,
 	thoughtTimings?: ThoughtTimingsByAssistant,
-	storedMessagesBySequence?: Map<number, { display?: unknown }>
+	storedMessagesBySequence?: Map<number, { display?: unknown }>,
+	startSequence = historyCount + 1
 ): Promise<void> {
 	const newMessages = messages.slice(historyCount);
 	let assistantIndex = -1;
 
 	await upsertChatMessages(
 		sessionId,
-		historyCount + 1,
+		startSequence,
 		newMessages.map((message, index) => {
-			const sequence = historyCount + 1 + index;
+			const sequence = startSequence + index;
 			const timings = message.role === 'assistant' ? thoughtTimings?.get(++assistantIndex) : undefined;
 			return normalizeAgentMessageForStorage(
 				message,

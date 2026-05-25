@@ -3,16 +3,17 @@ import { z } from 'zod';
 
 import { parseJsonRequest } from '$lib/server/api';
 import { ActiveChatRunError, startChatRun } from '$lib/server/chat/runs';
-import { systemPromptSchema, temperatureSchema } from '$lib/server/chat/settings';
+import { customInstructionSchema, temperatureSchema } from '$lib/server/chat/settings';
 import { THINKING_LEVELS } from '$lib/shared/thinking';
 
 const chatRunRequestSchema = z.object({
 	sessionId: z.string().uuid().optional().nullable(),
 	message: z.string().min(1),
+	agentId: z.string().uuid().optional().nullable(),
 	providerConnectionId: z.string().uuid().optional().nullable(),
 	modelId: z.string().min(1).optional().nullable(),
 	thinkingLevel: z.enum(THINKING_LEVELS).optional().nullable(),
-	systemPrompt: systemPromptSchema.optional(),
+	customInstruction: customInstructionSchema.optional(),
 	temperature: temperatureSchema.optional()
 });
 
