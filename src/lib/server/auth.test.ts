@@ -87,6 +87,7 @@ describe('Better Auth configuration', () => {
 			account: {
 				accountLinking: {
 					enabled: true,
+					requireLocalEmailVerified: false,
 					trustedProviders: ['google', 'email-password']
 				}
 			},
