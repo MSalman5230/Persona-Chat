@@ -28,7 +28,7 @@
 
 <section class={['grid flex-1 gap-6', canManage ? 'lg:grid-cols-[minmax(0,1fr)_390px]' : '']}>
 	<div class="space-y-3">
-		{#each providers as provider (provider.id)}
+		{#each providers as provider (provider.provider.id)}
 			<ProviderCard {provider} {supportedProviders} {canManage} />
 		{:else}
 			<div class="rounded-lg border border-border-subtle bg-surface-container-low p-6 text-text-muted">

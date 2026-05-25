@@ -16,7 +16,7 @@ export const POST: RequestHandler = async (event) => {
 
 	return json({
 		ok: true,
-		providerId: runtime.row.providerId,
+		providerId: runtime.provider.providerId,
 		modelId: runtime.model.id,
 		thinkingLevel: runtime.thinkingLevel
 	});

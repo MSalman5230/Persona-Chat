@@ -76,6 +76,7 @@ export type ChatProviderOption = {
 	defaultModel: string;
 	models: string[];
 	favoriteModels: string[];
+	isDefault: boolean;
 };
 
 export type ChatAgentOption = {

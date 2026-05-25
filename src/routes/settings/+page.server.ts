@@ -90,7 +90,7 @@ export const actions: Actions = {
 			const form = await request.formData();
 			const id = stringFromForm(form, 'id');
 			const provider = await saveProviderConnectionFromForm(form, id);
-			return { ok: true, message: `${provider.name} saved` };
+			return { ok: true, message: `${provider.provider.name} saved` };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save provider' });
 		}
@@ -114,7 +114,7 @@ export const actions: Actions = {
 			const runtime = await createProviderRuntime({ providerConnectionId: id });
 			return {
 				ok: true,
-				message: `${runtime.row.name} can load ${runtime.row.providerId}/${runtime.model.id}`
+				message: `${runtime.provider.name} can load ${runtime.provider.providerId}/${runtime.model.id}`
 			};
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Provider test failed' });
@@ -132,7 +132,7 @@ export const actions: Actions = {
 				favoriteModels: stringsFromForm(form, 'favoriteModels'),
 				isDefault: booleanFromForm(form, 'isDefault', false)
 			});
-			return { ok: true, message: `${provider.name} preferences saved` };
+			return { ok: true, message: `${provider.provider.name} preferences saved` };
 		} catch (error) {
 			return fail(400, {
 				error: error instanceof Error ? error.message : 'Unable to save provider preferences'

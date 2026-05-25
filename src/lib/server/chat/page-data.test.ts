@@ -43,12 +43,22 @@ describe('loadChatPageData', () => {
 		vi.clearAllMocks();
 		mocks.listProviderConnections.mockResolvedValue([
 			{
-				id: 'provider-1',
-				name: 'OpenAI',
-				defaultModel: 'gpt-5',
-				models: ['gpt-5'],
-				favoriteModels: ['gpt-5'],
-				isDefault: true
+				provider: {
+					id: 'provider-1',
+					name: 'OpenAI',
+					models: ['gpt-5', 'gpt-5-mini']
+				},
+				preference: {
+					providerConnectionId: 'provider-1',
+					defaultModel: 'gpt-5-mini',
+					favoriteModels: ['gpt-5-mini'],
+					isDefault: true
+				},
+				effective: {
+					defaultModel: 'gpt-5-mini',
+					favoriteModels: ['gpt-5-mini'],
+					isDefault: true
+				}
 			}
 		]);
 		mocks.listChatSessions.mockResolvedValue([]);
@@ -82,6 +92,18 @@ describe('loadChatPageData', () => {
 		expect(mocks.listChatSessions).toHaveBeenCalledWith(userId);
 		expect(mocks.listAgents).not.toHaveBeenCalled();
 		expect(data.defaultAgentId).toBe('agent-1');
+		expect(data.defaultProviderId).toBe('provider-1');
+		expect(data.defaultModel).toBe('gpt-5-mini');
+		expect(data.providers).toEqual([
+			{
+				id: 'provider-1',
+				name: 'OpenAI',
+				defaultModel: 'gpt-5-mini',
+				models: ['gpt-5', 'gpt-5-mini'],
+				favoriteModels: ['gpt-5-mini'],
+				isDefault: true
+			}
+		]);
 		expect(data.agents).toEqual([
 			{
 				id: 'agent-1',

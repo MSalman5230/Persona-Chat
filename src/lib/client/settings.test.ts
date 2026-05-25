@@ -22,22 +22,29 @@ const supportedProviders: SupportedProviderOption[] = [
 ];
 
 const baseProvider: SavedProviderOption = {
-	id: 'provider-1',
-	name: 'Provider',
-	providerId: 'openai',
-	api: 'responses',
-	baseUrl: null,
-	defaultModel: 'gpt-5',
-	models: [],
-	favoriteModels: [],
-	providerDefaultModel: 'gpt-5',
-	providerFavoriteModels: [],
-	providerIsDefault: true,
-	defaultThinkingLevel: 'medium',
-	hasApiKey: true,
-	enabled: true,
-	isDefault: true,
-	authHeader: true
+	provider: {
+		id: 'provider-1',
+		name: 'Provider',
+		providerId: 'openai',
+		api: 'responses',
+		baseUrl: null,
+		defaultModel: 'gpt-5',
+		models: [],
+		favoriteModels: [],
+		defaultThinkingLevel: 'medium',
+		hasApiKey: true,
+		hasHeaders: false,
+		secretPreview: '••••',
+		enabled: true,
+		isDefault: true,
+		authHeader: true
+	},
+	preference: null,
+	effective: {
+		defaultModel: 'gpt-5',
+		favoriteModels: [],
+		isDefault: true
+	}
 };
 
 describe('settings client helpers', () => {
@@ -55,10 +62,14 @@ describe('settings client helpers', () => {
 			providerModelOptions(
 				{
 					...baseProvider,
-					providerId: 'custom',
-					baseUrl: 'http://localhost:1234/v1',
-					defaultModel: 'local-default',
-					models: ['local-a', 'local-b']
+					provider: {
+						...baseProvider.provider,
+						providerId: 'custom',
+						baseUrl: 'http://localhost:1234/v1',
+						defaultModel: 'local-default',
+						models: ['local-a', 'local-b']
+					},
+					effective: { ...baseProvider.effective, defaultModel: 'local-default' }
 				},
 				supportedProviders
 			)
@@ -73,9 +84,13 @@ describe('settings client helpers', () => {
 			providerModelOptions(
 				{
 					...baseProvider,
-					providerId: 'custom',
-					baseUrl: 'http://localhost:1234/v1',
-					defaultModel: 'local-default'
+					provider: {
+						...baseProvider.provider,
+						providerId: 'custom',
+						baseUrl: 'http://localhost:1234/v1',
+						defaultModel: 'local-default'
+					},
+					effective: { ...baseProvider.effective, defaultModel: 'local-default' }
 				},
 				supportedProviders
 			)
@@ -87,9 +102,13 @@ describe('settings client helpers', () => {
 			providerModelOptions(
 				{
 					...baseProvider,
-					baseUrl: 'https://proxy.example.test/v1',
-					defaultModel: 'proxy-model',
-					models: ['proxy-model']
+					provider: {
+						...baseProvider.provider,
+						baseUrl: 'https://proxy.example.test/v1',
+						defaultModel: 'proxy-model',
+						models: ['proxy-model']
+					},
+					effective: { ...baseProvider.effective, defaultModel: 'proxy-model' }
 				},
 				supportedProviders
 			)
@@ -101,6 +120,11 @@ describe('settings client helpers', () => {
 
 		expect(hasModel(options, 'gpt-5')).toBe(true);
 		expect(defaultModelValue(baseProvider, options)).toBe('gpt-5');
-		expect(defaultModelValue({ ...baseProvider, defaultModel: 'legacy' }, options)).toBe('gpt-5');
+		expect(
+			defaultModelValue(
+				{ ...baseProvider, effective: { ...baseProvider.effective, defaultModel: 'legacy' } },
+				options
+			)
+		).toBe('gpt-5');
 	});
 });

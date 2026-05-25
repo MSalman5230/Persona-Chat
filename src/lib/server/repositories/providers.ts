@@ -40,13 +40,30 @@ export type ProviderUpdateInput = z.input<typeof providerUpdateSchema>;
 export type ProviderConnectionRow = typeof providerConnections.$inferSelect;
 export type UserProviderPreferenceRow = typeof userProviderPreferences.$inferSelect;
 
-export type PublicProviderConnection = Omit<ProviderConnectionRow, 'secret'> & {
+export type ProviderEffectiveSettings = {
+	defaultModel: string;
+	favoriteModels: string[];
+	isDefault: boolean;
+};
+
+export type ProviderConnectionView = {
+	provider: ProviderConnectionRow;
+	preference: UserProviderPreferenceRow | null;
+	effective: ProviderEffectiveSettings;
+};
+
+export type PublicProviderRecord = Omit<ProviderConnectionRow, 'secret'> & {
 	hasApiKey: boolean;
 	hasHeaders: boolean;
 	secretPreview: string | null;
-	providerDefaultModel: string;
-	providerFavoriteModels: string[];
-	providerIsDefault: boolean;
+};
+
+export type PublicUserProviderPreference = Omit<UserProviderPreferenceRow, 'userId'>;
+
+export type PublicProviderConnection = {
+	provider: PublicProviderRecord;
+	preference: PublicUserProviderPreference | null;
+	effective: ProviderEffectiveSettings;
 };
 
 export type UserProviderPreferenceInput = {
@@ -62,42 +79,52 @@ function decryptProviderSecret(
 	return decryptJson<ProviderSecretPayload>(secret) ?? {};
 }
 
-function serializeProvider(row: ProviderConnectionRow): PublicProviderConnection {
+function serializeProvider(row: ProviderConnectionRow): PublicProviderRecord {
 	const hasSecret = Boolean(row.secret);
 	const { secret: _secret, ...publicRow } = row;
 	return {
 		...publicRow,
 		hasApiKey: hasSecret,
 		hasHeaders: hasSecret,
-		secretPreview: hasSecret ? '••••' : null,
-		providerDefaultModel: row.defaultModel,
-		providerFavoriteModels: row.favoriteModels,
-		providerIsDefault: row.isDefault
+		secretPreview: hasSecret ? '••••' : null
 	};
 }
 
-function applyPreferenceToRow(
+function serializePreference(
+	preference: UserProviderPreferenceRow | null
+): PublicUserProviderPreference | null {
+	if (!preference) return null;
+	const { userId: _userId, ...publicPreference } = preference;
+	return publicPreference;
+}
+
+export function resolveProviderConnectionView(
 	row: ProviderConnectionRow,
 	preference: UserProviderPreferenceRow | undefined,
-	isDefault: boolean
-): ProviderConnectionRow {
+	userDefaultProviderId: string | null
+): ProviderConnectionView {
+	const resolvedPreference = preference ?? null;
+	const isDefault = userDefaultProviderId
+		? resolvedPreference?.providerConnectionId === userDefaultProviderId &&
+			resolvedPreference.isDefault === true
+		: row.isDefault;
+
 	return {
-		...row,
-		defaultModel: preference?.defaultModel || row.defaultModel,
-		favoriteModels: preference ? preference.favoriteModels : row.favoriteModels,
-		isDefault
+		provider: row,
+		preference: resolvedPreference,
+		effective: {
+			defaultModel: resolvedPreference?.defaultModel || row.defaultModel,
+			favoriteModels: resolvedPreference ? resolvedPreference.favoriteModels : row.favoriteModels,
+			isDefault
+		}
 	};
 }
 
-function serializeProviderWithSource(
-	sourceRow: ProviderConnectionRow,
-	effectiveRow: ProviderConnectionRow
-): PublicProviderConnection {
+function serializeProviderView(view: ProviderConnectionView): PublicProviderConnection {
 	return {
-		...serializeProvider(effectiveRow),
-		providerDefaultModel: sourceRow.defaultModel,
-		providerFavoriteModels: sourceRow.favoriteModels,
-		providerIsDefault: sourceRow.isDefault
+		provider: serializeProvider(view.provider),
+		preference: serializePreference(view.preference),
+		effective: { ...view.effective }
 	};
 }
 
@@ -137,10 +164,9 @@ function rowWithUserPreferences(
 	row: ProviderConnectionRow,
 	preferencesByProvider: Map<string, UserProviderPreferenceRow>,
 	userDefaultProviderId: string | null
-): ProviderConnectionRow {
+): ProviderConnectionView {
 	const preference = preferencesByProvider.get(row.id);
-	const isDefault = userDefaultProviderId ? preference?.isDefault === true : row.isDefault;
-	return applyPreferenceToRow(row, preference, isDefault);
+	return resolveProviderConnectionView(row, preference, userDefaultProviderId);
 }
 
 export async function listProviderConnections(options: {
@@ -155,7 +181,11 @@ export async function listProviderConnections(options: {
 				.orderBy(desc(providerConnections.createdAt))
 		: await db.select().from(providerConnections).orderBy(desc(providerConnections.createdAt));
 
-	if (!options.userId) return rows.map(serializeProvider);
+	if (!options.userId) {
+		return rows.map((row) =>
+			serializeProviderView(resolveProviderConnectionView(row, undefined, null))
+		);
+	}
 
 	const preferences = await preferencesForUser(options.userId);
 	const preferencesByProvider = new Map(
@@ -164,13 +194,9 @@ export async function listProviderConnections(options: {
 	const userDefaultProviderId =
 		preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null;
 
-	return rows
-		.map((row) =>
-			serializeProviderWithSource(
-				row,
-				rowWithUserPreferences(row, preferencesByProvider, userDefaultProviderId)
-			)
-		);
+	return rows.map((row) =>
+		serializeProviderView(rowWithUserPreferences(row, preferencesByProvider, userDefaultProviderId))
+	);
 }
 
 export async function getProviderConnection(id: string): Promise<ProviderConnectionRow | undefined> {
@@ -185,7 +211,7 @@ export async function getProviderConnection(id: string): Promise<ProviderConnect
 export async function getProviderConnectionForUser(
 	id: string,
 	userId: string
-): Promise<ProviderConnectionRow | undefined> {
+): Promise<ProviderConnectionView | undefined> {
 	const row = await getProviderConnection(id);
 	if (!row?.enabled) return undefined;
 
@@ -219,7 +245,7 @@ export async function getDefaultProviderConnection(): Promise<ProviderConnection
 
 export async function getDefaultProviderConnectionForUser(
 	userId: string
-): Promise<ProviderConnectionRow | undefined> {
+): Promise<ProviderConnectionView | undefined> {
 	const preferences = await preferencesForUser(userId);
 	const preferencesByProvider = new Map(
 		preferences.map((preference) => [preference.providerConnectionId, preference])
@@ -229,7 +255,9 @@ export async function getDefaultProviderConnectionForUser(
 
 	if (userDefaultProviderId) {
 		const row = await getProviderConnection(userDefaultProviderId);
-		if (row?.enabled) return applyPreferenceToRow(row, preferencesByProvider.get(row.id), true);
+		if (row?.enabled) {
+			return resolveProviderConnectionView(row, preferencesByProvider.get(row.id), userDefaultProviderId);
+		}
 	}
 
 	const globalDefault = await getDefaultProviderConnection();
@@ -263,7 +291,7 @@ export async function createProviderConnection(input: ProviderInput): Promise<Pu
 		.returning();
 
 	if (row.isDefault) await ensureSingleDefault(row.id);
-	return serializeProvider(row);
+	return serializeProviderView(resolveProviderConnectionView(row, undefined, null));
 }
 
 export async function updateProviderConnection(
@@ -324,7 +352,7 @@ export async function updateProviderConnection(
 		.returning();
 
 	if (row.isDefault) await ensureSingleDefault(row.id);
-	return serializeProvider(row);
+	return serializeProviderView(resolveProviderConnectionView(row, undefined, null));
 }
 
 export async function deleteProviderConnection(id: string): Promise<void> {
@@ -344,7 +372,7 @@ export async function saveUserProviderPreference(
 	const favoriteModels = normalizeFavoriteModels(input.favoriteModels ?? [], models);
 	const isDefault = input.isDefault === true;
 
-	const [row] = await db.transaction(async (tx) => {
+	await db.transaction(async (tx) => {
 		if (isDefault) {
 			await tx
 				.update(userProviderPreferences)
@@ -381,7 +409,16 @@ export async function saveUserProviderPreference(
 			.returning();
 	});
 
-	return serializeProviderWithSource(provider, applyPreferenceToRow(provider, row, row.isDefault));
+	const preferences = await preferencesForUser(userId);
+	const preferencesByProvider = new Map(
+		preferences.map((preference) => [preference.providerConnectionId, preference])
+	);
+	const userDefaultProviderId =
+		preferences.find((preference) => preference.isDefault)?.providerConnectionId ?? null;
+
+	return serializeProviderView(
+		rowWithUserPreferences(provider, preferencesByProvider, userDefaultProviderId)
+	);
 }
 
 export function getProviderSecrets(row: ProviderConnectionRow): ProviderSecretPayload {

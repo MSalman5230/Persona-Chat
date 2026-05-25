@@ -79,7 +79,7 @@ describe('agent runtime session settings', () => {
 		}));
 		vi.doMock('$lib/server/providers/runtime', () => ({
 			createProviderRuntime: vi.fn(async () => ({
-				row: { providerId: 'mock-provider' },
+				provider: { providerId: 'mock-provider' },
 				model: { id: 'mock-model' },
 				thinkingLevel: undefined,
 				authStorage: {},
@@ -137,7 +137,7 @@ describe('agent runtime session settings', () => {
 		}));
 		vi.doMock('$lib/server/providers/runtime', () => ({
 			createProviderRuntime: vi.fn(async () => ({
-				row: { providerId: 'mock-provider' },
+				provider: { providerId: 'mock-provider' },
 				model: { id: 'mock-model' },
 				thinkingLevel: 'medium',
 				authStorage: {},
@@ -196,7 +196,7 @@ describe('agent runtime session settings', () => {
 		}));
 		vi.doMock('$lib/server/providers/runtime', () => ({
 			createProviderRuntime: vi.fn(async () => ({
-				row: { providerId: 'mock-provider' },
+				provider: { providerId: 'mock-provider' },
 				model: { id: 'mock-model' },
 				thinkingLevel: undefined,
 				authStorage: {},
@@ -261,7 +261,7 @@ describe('agent runtime session settings', () => {
 		}));
 		vi.doMock('$lib/server/providers/runtime', () => ({
 			createProviderRuntime: vi.fn(async () => ({
-				row: { providerId: 'mock-provider' },
+				provider: { providerId: 'mock-provider' },
 				model: { id: 'mock-model' },
 				thinkingLevel: undefined,
 				authStorage: {},
@@ -322,7 +322,7 @@ describe('agent runtime session settings', () => {
 		}));
 		vi.doMock('$lib/server/providers/runtime', () => ({
 			createProviderRuntime: vi.fn(async () => ({
-				row: { providerId: 'mock-provider' },
+				provider: { providerId: 'mock-provider' },
 				model: { id: 'mock-model' },
 				thinkingLevel: undefined,
 				authStorage: {},
@@ -376,7 +376,7 @@ describe('agent runtime session settings', () => {
 		}));
 		vi.doMock('$lib/server/providers/runtime', () => ({
 			createProviderRuntime: vi.fn(async () => ({
-				row: { providerId: 'mock-provider' },
+				provider: { providerId: 'mock-provider' },
 				model: { id: 'mock-model' },
 				thinkingLevel: 'high',
 				authStorage: {},

@@ -685,7 +685,8 @@ describe('chat client helpers', () => {
 				name: 'Provider',
 				defaultModel: 'model-a',
 				models: ['model-a', 'model-b', 'model-c'],
-				favoriteModels: ['model-c', 'model-a']
+				favoriteModels: ['model-c', 'model-a'],
+				isDefault: true
 			})
 		).toEqual([
 			{ id: 'model-a', name: 'model-a' },

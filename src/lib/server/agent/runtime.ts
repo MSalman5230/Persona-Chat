@@ -60,7 +60,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 	const customTools = [...appToolsForAgent(input.agent), ...mcpToolsForAgent(input.agent)];
 	const allowedToolNames = customTools.map((tool) => tool.name);
 	const settingsManager = SettingsManager.inMemory({
-		defaultProvider: provider.row.providerId,
+		defaultProvider: provider.provider.providerId,
 		defaultModel: provider.model.id,
 		...(provider.thinkingLevel ? { defaultThinkingLevel: provider.thinkingLevel } : {}),
 		compaction: { enabled: false }
@@ -85,7 +85,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 
 	return {
 		...result,
-		provider: provider.row,
+		provider: provider.provider,
 		model: provider.model,
 		thinkingLevel: provider.thinkingLevel,
 		allowedToolNames

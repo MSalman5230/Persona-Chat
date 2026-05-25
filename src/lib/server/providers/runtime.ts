@@ -1,19 +1,25 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 import { AuthStorage, ModelRegistry } from '@earendil-works/pi-coding-agent';
 
-import type { ProviderConnectionRow } from '$lib/server/repositories/providers';
+import type {
+	ProviderConnectionRow,
+	ProviderConnectionView,
+	ProviderEffectiveSettings
+} from '$lib/server/repositories/providers';
 import {
 	getDefaultProviderConnection,
 	getDefaultProviderConnectionForUser,
 	getProviderConnection,
 	getProviderConnectionForUser,
-	getProviderSecrets
+	getProviderSecrets,
+	resolveProviderConnectionView
 } from '$lib/server/repositories/providers';
 import { isThinkingLevel, type ThinkingLevel } from '$lib/shared/thinking';
 import { findSupportedProvider } from './catalog';
 
 export type ProviderRuntime = {
-	row: ProviderConnectionRow;
+	provider: ProviderConnectionRow;
+	effective: ProviderEffectiveSettings;
 	authStorage: AuthStorage;
 	modelRegistry: ModelRegistry;
 	model: Model<Api>;
@@ -63,39 +69,45 @@ function registerCustomProvider(row: ProviderConnectionRow, registry: ModelRegis
 	});
 }
 
+function rowView(row: ProviderConnectionRow | undefined): ProviderConnectionView | undefined {
+	return row ? resolveProviderConnectionView(row, undefined, null) : undefined;
+}
+
 export async function createProviderRuntime(input?: {
 	userId?: string;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
 }): Promise<ProviderRuntime> {
-	const row = input?.providerConnectionId
+	const view = input?.providerConnectionId
 		? input.userId
 			? await getProviderConnectionForUser(input.providerConnectionId, input.userId)
-			: await getProviderConnection(input.providerConnectionId)
+			: rowView(await getProviderConnection(input.providerConnectionId))
 		: input?.userId
 			? await getDefaultProviderConnectionForUser(input.userId)
-			: await getDefaultProviderConnection();
+			: rowView(await getDefaultProviderConnection());
 
-	if (!row || !row.enabled) {
+	if (!view || !view.provider.enabled) {
 		throw new Error('No enabled provider connection is configured');
 	}
 
-	const authStorage = buildAuthStorage(row);
+	const provider = view.provider;
+	const authStorage = buildAuthStorage(provider);
 	const modelRegistry = ModelRegistry.inMemory(authStorage);
-	registerCustomProvider(row, modelRegistry);
+	registerCustomProvider(provider, modelRegistry);
 
-	const modelId = input?.modelId || row.defaultModel;
-	const model = modelRegistry.find(row.providerId, modelId);
+	const modelId = input?.modelId || view.effective.defaultModel;
+	const model = modelRegistry.find(provider.providerId, modelId);
 	if (!model) {
-		throw new Error(`Model ${row.providerId}/${modelId} is not available in PI's model registry`);
+		throw new Error(`Model ${provider.providerId}/${modelId} is not available in PI's model registry`);
 	}
 	if (!modelRegistry.hasConfiguredAuth(model)) {
-		throw new Error(`Provider ${row.name} has no configured authentication for ${modelId}`);
+		throw new Error(`Provider ${provider.name} has no configured authentication for ${modelId}`);
 	}
 
 	return {
-		row,
+		provider,
+		effective: view.effective,
 		authStorage,
 		modelRegistry,
 		model,
