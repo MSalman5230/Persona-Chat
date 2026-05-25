@@ -11,6 +11,7 @@ import {
 	mergeToolIntoAssistant,
 	modelOptionsForProvider,
 	normalizeServerThoughts,
+	settleUiMessageTools,
 	thoughtLabel,
 	thinkingLevelForRequest,
 	toolActivityLabel,
@@ -563,6 +564,78 @@ describe('chat client helpers', () => {
 		expect(thoughtLabel({ contentIndex: 0, text: '', status: 'thinking', redacted: false, expanded: true, startedAt: 0 }, 2000)).toBe('Thinking... 2s');
 		expect(toolStatusLabel({ contentIndex: 0, id: 'x', name: 'mcp_file_search', status: 'running', startedAt: 0 }, 2000)).toBe('Using file search 2s');
 		expect(toolActivityLabel({ contentIndex: 0, id: 'x', name: 'current_datetime', status: 'running' })).toBe('tool:current_datetime');
+	});
+
+	it('settles running tool activity as completed when a run finishes', () => {
+		const message: UiMessage = {
+			clientKey: 'assistant-1',
+			role: 'assistant',
+			text: 'Done.',
+			thoughts: [],
+			tools: [
+				{
+					contentIndex: 0,
+					id: 'call-1',
+					name: 'current_datetime',
+					status: 'running',
+					startedAt: 1000
+				}
+			]
+		};
+
+		expect(settleUiMessageTools(message, 'completed', 1750).tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'current_datetime',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 750
+			}
+		]);
+	});
+
+	it('settles only active tool activity as failed when a run errors', () => {
+		const message: UiMessage = {
+			clientKey: 'assistant-1',
+			role: 'assistant',
+			text: '',
+			thoughts: [],
+			tools: [
+				{
+					contentIndex: 0,
+					id: 'call-1',
+					name: 'current_datetime',
+					status: 'completed',
+					durationMs: 100
+				},
+				{
+					contentIndex: 1,
+					id: 'call-2',
+					name: 'mcp_search',
+					status: 'running',
+					startedAt: 1000
+				}
+			]
+		};
+
+		expect(settleUiMessageTools(message, 'failed', 1500).tools).toEqual([
+			{
+				contentIndex: 0,
+				id: 'call-1',
+				name: 'current_datetime',
+				status: 'completed',
+				durationMs: 100
+			},
+			{
+				contentIndex: 1,
+				id: 'call-2',
+				name: 'mcp_search',
+				status: 'failed',
+				startedAt: 1000,
+				durationMs: 500
+			}
+		]);
 	});
 
 	it('limits chat model options to the default and favorites', () => {

@@ -3,8 +3,10 @@ import {
 	mergeClientSnapshotThoughtDisplays,
 	mergeClientSnapshotTools,
 	normalizeChatThoughtDisplays,
+	settleChatToolDisplays,
 	type ChatThoughtDisplay,
-	type ChatToolDisplay
+	type ChatToolDisplay,
+	type ChatToolTerminalStatus
 } from '$lib/shared/chat-display';
 import { isRecord } from '$lib/shared/json';
 
@@ -357,6 +359,17 @@ export function mergeToolEventIntoMessages(
 	const next = mergeToolIntoAssistant(messages[index], payload, now);
 	if (next === messages[index]) return messages;
 	return messages.map((message, messageIndex) => (messageIndex === index ? next : message));
+}
+
+export function settleUiMessageTools(
+	message: UiMessage,
+	status: ChatToolTerminalStatus,
+	now = Date.now()
+): UiMessage {
+	if (message.tools.length === 0) return message;
+
+	const tools = settleChatToolDisplays(message.tools, status, now);
+	return tools === message.tools ? message : { ...message, tools };
 }
 
 function emptyTurn(key: string): UiConversationTurn {

@@ -335,7 +335,8 @@ async function executeChatRun(
 			turn.chatSession.id,
 			turn.runtime.session.messages as never,
 			turn.historyCount,
-			thoughtTimings
+			thoughtTimings,
+			liveRun.messageSnapshots
 		);
 		await updateChatRunStatus(liveRun.run.id, 'completed');
 		await publishSnapshot(liveRun, null);

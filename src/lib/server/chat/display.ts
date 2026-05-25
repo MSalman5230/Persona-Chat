@@ -125,9 +125,12 @@ export function hydrateChatMessageDisplay(
 
 export function normalizeAgentMessageForStorage(
 	message: AgentMessage,
-	thoughtTimings?: ThoughtTimingsByContentIndex
+	thoughtTimings?: ThoughtTimingsByContentIndex,
+	storedDisplay?: unknown
 ) {
-	const display = buildChatMessageDisplay(message, thoughtTimings);
+	const hydratedDisplay = buildChatMessageDisplay(message, thoughtTimings);
+	const display =
+		storedDisplay === undefined ? hydratedDisplay : overlayStoredDisplay(hydratedDisplay, storedDisplay);
 
 	return {
 		role: message.role,

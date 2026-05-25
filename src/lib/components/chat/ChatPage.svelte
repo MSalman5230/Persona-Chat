@@ -11,6 +11,7 @@
 		presetIdForPrompt,
 		responseErrorMessage,
 		sortSystemPromptPresets,
+		settleUiMessageTools,
 		temperatureFromServer,
 		thinkingLevelForRequest,
 		uiMessageFromServer,
@@ -491,6 +492,10 @@
 		messages = mergeToolEventIntoMessages(messages, payload);
 	}
 
+	function settleToolActivity(status: 'completed' | 'failed') {
+		messages = messages.map((item) => settleUiMessageTools(item, status));
+	}
+
 	function activeRunFromPayload(payload: unknown): ActiveRun | null {
 		if (!isRecord(payload) || typeof payload.id !== 'string' || typeof payload.sessionId !== 'string') {
 			return null;
@@ -541,7 +546,13 @@
 			if (Array.isArray(payload.messages)) {
 				messages = uiMessagesFromServerSnapshot(payload.messages, messages);
 			}
-			setActiveRun(activeRunFromPayload(payload.activeRun));
+			const snapshotRun = activeRunFromPayload(payload.activeRun);
+			if (snapshotRun) {
+				setActiveRun(snapshotRun);
+			} else {
+				activeRun = null;
+				isStreaming = false;
+			}
 		}
 
 		if (eventName === 'event' && payload.type === 'message_update') {
@@ -568,10 +579,12 @@
 		}
 
 		if (eventName === 'done') {
+			settleToolActivity('completed');
 			setActiveRun(null);
 		}
 
 		if (eventName === 'run_error') {
+			settleToolActivity('failed');
 			errorText = String(payload.message ?? 'Chat request failed');
 			setActiveRun(null);
 		}

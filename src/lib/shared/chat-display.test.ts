@@ -188,6 +188,40 @@ describe('chat display helpers', () => {
 		});
 	});
 
+	it('overlays stored tool state by id when content indexes differ', () => {
+		const display = overlayStoredDisplay(
+			{
+				role: 'assistant',
+				text: 'Done.',
+				thoughts: [{ contentIndex: 0, text: 'Used the clock.', status: 'thought' }],
+				tools: [{ contentIndex: 1, id: 'call-1', name: 'current_datetime', status: 'pending' }]
+			},
+			{
+				tools: [
+					{
+						contentIndex: 0,
+						id: 'call-1',
+						name: 'current_datetime',
+						status: 'completed',
+						startedAt: 1000,
+						durationMs: 250
+					}
+				]
+			}
+		);
+
+		expect(display.tools).toEqual([
+			{
+				contentIndex: 1,
+				id: 'call-1',
+				name: 'current_datetime',
+				status: 'completed',
+				startedAt: 1000,
+				durationMs: 250
+			}
+		]);
+	});
+
 	it('appends stored-only tools while overlaying stored display', () => {
 		const display = overlayStoredDisplay(
 			{
