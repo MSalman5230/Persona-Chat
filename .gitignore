@@ -25,3 +25,4 @@ vite.config.ts.timestamp-*
 # extra
 
 code_review_*.md
+code_review-*.md
