@@ -1,5 +1,6 @@
 import type { PageServerLoad } from './$types';
 
+import { requireUser } from '$lib/server/auth/guards';
 import { loadChatPageData } from '$lib/server/chat/page-data';
 
-export const load: PageServerLoad = async () => loadChatPageData();
+export const load: PageServerLoad = async ({ locals }) => loadChatPageData(requireUser(locals).id);

@@ -26,16 +26,29 @@ function fallbackDisplay(message: ChatMessageInput): ChatMessageDisplay {
 	};
 }
 
-export async function listChatSessions(): Promise<ChatSessionRow[]> {
-	return db.select().from(chatSessions).orderBy(desc(chatSessions.updatedAt)).limit(30);
+export async function listChatSessions(userId: string): Promise<ChatSessionRow[]> {
+	return db
+		.select()
+		.from(chatSessions)
+		.where(eq(chatSessions.userId, userId))
+		.orderBy(desc(chatSessions.updatedAt))
+		.limit(30);
 }
 
-export async function getChatSession(id: string): Promise<ChatSessionRow | undefined> {
-	const [row] = await db.select().from(chatSessions).where(eq(chatSessions.id, id)).limit(1);
+export async function getChatSession(
+	userId: string,
+	id: string
+): Promise<ChatSessionRow | undefined> {
+	const [row] = await db
+		.select()
+		.from(chatSessions)
+		.where(and(eq(chatSessions.userId, userId), eq(chatSessions.id, id)))
+		.limit(1);
 	return row;
 }
 
 export async function createChatSession(input: {
+	userId: string;
 	title: string;
 	agentId: string | null;
 	providerConnectionId: string | null;
@@ -47,6 +60,7 @@ export async function createChatSession(input: {
 	const [row] = await db
 		.insert(chatSessions)
 		.values({
+			userId: input.userId,
 			title: input.title || 'New chat',
 			agentId: input.agentId,
 			providerConnectionId: input.providerConnectionId,
@@ -60,6 +74,7 @@ export async function createChatSession(input: {
 }
 
 export async function updateChatSession(
+	userId: string,
 	id: string,
 	input: Partial<{
 		title: string;
@@ -74,11 +89,13 @@ export async function updateChatSession(
 	await db
 		.update(chatSessions)
 		.set({ ...input, updatedAt: new Date() })
-		.where(eq(chatSessions.id, id));
+		.where(and(eq(chatSessions.userId, userId), eq(chatSessions.id, id)));
 }
 
-export async function deleteChatSession(id: string): Promise<void> {
-	await db.delete(chatSessions).where(eq(chatSessions.id, id));
+export async function deleteChatSession(userId: string, id: string): Promise<void> {
+	await db
+		.delete(chatSessions)
+		.where(and(eq(chatSessions.userId, userId), eq(chatSessions.id, id)));
 }
 
 export async function listChatMessages(sessionId: string): Promise<ChatMessageRow[]> {

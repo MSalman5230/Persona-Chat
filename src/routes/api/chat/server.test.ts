@@ -11,9 +11,14 @@ const mocks = vi.hoisted(() => {
 
 	return {
 		ActiveChatRunError,
+		requireUser: vi.fn(() => ({ id: 'user-1' })),
 		startChatRun: vi.fn()
 	};
 });
+
+vi.mock('$lib/server/auth/guards', () => ({
+	requireUser: mocks.requireUser
+}));
 
 vi.mock('$lib/server/chat/runs', () => ({
 	ActiveChatRunError: mocks.ActiveChatRunError,
@@ -68,7 +73,7 @@ describe('legacy chat route', () => {
 			},
 			session: result.session
 		});
-		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello' });
+		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello', userId: 'user-1' });
 	});
 
 	it('surfaces active-run conflicts for direct legacy POST requests', async () => {
@@ -82,6 +87,6 @@ describe('legacy chat route', () => {
 			status: 409,
 			body: { message: 'A response is already streaming for this chat' }
 		});
-		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello' });
+		expect(mocks.startChatRun).toHaveBeenCalledWith({ sessionId, message: 'hello', userId: 'user-1' });
 	});
 });

@@ -374,15 +374,24 @@ describe('chat turn thinking settings', () => {
 		vi.doMock('$lib/server/repositories/agents', () => ({
 			getAgent: vi.fn()
 		}));
+		vi.doMock('$lib/server/repositories/user-settings', () => ({
+			getEffectiveUserSettings: vi.fn(async () => ({
+				providers: [],
+				defaultProviderId: 'provider-1',
+				defaultModel: 'model-1',
+				defaultThinkingLevel: null
+			}))
+		}));
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
 		const { prepareChatTurn } = await import('./service');
-		await prepareChatTurn({ message: 'hello', thinkingLevel: 'high' });
+		await prepareChatTurn({ userId: 'user-1', message: 'hello', thinkingLevel: 'high' });
 
 		expect(runtimeInputs[0]?.thinkingLevel).toBe('high');
 		expect(createdSessions[0]?.thinkingLevel).toBe('high');
 		vi.doUnmock('$lib/server/repositories/chat');
 		vi.doUnmock('$lib/server/repositories/agents');
+		vi.doUnmock('$lib/server/repositories/user-settings');
 		vi.doUnmock('$lib/server/agent/runtime');
 	});
 
@@ -390,9 +399,11 @@ describe('chat turn thinking settings', () => {
 		vi.resetModules();
 		const runtimeInputs: Array<{ thinkingLevel?: string | null }> = [];
 		const updateInputs: Array<{ thinkingLevel?: string | null }> = [];
-		const updateChatSession = vi.fn(async (_id: string, input: { thinkingLevel?: string | null }) => {
+		const updateChatSession = vi.fn(
+			async (_userId: string, _id: string, input: { thinkingLevel?: string | null }) => {
 			updateInputs.push(input);
-		});
+			}
+		);
 		const createServerAgentSession = vi.fn(async (input: { thinkingLevel?: string | null }) => {
 			runtimeInputs.push(input);
 			return {
@@ -423,7 +434,12 @@ describe('chat turn thinking settings', () => {
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
 		const { prepareChatTurn } = await import('./service');
-		await prepareChatTurn({ sessionId: 'session-1', message: 'hello', thinkingLevel: null });
+		await prepareChatTurn({
+			userId: 'user-1',
+			sessionId: 'session-1',
+			message: 'hello',
+			thinkingLevel: null
+		});
 
 		expect(runtimeInputs[0]?.thinkingLevel).toBeNull();
 		expect(updateInputs[0]?.thinkingLevel).toBeNull();
@@ -451,9 +467,11 @@ describe('chat turn agents', () => {
 			createdAt: new Date(),
 			updatedAt: new Date()
 		};
-		const updateChatSession = vi.fn(async (_id: string, input: { agentId?: string | null }) => {
-			updateInputs.push(input);
-		});
+		const updateChatSession = vi.fn(
+			async (_userId: string, _id: string, input: { agentId?: string | null }) => {
+				updateInputs.push(input);
+			}
+		);
 		const createServerAgentSession = vi.fn(
 			async (input: { agent?: { systemPrompt: string }; history?: unknown[] }) => {
 				runtimeInputs.push(input);
@@ -491,6 +509,7 @@ describe('chat turn agents', () => {
 
 		const { prepareChatTurn } = await import('./service');
 		const turn = await prepareChatTurn({
+			userId: 'user-1',
 			sessionId: 'session-1',
 			message: 'hello',
 			agentId: agent.id

@@ -1,21 +1,44 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { authClient } from '$lib/auth-client';
 
 	type ChatSession = {
 		id: string;
 		title: string;
 	};
 
+	type SidebarUser = {
+		name: string;
+		email: string;
+	};
+
 	interface Props {
 		open: boolean;
 		sessions: ChatSession[];
 		activeSessionId: string | null;
+		user: SidebarUser | null;
+		isAdmin: boolean;
 		onNewChat: () => void;
 		onDeleteChat: (chat: ChatSession) => void;
 		onClose: () => void;
 	}
 
-	let { open, sessions, activeSessionId, onNewChat, onDeleteChat, onClose }: Props = $props();
+	let {
+		open,
+		sessions,
+		activeSessionId,
+		user,
+		isAdmin,
+		onNewChat,
+		onDeleteChat,
+		onClose
+	}: Props = $props();
+
+	async function signOut() {
+		await authClient.signOut();
+		await goto(resolve('/login'), { replaceState: true });
+	}
 </script>
 
 <aside
@@ -98,6 +121,31 @@
 			<span class="material-symbols-outlined" aria-hidden="true">settings</span>
 			<span class="font-body-sm text-body-sm">Settings</span>
 		</a>
+		{#if isAdmin}
+			<a
+				href={resolve('/admin-settings')}
+				class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+			>
+				<span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span>
+				<span class="font-body-sm text-body-sm">Admin Settings</span>
+			</a>
+		{/if}
+		<div class="border-t border-border-subtle pt-3">
+			{#if user}
+				<div class="px-4 pb-2">
+					<p class="truncate font-body-sm text-body-sm text-primary">{user.name}</p>
+					<p class="truncate font-code text-code text-text-muted">{user.email}</p>
+				</div>
+			{/if}
+			<button
+				type="button"
+				class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+				onclick={signOut}
+			>
+				<span class="material-symbols-outlined" aria-hidden="true">logout</span>
+				<span class="font-body-sm text-body-sm">Sign Out</span>
+			</button>
+		</div>
 	</div>
 </aside>
 

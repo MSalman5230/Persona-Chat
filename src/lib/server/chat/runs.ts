@@ -23,6 +23,7 @@ import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import type { ThoughtTimingsByAssistant } from '$lib/server/chat/display';
 
 export type ChatRunInput = {
+	userId: string;
 	sessionId?: string | null;
 	message: string;
 	agentId?: string | null;
@@ -412,11 +413,6 @@ async function executeChatRun(
 }
 
 export async function startChatRun(input: ChatRunInput) {
-	if (input.sessionId) {
-		const active = await resolveActiveChatRun(input.sessionId);
-		if (active.activeRun) throw new ActiveChatRunError();
-	}
-
 	const turn = await prepareChatTurn(input);
 	const active = await resolveActiveChatRun(turn.chatSession.id);
 	if (active.activeRun) {

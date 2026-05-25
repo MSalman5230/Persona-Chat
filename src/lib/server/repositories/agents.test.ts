@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type AgentRecord = {
 	id: string;
+	userId: string;
 	name: string;
 	systemPrompt: string;
 	toolNames: string[];
@@ -14,6 +15,7 @@ type AgentRecord = {
 const fakeDb = vi.hoisted(() => {
 	type Row = {
 		id: string;
+		userId: string;
 		name: string;
 		systemPrompt: string;
 		toolNames: string[];
@@ -27,7 +29,8 @@ const fakeDb = vi.hoisted(() => {
 		created_at: 'createdAt',
 		id: 'id',
 		is_default: 'isDefault',
-		name: 'name'
+		name: 'name',
+		user_id: 'userId'
 	};
 
 	let rows: Row[] = [];
@@ -74,8 +77,14 @@ const fakeDb = vi.hoisted(() => {
 	}
 
 	function assertSingleDefault() {
-		const defaults = rows.filter((row) => row.isDefault);
-		if (defaults.length > 1) throw new Error('duplicate default agent');
+		const defaultsByUser = new Map<string, number>();
+		for (const row of rows) {
+			if (!row.isDefault) continue;
+			defaultsByUser.set(row.userId, (defaultsByUser.get(row.userId) ?? 0) + 1);
+		}
+		for (const count of defaultsByUser.values()) {
+			if (count > 1) throw new Error('duplicate default agent');
+		}
 	}
 
 	class SelectBuilder {
@@ -137,6 +146,7 @@ const fakeDb = vi.hoisted(() => {
 			const now = new Date(`2026-05-25T00:00:${String(++sequence).padStart(2, '0')}.000Z`);
 			const row: Row = {
 				id: `agent-${sequence}`,
+				userId: '',
 				name: '',
 				systemPrompt: '',
 				toolNames: [],
@@ -235,7 +245,7 @@ vi.mock('$lib/server/db', () => ({
 }));
 
 vi.mock('./mcp', () => ({
-	listMcpServers: vi.fn(async () => [])
+	listEnabledMcpServerOptions: vi.fn(async () => [])
 }));
 
 import {
@@ -247,11 +257,13 @@ import {
 
 const firstId = '00000000-0000-4000-8000-000000000001';
 const secondId = '00000000-0000-4000-8000-000000000002';
+const userId = 'user-1';
 
 function agentRow(overrides: Partial<AgentRecord> & Pick<AgentRecord, 'id' | 'name'>): AgentRecord {
 	const createdAt = overrides.createdAt ?? new Date('2026-05-25T00:00:00.000Z');
 	return {
 		systemPrompt: '',
+		userId,
 		toolNames: [],
 		mcpServerIds: [],
 		isDefault: false,
@@ -267,7 +279,7 @@ describe('agent repository default invariant', () => {
 	});
 
 	it('promotes the first created agent even when the input opts out of default', async () => {
-		const created = await createAgent({
+		const created = await createAgent(userId, {
 			name: 'First',
 			systemPrompt: '',
 			toolNames: [],
@@ -289,7 +301,7 @@ describe('agent repository default invariant', () => {
 			})
 		]);
 
-		const created = await createAgent({
+		const created = await createAgent(userId, {
 			name: 'Second',
 			systemPrompt: '',
 			toolNames: [],
@@ -307,7 +319,7 @@ describe('agent repository default invariant', () => {
 			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
 		]);
 
-		const updated = await updateAgent(firstId, {
+		const updated = await updateAgent(userId, firstId, {
 			name: 'First renamed',
 			systemPrompt: '',
 			toolNames: [],
@@ -325,7 +337,7 @@ describe('agent repository default invariant', () => {
 			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
 		]);
 
-		const updated = await updateAgentDefault(secondId, { isDefault: true });
+		const updated = await updateAgentDefault(userId, secondId, { isDefault: true });
 
 		expect(updated).toMatchObject({ id: secondId, isDefault: true });
 		expect(fakeDb.defaultRows().map((agent) => agent.id)).toEqual([secondId]);
@@ -337,7 +349,7 @@ describe('agent repository default invariant', () => {
 			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
 		]);
 
-		const updated = await updateAgentDefault(firstId, { isDefault: false });
+		const updated = await updateAgentDefault(userId, firstId, { isDefault: false });
 
 		expect(updated).toMatchObject({ id: firstId, isDefault: false });
 		expect(fakeDb.defaultRows().map((agent) => agent.id)).toEqual([secondId]);
@@ -349,9 +361,38 @@ describe('agent repository default invariant', () => {
 			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
 		]);
 
-		await deleteAgent(firstId);
+		await deleteAgent(userId, firstId);
 
 		expect(fakeDb.rows().map((agent) => agent.id)).toEqual([secondId]);
 		expect(fakeDb.defaultRows().map((agent) => agent.id)).toEqual([secondId]);
+	});
+
+	it('keeps default agents isolated per user', async () => {
+		fakeDb.setRows([
+			agentRow({ id: firstId, userId: 'user-1', name: 'Researcher', isDefault: true }),
+			agentRow({ id: secondId, userId: 'user-2', name: 'Researcher', isDefault: true })
+		]);
+
+		const created = await createAgent('user-2', {
+			name: 'Writer',
+			systemPrompt: '',
+			toolNames: [],
+			mcpServerIds: [],
+			isDefault: true
+		});
+
+		expect(created).toMatchObject({ name: 'Writer', isDefault: true });
+		expect(
+			fakeDb
+				.rows()
+				.filter((agent) => agent.userId === 'user-1' && agent.isDefault)
+				.map((agent) => agent.id)
+		).toEqual([firstId]);
+		expect(
+			fakeDb
+				.rows()
+				.filter((agent) => agent.userId === 'user-2' && agent.isDefault)
+				.map((agent) => agent.name)
+		).toEqual(['Writer']);
 	});
 });

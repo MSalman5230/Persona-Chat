@@ -65,7 +65,9 @@
 	);
 	let selectedModelOverride = $state<string | null>(untrack(() => data.activeSession?.modelId ?? null));
 	let selectedThinking = $state<ChatThinkingSelection>(
-		untrack(() => chatThinkingSelectionFromServer(data.activeSession?.thinkingLevel))
+		untrack(() =>
+			chatThinkingSelectionFromServer(data.activeSession?.thinkingLevel ?? data.defaultThinkingLevel)
+		)
 	);
 	let temperatureAuto = $state(
 		untrack(() => temperatureFromServer(data.activeSession?.temperature) === null)
@@ -160,7 +162,7 @@
 		selectedAgentIdOverride = session ? (session.agentId ?? '') : (data.defaultAgentId ?? '');
 		selectedProviderIdOverride = session?.providerConnectionId ?? null;
 		selectedModelOverride = session?.modelId ?? null;
-		selectedThinking = chatThinkingSelectionFromServer(session?.thinkingLevel);
+		selectedThinking = chatThinkingSelectionFromServer(session?.thinkingLevel ?? data.defaultThinkingLevel);
 		resetSessionSettings(temperatureFromServer(session?.temperature));
 		messages = data.messages.map((item: Record<string, unknown>) => uiMessageFromServer(item));
 		errorText = data.interruptedRun?.errorText ?? '';
@@ -201,7 +203,7 @@
 		sidebarOpen = false;
 		settingsOpen = false;
 		selectedAgentIdOverride = data.defaultAgentId ?? '';
-		selectedThinking = 'auto';
+		selectedThinking = chatThinkingSelectionFromServer(data.defaultThinkingLevel);
 		resetSessionSettings();
 	}
 
@@ -565,6 +567,8 @@
 			open={sidebarOpen}
 			{sessions}
 			{activeSessionId}
+			user={data.user}
+			isAdmin={data.isAdmin}
 			onNewChat={newChat}
 			onDeleteChat={deleteChat}
 			onClose={() => (sidebarOpen = false)}

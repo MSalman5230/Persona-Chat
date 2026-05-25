@@ -8,6 +8,7 @@ import {
 	type ChatMessageRow
 } from '$lib/server/repositories/chat';
 import { getAgent } from '$lib/server/repositories/agents';
+import { getEffectiveUserSettings } from '$lib/server/repositories/user-settings';
 import {
 	hydrateChatMessageDisplay,
 	normalizeAgentMessageForStorage,
@@ -22,6 +23,7 @@ function titleFromPrompt(prompt: string): string {
 }
 
 export async function prepareChatTurn(input: {
+	userId: string;
 	sessionId?: string | null;
 	message: string;
 	agentId?: string | null;
@@ -30,17 +32,23 @@ export async function prepareChatTurn(input: {
 	thinkingLevel?: string | null;
 	temperature?: number | null;
 }) {
-	const existing = input.sessionId ? await getChatSession(input.sessionId) : undefined;
+	const existing = input.sessionId ? await getChatSession(input.userId, input.sessionId) : undefined;
+	if (input.sessionId && !existing) throw new Error('Chat session not found');
 	const historyRows = existing ? await listChatMessages(existing.id) : [];
 	const history = historyRows.map((row) => row.piMessage);
 	const agentId = input.agentId !== undefined ? input.agentId : (existing?.agentId ?? null);
-	const agent = agentId ? await getAgent(agentId) : null;
+	const agent = agentId ? await getAgent(input.userId, agentId) : null;
 	if (agentId && !agent) throw new Error('Agent not found');
+	const defaults = existing ? null : await getEffectiveUserSettings(input.userId);
 	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
 	const thinkingLevel =
-		input.thinkingLevel !== undefined ? input.thinkingLevel : (existing?.thinkingLevel ?? null);
+		input.thinkingLevel !== undefined
+			? input.thinkingLevel
+			: (existing?.thinkingLevel ?? defaults?.defaultThinkingLevel ?? null);
 	const runtime = await createServerAgentSession({
-		providerConnectionId: input.providerConnectionId ?? existing?.providerConnectionId,
+		userId: input.userId,
+		providerConnectionId:
+			input.providerConnectionId ?? existing?.providerConnectionId ?? defaults?.defaultProviderId,
 		modelId: input.modelId ?? existing?.modelId,
 		thinkingLevel,
 		agent,
@@ -51,6 +59,7 @@ export async function prepareChatTurn(input: {
 	let chatSession =
 		existing ??
 		(await createChatSession({
+			userId: input.userId,
 			title: titleFromPrompt(input.message),
 			agentId,
 			providerConnectionId: runtime.provider.id,
@@ -61,7 +70,7 @@ export async function prepareChatTurn(input: {
 		}));
 
 	if (existing) {
-		await updateChatSession(existing.id, {
+		await updateChatSession(input.userId, existing.id, {
 			agentId,
 			providerConnectionId: runtime.provider.id,
 			providerId: runtime.provider.providerId,
