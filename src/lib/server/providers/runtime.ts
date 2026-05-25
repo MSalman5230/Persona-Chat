@@ -7,6 +7,10 @@ import {
 	getProviderConnection,
 	getProviderSecrets
 } from '$lib/server/repositories/providers';
+import {
+	getDefaultProviderConnectionForUser,
+	getProviderConnectionForUser
+} from '$lib/server/repositories/user-settings';
 import { isThinkingLevel, type ThinkingLevel } from '$lib/shared/thinking';
 import { findSupportedProvider } from './catalog';
 
@@ -62,13 +66,18 @@ function registerCustomProvider(row: ProviderConnectionRow, registry: ModelRegis
 }
 
 export async function createProviderRuntime(input?: {
+	userId?: string | null;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
 }): Promise<ProviderRuntime> {
-	const row = input?.providerConnectionId
-		? await getProviderConnection(input.providerConnectionId)
-		: await getDefaultProviderConnection();
+	const row = input?.userId
+		? input.providerConnectionId
+			? await getProviderConnectionForUser(input.userId, input.providerConnectionId)
+			: await getDefaultProviderConnectionForUser(input.userId)
+		: input?.providerConnectionId
+			? await getProviderConnection(input.providerConnectionId)
+			: await getDefaultProviderConnection();
 
 	if (!row || !row.enabled) {
 		throw new Error('No enabled provider connection is configured');

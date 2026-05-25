@@ -37,6 +37,10 @@ export type PublicMcpServer = Omit<McpServerRow, 'secret'> & {
 	hasEnvSecrets: boolean;
 	hasHeaderSecrets: boolean;
 };
+export type UserMcpServerOption = Pick<
+	PublicMcpServer,
+	'id' | 'name' | 'slug' | 'transport' | 'enabled' | 'status' | 'lastError'
+>;
 
 function decryptMcpSecret(secret: EncryptedJsonPayload | null | undefined): McpSecretPayload {
 	return decryptJson<McpSecretPayload>(secret) ?? {};
@@ -77,6 +81,23 @@ function serializeMcp(row: McpServerRow): PublicMcpServer {
 export async function listMcpServers(): Promise<PublicMcpServer[]> {
 	const rows = await db.select().from(mcpServers).orderBy(desc(mcpServers.createdAt));
 	return rows.map(serializeMcp);
+}
+
+export async function listMcpServersForUser(): Promise<UserMcpServerOption[]> {
+	const rows = await db
+		.select()
+		.from(mcpServers)
+		.where(eq(mcpServers.enabled, true))
+		.orderBy(desc(mcpServers.createdAt));
+	return rows.map((row) => ({
+		id: row.id,
+		name: row.name,
+		slug: row.slug,
+		transport: row.transport,
+		enabled: row.enabled,
+		status: row.status,
+		lastError: row.lastError
+	}));
 }
 
 export async function listEnabledMcpServers(): Promise<McpServerRow[]> {

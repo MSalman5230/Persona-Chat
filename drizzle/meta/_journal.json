@@ -8,6 +8,13 @@
       "when": 1779725942711,
       "tag": "0000_glamorous_mimic",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779750250100,
+      "tag": "0001_better_auth_local_auth",
+      "breakpoints": true
     }
   ]
 }

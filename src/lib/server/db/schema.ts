@@ -6,6 +6,7 @@ import {
 	jsonb,
 	pgEnum,
 	pgTable,
+	primaryKey,
 	real,
 	text,
 	timestamp,
@@ -35,6 +36,90 @@ export type McpSecretPayload = {
 	headers?: Record<string, string>;
 };
 
+export const users = pgTable(
+	'user',
+	{
+		id: text('id').primaryKey(),
+		name: text('name').notNull(),
+		email: text('email').notNull(),
+		emailVerified: boolean('email_verified').notNull(),
+		image: text('image'),
+		role: text('role'),
+		banned: boolean('banned').default(false),
+		banReason: text('ban_reason'),
+		banExpires: timestamp('ban_expires', { withTimezone: true }),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull()
+	},
+	(table) => ({
+		emailIdx: uniqueIndex('user_email_idx').on(table.email)
+	})
+);
+
+export const sessions = pgTable(
+	'session',
+	{
+		id: text('id').primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		token: text('token').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		ipAddress: text('ip_address'),
+		userAgent: text('user_agent'),
+		impersonatedBy: text('impersonated_by'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull()
+	},
+	(table) => ({
+		tokenIdx: uniqueIndex('session_token_idx').on(table.token),
+		userIdx: index('session_user_idx').on(table.userId)
+	})
+);
+
+export const accounts = pgTable(
+	'account',
+	{
+		id: text('id').primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		accountId: text('account_id').notNull(),
+		providerId: text('provider_id').notNull(),
+		accessToken: text('access_token'),
+		refreshToken: text('refresh_token'),
+		idToken: text('id_token'),
+		accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+		refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+		scope: text('scope'),
+		password: text('password'),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull()
+	},
+	(table) => ({
+		userIdx: index('account_user_idx').on(table.userId),
+		providerAccountIdx: uniqueIndex('account_provider_account_idx').on(
+			table.providerId,
+			table.accountId
+		)
+	})
+);
+
+export const verifications = pgTable(
+	'verification',
+	{
+		id: text('id').primaryKey(),
+		identifier: text('identifier').notNull(),
+		value: text('value').notNull(),
+		expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+		createdAt: timestamp('created_at', { withTimezone: true }),
+		updatedAt: timestamp('updated_at', { withTimezone: true })
+	},
+	(table) => ({
+		identifierIdx: index('verification_identifier_idx').on(table.identifier)
+	})
+);
+
 export const providerConnections = pgTable(
 	'provider_connections',
 	{
@@ -58,6 +143,44 @@ export const providerConnections = pgTable(
 	(table) => ({
 		providerIdx: index('provider_connections_provider_idx').on(table.providerId),
 		defaultIdx: index('provider_connections_default_idx').on(table.isDefault)
+	})
+);
+
+export const userSettings = pgTable('user_settings', {
+	userId: text('user_id')
+		.primaryKey()
+		.references(() => users.id, { onDelete: 'cascade' }),
+	defaultProviderConnectionId: uuid('default_provider_connection_id').references(
+		() => providerConnections.id,
+		{ onDelete: 'set null' }
+	),
+	defaultThinkingLevel: text('default_thinking_level'),
+	preferences: jsonb('preferences').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+	createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+	updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+});
+
+export const userProviderPreferences = pgTable(
+	'user_provider_preferences',
+	{
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
+		providerConnectionId: uuid('provider_connection_id')
+			.notNull()
+			.references(() => providerConnections.id, { onDelete: 'cascade' }),
+		defaultModel: text('default_model'),
+		favoriteModels: jsonb('favorite_models').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		pk: primaryKey({
+			columns: [table.userId, table.providerConnectionId],
+			name: 'user_provider_preferences_pk'
+		}),
+		userIdx: index('user_provider_preferences_user_idx').on(table.userId),
+		providerIdx: index('user_provider_preferences_provider_idx').on(table.providerConnectionId)
 	})
 );
 
@@ -90,6 +213,9 @@ export const agents = pgTable(
 	'agents',
 	{
 		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
 		systemPrompt: text('system_prompt').notNull().default(''),
 		toolNames: jsonb('tool_names').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
@@ -99,10 +225,11 @@ export const agents = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => ({
-		nameIdx: uniqueIndex('agents_name_idx').on(table.name),
+		nameIdx: uniqueIndex('agents_user_name_idx').on(table.userId, table.name),
 		defaultIdx: uniqueIndex('agents_default_idx')
-			.on(table.isDefault)
-			.where(sql`${table.isDefault} = true`)
+			.on(table.userId, table.isDefault)
+			.where(sql`${table.isDefault} = true`),
+		userIdx: index('agents_user_idx').on(table.userId)
 	})
 );
 
@@ -110,6 +237,9 @@ export const chatSessions = pgTable(
 	'chat_sessions',
 	{
 		id: uuid('id').defaultRandom().primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => users.id, { onDelete: 'cascade' }),
 		title: text('title').notNull().default('New chat'),
 		agentId: uuid('agent_id').references(() => agents.id, {
 			onDelete: 'set null'
@@ -125,7 +255,8 @@ export const chatSessions = pgTable(
 		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
 	},
 	(table) => ({
-		createdAtIdx: index('chat_sessions_created_at_idx').on(table.createdAt)
+		createdAtIdx: index('chat_sessions_created_at_idx').on(table.createdAt),
+		userIdx: index('chat_sessions_user_idx').on(table.userId)
 	})
 );
 

@@ -2,6 +2,7 @@ import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
 import { parseJsonRequest } from '$lib/server/api';
+import { requireUser } from '$lib/server/auth/guards';
 import { resolveActiveChatRun } from '$lib/server/chat/runs';
 import {
 	ChatSessionSettingsValidationError,
@@ -15,8 +16,9 @@ import {
 	listChatMessages
 } from '$lib/server/repositories/chat';
 
-export const GET: RequestHandler = async ({ params }) => {
-	const session = await getChatSession(params.id);
+export const GET: RequestHandler = async ({ locals, params }) => {
+	const user = requireUser(locals);
+	const session = await getChatSession(user.id, params.id);
 	if (!session) error(404, 'Chat session not found');
 	const messages = await listChatMessages(session.id);
 	const runState = await resolveActiveChatRun(session.id);
@@ -28,8 +30,9 @@ export const GET: RequestHandler = async ({ params }) => {
 	});
 };
 
-export const PATCH: RequestHandler = async ({ params, request }) => {
-	const session = await getChatSession(params.id);
+export const PATCH: RequestHandler = async ({ locals, params, request }) => {
+	const user = requireUser(locals);
+	const session = await getChatSession(user.id, params.id);
 	if (!session) error(404, 'Chat session not found');
 
 	const body = await parseJsonRequest(
@@ -38,7 +41,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		'Invalid chat session settings'
 	);
 	try {
-		const updatedSession = await updateChatSessionSettings(session, body);
+		const updatedSession = await updateChatSessionSettings(user.id, session, body);
 
 		return json({
 			session: updatedSession
@@ -49,8 +52,9 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	}
 };
 
-export const DELETE: RequestHandler = async ({ params }) => {
-	const session = await getChatSession(params.id);
+export const DELETE: RequestHandler = async ({ locals, params }) => {
+	const user = requireUser(locals);
+	const session = await getChatSession(user.id, params.id);
 	if (!session) error(404, 'Chat session not found');
 
 	const runState = await resolveActiveChatRun(session.id);
@@ -58,6 +62,6 @@ export const DELETE: RequestHandler = async ({ params }) => {
 		error(409, 'Wait for the response to finish before deleting this chat');
 	}
 
-	await deleteChatSession(session.id);
+	await deleteChatSession(user.id, session.id);
 	return json({ ok: true });
 };

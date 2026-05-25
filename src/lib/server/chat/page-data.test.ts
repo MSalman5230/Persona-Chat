@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
 	listAgentOptions: vi.fn(),
 	listAgents: vi.fn(),
-	listProviderConnections: vi.fn(),
+	getEffectiveUserSettings: vi.fn(),
 	listChatSessions: vi.fn(),
 	getChatSession: vi.fn(),
 	listChatMessages: vi.fn(),
@@ -16,8 +16,8 @@ vi.mock('$lib/server/repositories/agents', () => ({
 	listAgents: mocks.listAgents
 }));
 
-vi.mock('$lib/server/repositories/providers', () => ({
-	listProviderConnections: mocks.listProviderConnections
+vi.mock('$lib/server/repositories/user-settings', () => ({
+	getEffectiveUserSettings: mocks.getEffectiveUserSettings
 }));
 
 vi.mock('$lib/server/repositories/chat', () => ({
@@ -39,16 +39,21 @@ import { loadChatPageData } from './page-data';
 describe('loadChatPageData', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mocks.listProviderConnections.mockResolvedValue([
-			{
-				id: 'provider-1',
-				name: 'OpenAI',
-				defaultModel: 'gpt-5',
-				models: ['gpt-5'],
-				favoriteModels: ['gpt-5'],
-				isDefault: true
-			}
-		]);
+		mocks.getEffectiveUserSettings.mockResolvedValue({
+			providers: [
+				{
+					id: 'provider-1',
+					name: 'OpenAI',
+					defaultModel: 'gpt-5',
+					models: ['gpt-5'],
+					favoriteModels: ['gpt-5'],
+					isDefault: true
+				}
+			],
+			defaultProviderId: 'provider-1',
+			defaultModel: 'gpt-5',
+			defaultThinkingLevel: 'medium'
+		});
 		mocks.listChatSessions.mockResolvedValue([]);
 		mocks.listAgentOptions.mockResolvedValue([
 			{
@@ -73,9 +78,9 @@ describe('loadChatPageData', () => {
 	});
 
 	it('loads selector-only agent options for the chat page', async () => {
-		const data = await loadChatPageData();
+		const data = await loadChatPageData('user-1');
 
-		expect(mocks.listAgentOptions).toHaveBeenCalledOnce();
+		expect(mocks.listAgentOptions).toHaveBeenCalledWith('user-1');
 		expect(mocks.listAgents).not.toHaveBeenCalled();
 		expect(data.defaultAgentId).toBe('agent-1');
 		expect(data.agents).toEqual([

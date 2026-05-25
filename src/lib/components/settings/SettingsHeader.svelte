@@ -21,7 +21,7 @@
 			<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">arrow_back</span>
 		</a>
 		<div>
-			<h1 class="font-headline-md text-headline-md text-primary">Settings</h1>
+			<h1 class="font-headline-md text-headline-md text-primary">Admin Settings</h1>
 			<p class="font-body-sm text-body-sm text-text-muted">Providers and MCP servers</p>
 		</div>
 	</div>

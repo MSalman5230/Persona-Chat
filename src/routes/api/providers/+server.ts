@@ -2,6 +2,7 @@ import { error, json, type RequestHandler } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { parseJsonRequest } from '$lib/server/api';
+import { requireAdmin } from '$lib/server/auth/guards';
 import { findSupportedProvider } from '$lib/server/providers/catalog';
 import {
 	createProviderConnection,
@@ -26,11 +27,13 @@ const providerSchema = z.object({
 	isDefault: z.boolean().default(false)
 });
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async ({ locals }) => {
+	await requireAdmin(locals);
 	return json({ providers: await listProviderConnections() });
 };
 
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ locals, request }) => {
+	await requireAdmin(locals);
 	const body = await parseJsonRequest(request, providerSchema, 'Invalid provider connection');
 	if ((body.baseUrl || !findSupportedProvider(body.providerId)) && !body.apiKey) {
 		error(400, 'API key is required for custom providers');

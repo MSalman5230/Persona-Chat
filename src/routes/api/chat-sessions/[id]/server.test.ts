@@ -5,8 +5,13 @@ const mocks = vi.hoisted(() => ({
 	getAgent: vi.fn(),
 	getChatSession: vi.fn(),
 	listChatMessages: vi.fn(),
+	requireUser: vi.fn(() => ({ id: 'user-1' })),
 	resolveActiveChatRun: vi.fn(),
 	updateChatSession: vi.fn()
+}));
+
+vi.mock('$lib/server/auth/guards', () => ({
+	requireUser: mocks.requireUser
 }));
 
 vi.mock('$lib/server/repositories/chat', () => ({
@@ -73,7 +78,7 @@ describe('chat session PATCH route', () => {
 				...payload
 			}
 		});
-		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, payload);
+		expect(mocks.updateChatSession).toHaveBeenCalledWith('user-1', session.id, payload);
 	});
 
 	it('clears the selected agent without validating an agent record', async () => {
@@ -84,7 +89,7 @@ describe('chat session PATCH route', () => {
 
 		expect(response.status).toBe(200);
 		expect(mocks.getAgent).not.toHaveBeenCalled();
-		expect(mocks.updateChatSession).toHaveBeenCalledWith(session.id, { agentId: null });
+		expect(mocks.updateChatSession).toHaveBeenCalledWith('user-1', session.id, { agentId: null });
 	});
 
 	it('returns 400 when the selected agent does not exist', async () => {
@@ -100,7 +105,7 @@ describe('chat session PATCH route', () => {
 			status: 400,
 			body: { message: 'Selected agent does not exist' }
 		});
-		expect(mocks.getAgent).toHaveBeenCalledWith(agentId);
+		expect(mocks.getAgent).toHaveBeenCalledWith('user-1', agentId);
 		expect(mocks.updateChatSession).not.toHaveBeenCalled();
 	});
 
@@ -132,7 +137,7 @@ describe('chat session DELETE route', () => {
 
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toEqual({ ok: true });
-		expect(mocks.deleteChatSession).toHaveBeenCalledWith(session.id);
+		expect(mocks.deleteChatSession).toHaveBeenCalledWith('user-1', session.id);
 	});
 
 	it('returns 404 when the chat session does not exist', async () => {

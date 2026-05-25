@@ -14,7 +14,12 @@ const mocks = vi.hoisted(() => ({
 	createProviderRuntime: vi.fn(),
 	getSupportedProviders: vi.fn(),
 	providerPayloadFromForm: vi.fn(),
+	requireAdmin: vi.fn(),
 	testMcpServer: vi.fn()
+}));
+
+vi.mock('$lib/server/auth/guards', () => ({
+	requireAdmin: mocks.requireAdmin
 }));
 
 vi.mock('$lib/server/mcp/adapter', () => ({

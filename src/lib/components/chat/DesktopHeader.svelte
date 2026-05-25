@@ -63,7 +63,7 @@
 	);
 
 	const agentAccessTooltip =
-		"No agent: chat can use all app tools and all enabled MCP servers configured in Settings. Selecting an agent customizes access to that agent's tools and MCP servers.";
+		"No agent: chat can use all app tools and all enabled MCP servers. Selecting an agent customizes access to that agent's tools and MCP servers.";
 </script>
 
 <header class="sticky top-0 z-30 hidden h-16 w-full items-center justify-between border-b border-border-subtle bg-background/80 px-gutter backdrop-blur-md md:flex">
