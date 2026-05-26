@@ -22,7 +22,9 @@ vi.mock('$lib/server/repositories/chat', () => ({
 }));
 
 vi.mock('$lib/server/repositories/agents', () => ({
-	getAgent: mocks.getAgent
+	getAgent: mocks.getAgent,
+	normalizeAgentIdForStorage: (id: string | null | undefined) =>
+		id && id !== '00000000-0000-4000-8000-000000000000' ? id : null
 }));
 
 vi.mock('$lib/server/chat/runs', () => ({
@@ -30,6 +32,7 @@ vi.mock('$lib/server/chat/runs', () => ({
 }));
 
 import { DELETE, PATCH } from './+server';
+import { PREBUILT_GENERAL_AGENT_ID } from '$lib/shared/prebuilt-general-agent';
 
 const session = {
 	id: '00000000-0000-4000-8000-000000000001',
@@ -81,15 +84,32 @@ describe('chat session PATCH route', () => {
 		expect(mocks.updateChatSession).toHaveBeenCalledWith('user-1', session.id, payload);
 	});
 
-	it('clears the selected agent without validating an agent record', async () => {
+	it('stores the Prebuilt General Agent sentinel as null', async () => {
 		const response = await PATCH({
 			params: { id: session.id },
-			request: jsonRequest({ agentId: null })
+			request: jsonRequest({ agentId: PREBUILT_GENERAL_AGENT_ID })
 		} as never);
 
 		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			session: {
+				agentId: PREBUILT_GENERAL_AGENT_ID
+			}
+		});
 		expect(mocks.getAgent).not.toHaveBeenCalled();
 		expect(mocks.updateChatSession).toHaveBeenCalledWith('user-1', session.id, { agentId: null });
+	});
+
+	it('rejects null agent settings because the client must send a concrete agent id', async () => {
+		await expect(
+			PATCH({
+				params: { id: session.id },
+				request: jsonRequest({ agentId: null })
+			} as never)
+		).rejects.toMatchObject({
+			status: 400
+		});
+		expect(mocks.updateChatSession).not.toHaveBeenCalled();
 	});
 
 	it('returns 400 when the selected agent does not exist', async () => {
@@ -115,7 +135,7 @@ describe('chat session PATCH route', () => {
 		await expect(
 			PATCH({
 				params: { id: session.id },
-				request: jsonRequest({ agentId: null })
+				request: jsonRequest({ agentId: PREBUILT_GENERAL_AGENT_ID })
 			} as never)
 		).rejects.toMatchObject({
 			status: 404,

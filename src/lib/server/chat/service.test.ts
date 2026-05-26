@@ -7,6 +7,37 @@ import {
 	normalizeAgentMessageForStorage,
 	type ThoughtTimingsByContentIndex
 } from './display';
+import { PREBUILT_GENERAL_AGENT_ID } from '$lib/shared/prebuilt-general-agent';
+
+function testAgent(overrides: Record<string, unknown> = {}) {
+	return {
+		id: PREBUILT_GENERAL_AGENT_ID,
+		name: 'General Agent Alfred',
+		systemPrompt: 'You are General Agent Alfred.',
+		toolNames: [],
+		mcpServerIds: [],
+		toolAccess: 'all',
+		mcpServerAccess: 'all',
+		isDefault: true,
+		isPrebuilt: true,
+		toolsLocked: true,
+		mcpServersLocked: true,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		...overrides
+	};
+}
+
+function agentRepositoryMock(agent: Record<string, unknown> = testAgent()) {
+	return {
+		getAgent: vi.fn(async () => agent),
+		getDefaultAgent: vi.fn(async () => agent),
+		normalizeAgentIdForStorage: vi.fn((id: string | null | undefined) =>
+			id && id !== PREBUILT_GENERAL_AGENT_ID ? id : null
+		),
+		resolveAgentSelection: vi.fn(async () => agent)
+	};
+}
 
 describe('chat service display helpers', () => {
 	it('keeps text-only assistant messages unchanged', () => {
@@ -275,9 +306,7 @@ describe('chat service display helpers', () => {
 			updateChatSession: vi.fn(),
 			upsertChatMessages
 		}));
-		vi.doMock('$lib/server/repositories/agents', () => ({
-			getAgent: vi.fn()
-		}));
+		vi.doMock('$lib/server/repositories/agents', () => agentRepositoryMock());
 		vi.doMock('$lib/server/agent/runtime', () => ({
 			createServerAgentSession: vi.fn()
 		}));
@@ -371,9 +400,7 @@ describe('chat turn thinking settings', () => {
 			createChatSession,
 			updateChatSession: vi.fn()
 		}));
-		vi.doMock('$lib/server/repositories/agents', () => ({
-			getAgent: vi.fn()
-		}));
+		vi.doMock('$lib/server/repositories/agents', () => agentRepositoryMock());
 		vi.doMock('$lib/server/repositories/user-settings', () => ({
 			getEffectiveUserSettings: vi.fn(async () => ({
 				providers: [],
@@ -428,9 +455,7 @@ describe('chat turn thinking settings', () => {
 			createChatSession: vi.fn(),
 			updateChatSession
 		}));
-		vi.doMock('$lib/server/repositories/agents', () => ({
-			getAgent: vi.fn()
-		}));
+		vi.doMock('$lib/server/repositories/agents', () => agentRepositoryMock());
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
 		const { prepareChatTurn } = await import('./service');
@@ -450,10 +475,64 @@ describe('chat turn thinking settings', () => {
 });
 
 describe('chat turn agents', () => {
+	it('uses the Prebuilt General Agent for new chats without an explicit agent', async () => {
+		vi.resetModules();
+		const runtimeInputs: Array<{ agent: { id?: string; systemPrompt?: string; isPrebuilt?: boolean } }> =
+			[];
+		const createdSessions: Array<{ agentId: string | null }> = [];
+		const createChatSession = vi.fn(async (input: { agentId: string | null }) => {
+			createdSessions.push(input);
+			return {
+				id: 'session-1',
+				...input
+			};
+		});
+		const createServerAgentSession = vi.fn(
+			async (input: { agent: { id?: string; systemPrompt?: string; isPrebuilt?: boolean } }) => {
+				runtimeInputs.push(input);
+				return {
+					provider: { id: 'provider-1', providerId: 'openai' },
+					model: { id: 'model-1' },
+					session: { dispose: vi.fn() }
+				};
+			}
+		);
+
+		vi.doMock('$lib/server/repositories/chat', () => ({
+			getChatSession: vi.fn(),
+			listChatMessages: vi.fn(async () => []),
+			createChatSession,
+			updateChatSession: vi.fn()
+		}));
+		vi.doMock('$lib/server/repositories/agents', () => agentRepositoryMock());
+		vi.doMock('$lib/server/repositories/user-settings', () => ({
+			getEffectiveUserSettings: vi.fn(async () => ({
+				providers: [],
+				defaultProviderId: 'provider-1',
+				defaultModel: 'model-1',
+				defaultThinkingLevel: null
+			}))
+		}));
+		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
+
+		const { prepareChatTurn } = await import('./service');
+		await prepareChatTurn({ userId: 'user-1', message: 'hello' });
+
+		expect(runtimeInputs[0]?.agent).toMatchObject({
+			systemPrompt: 'You are General Agent Alfred.',
+			isPrebuilt: true
+		});
+		expect(createdSessions[0]?.agentId).toBeNull();
+		vi.doUnmock('$lib/server/repositories/chat');
+		vi.doUnmock('$lib/server/repositories/agents');
+		vi.doUnmock('$lib/server/repositories/user-settings');
+		vi.doUnmock('$lib/server/agent/runtime');
+	});
+
 	it('passes selected agent to runtime without adding synthetic history', async () => {
 		vi.resetModules();
 		const runtimeInputs: Array<{
-			agent?: { systemPrompt: string };
+			agent: { systemPrompt: string };
 			history?: unknown[];
 		}> = [];
 		const updateInputs: Array<{ agentId?: string | null }> = [];
@@ -473,7 +552,7 @@ describe('chat turn agents', () => {
 			}
 		);
 		const createServerAgentSession = vi.fn(
-			async (input: { agent?: { systemPrompt: string }; history?: unknown[] }) => {
+			async (input: { agent: { systemPrompt: string }; history?: unknown[] }) => {
 				runtimeInputs.push(input);
 				return {
 					provider: { id: 'provider-1', providerId: 'openai' },
@@ -502,9 +581,7 @@ describe('chat turn agents', () => {
 			createChatSession: vi.fn(),
 			updateChatSession
 		}));
-		vi.doMock('$lib/server/repositories/agents', () => ({
-			getAgent: vi.fn(async () => agent)
-		}));
+		vi.doMock('$lib/server/repositories/agents', () => agentRepositoryMock(agent));
 		vi.doMock('$lib/server/agent/runtime', () => ({ createServerAgentSession }));
 
 		const { prepareChatTurn } = await import('./service');

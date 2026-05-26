@@ -20,6 +20,29 @@
 	});
 	const activeAgentId = $derived(selectedAgent?.id ?? '');
 	const editingExisting = $derived(Boolean(selectedAgent));
+	const selectedIsPrebuilt = $derived(selectedAgent?.isPrebuilt ?? false);
+	const allToolNames = $derived(data.agentTools.map((tool) => tool.name));
+	const allMcpServerIds = $derived(data.mcpServers.map((server) => server.id));
+	const selectedToolNames = $derived(
+		selectedAgent?.toolAccess === 'all' ? allToolNames : (selectedAgent?.toolNames ?? allToolNames)
+	);
+	const selectedMcpServerIds = $derived(
+		selectedAgent?.mcpServerAccess === 'all' ? allMcpServerIds : (selectedAgent?.mcpServerIds ?? [])
+	);
+	const selectedToolsLocked = $derived(
+		selectedAgent?.toolAccess === 'all' || (selectedAgent?.toolsLocked ?? false)
+	);
+	const selectedMcpServersLocked = $derived(
+		selectedAgent?.mcpServerAccess === 'all' || (selectedAgent?.mcpServersLocked ?? false)
+	);
+
+	function agentToolCount(agent: Agent): number {
+		return agent.toolAccess === 'all' ? data.agentTools.length : agent.toolNames.length;
+	}
+
+	function agentMcpServerCount(agent: Agent): number {
+		return agent.mcpServerAccess === 'all' ? data.mcpServers.length : agent.mcpServerIds.length;
+	}
 
 	function newAgent() {
 		selectedAgentId = '';
@@ -31,6 +54,28 @@
 
 	function cancelDeleteAgent() {
 		pendingDeleteAgent = null;
+	}
+
+	function formResultAgentId(data: unknown): string {
+		return data && typeof data === 'object' && typeof (data as { agentId?: unknown }).agentId === 'string'
+			? (data as { agentId: string }).agentId
+			: '';
+	}
+
+	async function clonePrebuiltAgent() {
+		const response = await fetch('?/clonePrebuiltAgent', {
+			method: 'POST',
+			body: new FormData(),
+			headers: { 'x-sveltekit-action': 'true' }
+		});
+		const result = deserialize(await response.text());
+		await applyAction(result);
+
+		if (result.type === 'success') {
+			const agentId = formResultAgentId(result.data);
+			await invalidateAll();
+			if (agentId) selectedAgentId = agentId;
+		}
 	}
 
 	async function confirmDeleteAgent() {
@@ -119,18 +164,17 @@
 								</h2>
 							</div>
 							<div class="mt-2 flex flex-wrap gap-1.5">
+								{#if agent.isPrebuilt}
+									<span class="settings-status-pill">prebuilt</span>
+								{/if}
 								{#if agent.isDefault}
 									<span class="settings-status-pill">default</span>
 								{/if}
-								<span class="settings-status-pill">{agent.toolNames.length} tools</span>
-								<span class="settings-status-pill">{agent.mcpServerIds.length} mcp</span>
+								<span class="settings-status-pill">{agentToolCount(agent)} tools</span>
+								<span class="settings-status-pill">{agentMcpServerCount(agent)} mcp</span>
 							</div>
 						</div>
 					</button>
-				{:else}
-					<div class="rounded-lg border border-border-subtle bg-surface-container-low p-6 text-text-muted">
-						No agents saved.
-					</div>
 				{/each}
 			</aside>
 
@@ -147,18 +191,23 @@
 				<div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
 					<label class="block space-y-2">
 						<span class="font-label-md text-label-md uppercase text-text-muted">Name</span>
-						<input class="settings-field" name="name" value={selectedAgent?.name ?? ''} />
+						<input
+							class="settings-field"
+							name="name"
+							value={selectedAgent?.name ?? ''}
+							readonly={selectedIsPrebuilt}
+						/>
 					</label>
 					<label class="mt-auto flex h-10 items-center gap-2 font-body-sm text-body-sm text-text-primary">
-						{#if selectedAgent?.isDefault}
+						{#if selectedAgent?.isDefault && !selectedIsPrebuilt}
 							<input type="hidden" name="isDefault" value="true" />
 						{/if}
 						<input
 							type="checkbox"
 							name="isDefault"
 							class="h-4 w-4 accent-primary"
-							checked={selectedAgent?.isDefault ?? data.agents.length === 0}
-							disabled={selectedAgent?.isDefault ?? false}
+							checked={selectedAgent?.isDefault ?? false}
+							disabled={selectedIsPrebuilt || (selectedAgent?.isDefault ?? false)}
 						/>
 						<span>Default</span>
 					</label>
@@ -171,6 +220,7 @@
 						class="custom-scrollbar min-h-56 w-full resize-y rounded-lg border border-border-subtle bg-surface-container px-3 py-2.5 font-body-sm text-body-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-outline"
 						placeholder="Empty"
 						value={selectedAgent?.systemPrompt ?? ''}
+						readonly={selectedIsPrebuilt}
 					></textarea>
 				</label>
 
@@ -187,7 +237,8 @@
 										type="checkbox"
 										name="toolNames"
 										value={tool.name}
-										checked={selectedAgent ? selectedAgent.toolNames.includes(tool.name) : true}
+										checked={selectedToolNames.includes(tool.name)}
+										disabled={selectedToolsLocked}
 									/>
 									<span class="settings-favorite-toggle">
 										<span class="material-symbols-outlined settings-favorite-icon" aria-hidden="true">
@@ -219,7 +270,8 @@
 										type="checkbox"
 										name="mcpServerIds"
 										value={server.id}
-										checked={selectedAgent?.mcpServerIds.includes(server.id) ?? false}
+										checked={selectedMcpServerIds.includes(server.id)}
+										disabled={selectedMcpServersLocked}
 									/>
 									<span class="settings-favorite-toggle">
 										<span class="material-symbols-outlined settings-favorite-icon" aria-hidden="true">
@@ -255,20 +307,33 @@
 							>
 								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">star</span>
 							</button>
-							<button
-								type="button"
-								class="settings-icon-button danger"
-								aria-label="Delete agent"
-								onclick={() => requestDeleteAgent(selectedAgent)}
-							>
-								<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
-							</button>
+							{#if !selectedIsPrebuilt}
+								<button
+									type="button"
+									class="settings-icon-button danger"
+									aria-label="Delete agent"
+									onclick={() => requestDeleteAgent(selectedAgent)}
+								>
+									<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">delete</span>
+								</button>
+							{/if}
 						{/if}
 					</div>
-					<button class="settings-primary-button inline-flex items-center gap-2">
-						<span class="material-symbols-outlined !text-[18px]" aria-hidden="true">save</span>
-						<span>{editingExisting ? 'Save Agent' : 'Create Agent'}</span>
-					</button>
+					{#if selectedIsPrebuilt}
+						<button
+							type="button"
+							class="settings-primary-button inline-flex items-center gap-2"
+							onclick={clonePrebuiltAgent}
+						>
+							<span class="material-symbols-outlined !text-[18px]" aria-hidden="true">content_copy</span>
+							<span>Copy Agent</span>
+						</button>
+					{:else}
+						<button class="settings-primary-button inline-flex items-center gap-2">
+							<span class="material-symbols-outlined !text-[18px]" aria-hidden="true">save</span>
+							<span>{editingExisting ? 'Save Agent' : 'Create Agent'}</span>
+						</button>
+					{/if}
 				</div>
 			</form>
 		</section>

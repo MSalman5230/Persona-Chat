@@ -82,6 +82,7 @@ export type ChatAgentOption = {
 	id: string;
 	name: string;
 	isDefault: boolean;
+	isPrebuilt: boolean;
 };
 
 export const DEFAULT_MANUAL_TEMPERATURE = 0.7;

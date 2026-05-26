@@ -29,6 +29,7 @@
 	import MobileHeader from '$lib/components/chat/MobileHeader.svelte';
 	import SessionSettingsDrawer from '$lib/components/chat/SessionSettingsDrawer.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import { PREBUILT_GENERAL_AGENT_ID, agentIdForClient } from '$lib/shared/prebuilt-general-agent';
 	import { onMount, tick, untrack } from 'svelte';
 
 	let { data } = $props();
@@ -38,7 +39,7 @@
 	type ChatSessionDetails = {
 		id: string;
 		title: string;
-		agentId: string | null;
+		agentId: string;
 		providerConnectionId: string | null;
 		modelId: string | null;
 		thinkingLevel: string | null;
@@ -55,9 +56,11 @@
 	let isStreaming = $state(Boolean(untrack(() => data.activeRun)));
 	let activeSessionId = $state<string | null>(untrack(() => data.activeSession?.id ?? null));
 	let loadedSessionId = $state<string | null>(untrack(() => data.activeSession?.id ?? null));
-	let selectedAgentIdOverride = $state<string | null>(
+	let selectedAgentIdOverride = $state(
 		untrack(() =>
-			data.activeSession ? (data.activeSession.agentId ?? '') : (data.defaultAgentId ?? '')
+			data.activeSession
+				? agentIdForClient(data.activeSession.agentId)
+				: (data.defaultAgentId ?? PREBUILT_GENERAL_AGENT_ID)
 		)
 	);
 	let selectedProviderIdOverride = $state<string | null>(
@@ -91,10 +94,9 @@
 
 	const agentOptions = $derived(data.agents as ChatAgentOption[]);
 	const selectedAgentId = $derived.by(() => {
-		if (!selectedAgentIdOverride) return '';
 		return agentOptions.some((agent) => agent.id === selectedAgentIdOverride)
 			? selectedAgentIdOverride
-			: '';
+			: (data.defaultAgentId ?? agentOptions[0]?.id ?? PREBUILT_GENERAL_AGENT_ID);
 	});
 	const providerOptions = $derived(data.providers as ChatProviderOption[]);
 	const selectedProviderId = $derived(selectedProviderIdOverride ?? data.defaultProviderId ?? '');
@@ -159,7 +161,9 @@
 		activeRun = data.activeRun;
 		isStreaming = Boolean(data.activeRun);
 		sessions = data.sessions;
-		selectedAgentIdOverride = session ? (session.agentId ?? '') : (data.defaultAgentId ?? '');
+		selectedAgentIdOverride = session
+			? agentIdForClient(session.agentId)
+			: (data.defaultAgentId ?? PREBUILT_GENERAL_AGENT_ID);
 		selectedProviderIdOverride = session?.providerConnectionId ?? null;
 		selectedModelOverride = session?.modelId ?? null;
 		selectedThinking = chatThinkingSelectionFromServer(session?.thinkingLevel ?? data.defaultThinkingLevel);
@@ -202,7 +206,7 @@
 		errorText = '';
 		sidebarOpen = false;
 		settingsOpen = false;
-		selectedAgentIdOverride = data.defaultAgentId ?? '';
+		selectedAgentIdOverride = data.defaultAgentId ?? PREBUILT_GENERAL_AGENT_ID;
 		selectedThinking = chatThinkingSelectionFromServer(data.defaultThinkingLevel);
 		resetSessionSettings();
 	}
@@ -266,10 +270,10 @@
 	}
 
 	function updateSavedSessionSettings(payload: {
-		agentId?: string | null;
+		agentId?: string;
 		temperature?: number | null;
 	}) {
-		if (payload.agentId !== undefined) selectedAgentIdOverride = payload.agentId ?? '';
+		if (payload.agentId !== undefined) selectedAgentIdOverride = agentIdForClient(payload.agentId);
 
 		if (payload.temperature !== undefined) {
 			const savedTemperature = temperatureFromServer(payload.temperature);
@@ -310,7 +314,7 @@
 	}
 
 	async function selectAgent(id: string) {
-		const previousAgentId = selectedAgentIdOverride ?? '';
+		const previousAgentId = selectedAgentIdOverride;
 		selectedAgentIdOverride = id;
 		if (!activeSessionId) return;
 
@@ -318,7 +322,7 @@
 			const response = await fetch(`/api/chat-sessions/${activeSessionId}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ agentId: id || null })
+				body: JSON.stringify({ agentId: id })
 			});
 
 			if (!response.ok) {
@@ -326,9 +330,9 @@
 			}
 
 			const payload = (await response.json()) as {
-				session: { agentId?: string | null };
+				session: { agentId?: string };
 			};
-			updateSavedSessionSettings({ agentId: payload.session.agentId ?? null });
+			updateSavedSessionSettings({ agentId: payload.session.agentId });
 		} catch (error) {
 			selectedAgentIdOverride = previousAgentId;
 			errorText = error instanceof Error ? error.message : 'Agent save failed';
@@ -391,7 +395,7 @@
 				title: typeof payload.title === 'string' ? payload.title : 'New chat'
 			});
 			updateSavedSessionSettings({
-				agentId: typeof payload.agentId === 'string' ? payload.agentId : null,
+				...(typeof payload.agentId === 'string' ? { agentId: payload.agentId } : {}),
 				temperature: temperatureFromServer(payload.temperature)
 			});
 			if ('thinkingLevel' in payload) {
@@ -512,7 +516,7 @@
 				body: JSON.stringify({
 					sessionId: activeSessionId,
 					message: prompt,
-					agentId: selectedAgentId || null,
+					agentId: selectedAgentId,
 					providerConnectionId: selectedProviderId || null,
 					modelId: selectedModel || null,
 					thinkingLevel: thinkingLevelForRequest(selectedThinking),

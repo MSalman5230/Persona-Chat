@@ -1,4 +1,4 @@
-import { getAgent } from '$lib/server/repositories/agents';
+import { getAgent, normalizeAgentIdForStorage } from '$lib/server/repositories/agents';
 import { updateChatSession, type ChatSessionRow } from '$lib/server/repositories/chat';
 import type { ChatSessionSettingsPatch } from './settings';
 
@@ -14,15 +14,22 @@ export async function updateChatSessionSettings(
 	session: ChatSessionRow,
 	patch: ChatSessionSettingsPatch
 ): Promise<ChatSessionRow> {
-	if (patch.agentId !== undefined && patch.agentId !== null) {
-		const agent = await getAgent(userId, patch.agentId);
+	const normalizedPatch = {
+		...patch,
+		...(patch.agentId !== undefined
+			? { agentId: normalizeAgentIdForStorage(patch.agentId) }
+			: {})
+	};
+
+	if (typeof normalizedPatch.agentId === 'string') {
+		const agent = await getAgent(userId, normalizedPatch.agentId);
 		if (!agent) throw new ChatSessionSettingsValidationError('Selected agent does not exist');
 	}
 
-	await updateChatSession(userId, session.id, patch);
+	await updateChatSession(userId, session.id, normalizedPatch);
 	return {
 		...session,
-		...patch,
+		...normalizedPatch,
 		updatedAt: new Date()
 	};
 }

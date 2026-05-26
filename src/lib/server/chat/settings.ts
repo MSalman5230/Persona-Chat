@@ -6,11 +6,11 @@ export const DEFAULT_MANUAL_TEMPERATURE = 0.7;
 export const BLANK_SYSTEM_PROMPT_SENTINEL = '__persona_internal_blank_system_prompt__';
 
 export const temperatureSchema = z.number().finite().min(TEMPERATURE_MIN).max(TEMPERATURE_MAX).nullable();
-export const nullableAgentIdSchema = z.string().uuid().nullable();
+export const agentIdSchema = z.string().uuid();
 
 export const chatSessionSettingsSchema = z
 	.object({
-		agentId: nullableAgentIdSchema.optional(),
+		agentId: agentIdSchema.optional(),
 		temperature: temperatureSchema
 	})
 	.strict();

@@ -22,6 +22,13 @@
       "when": 1779753108034,
       "tag": "0002_clear_boom_boom",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779798044887,
+      "tag": "0003_tense_master_chief",
+      "breakpoints": true
     }
   ]
 }

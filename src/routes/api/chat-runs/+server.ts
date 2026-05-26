@@ -10,7 +10,7 @@ import { THINKING_LEVELS } from '$lib/shared/thinking';
 const chatRunRequestSchema = z.object({
 	sessionId: z.string().uuid().optional().nullable(),
 	message: z.string().min(1),
-	agentId: z.string().uuid().optional().nullable(),
+	agentId: z.string().uuid().optional(),
 	providerConnectionId: z.string().uuid().optional().nullable(),
 	modelId: z.string().min(1).optional().nullable(),
 	thinkingLevel: z.enum(THINKING_LEVELS).optional().nullable(),

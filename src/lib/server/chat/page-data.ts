@@ -6,6 +6,7 @@ import { getChatSession, listChatMessages, listChatSessions } from '$lib/server/
 import { listAgentOptions } from '$lib/server/repositories/agents';
 import { getEffectiveUserSettings } from '$lib/server/repositories/user-settings';
 import { isRecord } from '$lib/server/json';
+import { agentIdForClient } from '$lib/shared/prebuilt-general-agent';
 
 function isHttpError(cause: unknown): boolean {
 	return isRecord(cause) && typeof cause.status === 'number' && cause.status >= 400;
@@ -27,6 +28,9 @@ export async function loadChatPageData(userId: string, sessionId: string | null 
 		const runState = activeSession
 			? await resolveActiveChatRun(activeSession.id)
 			: { activeRun: null, interruptedRun: null };
+		const activeSessionForClient = activeSession
+			? { ...activeSession, agentId: agentIdForClient(activeSession.agentId) }
+			: null;
 
 		return {
 			providers: settings.providers,
@@ -36,7 +40,7 @@ export async function loadChatPageData(userId: string, sessionId: string | null 
 			defaultProviderId: settings.defaultProviderId,
 			defaultModel: settings.defaultModel,
 			defaultThinkingLevel: settings.defaultThinkingLevel,
-			activeSession,
+			activeSession: activeSessionForClient,
 			messages: serializeChatMessages(messages),
 			activeRun: runState.activeRun,
 			interruptedRun: runState.interruptedRun,
