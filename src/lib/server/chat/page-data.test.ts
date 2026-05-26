@@ -35,6 +35,7 @@ vi.mock('$lib/server/chat/service', () => ({
 }));
 
 import { loadChatPageData } from './page-data';
+import { PREBUILT_GENERAL_AGENT_ID } from '$lib/shared/prebuilt-general-agent';
 
 describe('loadChatPageData', () => {
 	beforeEach(() => {
@@ -59,7 +60,8 @@ describe('loadChatPageData', () => {
 			{
 				id: 'agent-1',
 				name: 'Researcher',
-				isDefault: true
+				isDefault: true,
+				isPrebuilt: false
 			}
 		]);
 		mocks.listAgents.mockResolvedValue([
@@ -87,11 +89,35 @@ describe('loadChatPageData', () => {
 			{
 				id: 'agent-1',
 				name: 'Researcher',
-				isDefault: true
+				isDefault: true,
+				isPrebuilt: false
 			}
 		]);
 		expect(data.agents[0]).not.toHaveProperty('systemPrompt');
 		expect(data.agents[0]).not.toHaveProperty('toolNames');
 		expect(data.agents[0]).not.toHaveProperty('mcpServerIds');
+	});
+
+	it('uses the Prebuilt General Agent when there are no database agents', async () => {
+		mocks.listAgentOptions.mockResolvedValue([
+			{
+				id: PREBUILT_GENERAL_AGENT_ID,
+				name: 'General Agent Alfred',
+				isDefault: true,
+				isPrebuilt: true
+			}
+		]);
+
+		const data = await loadChatPageData('user-1');
+
+		expect(data.defaultAgentId).toBe(PREBUILT_GENERAL_AGENT_ID);
+		expect(data.agents).toEqual([
+			{
+				id: PREBUILT_GENERAL_AGENT_ID,
+				name: 'General Agent Alfred',
+				isDefault: true,
+				isPrebuilt: true
+			}
+		]);
 	});
 });

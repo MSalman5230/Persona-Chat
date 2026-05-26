@@ -3,18 +3,25 @@ import { z } from 'zod';
 export const AGENT_NAME_MAX_LENGTH = 80;
 export const AGENT_SYSTEM_PROMPT_MAX_LENGTH = 20_000;
 
+export type AgentCapabilityAccess = 'all' | 'selected';
+
 export type Agent = {
 	id: string;
 	name: string;
 	systemPrompt: string;
 	toolNames: string[];
 	mcpServerIds: string[];
+	toolAccess: AgentCapabilityAccess;
+	mcpServerAccess: AgentCapabilityAccess;
 	isDefault: boolean;
+	isPrebuilt: boolean;
+	toolsLocked: boolean;
+	mcpServersLocked: boolean;
 	createdAt: Date | string;
 	updatedAt: Date | string;
 };
 
-export type AgentOption = Pick<Agent, 'id' | 'name' | 'isDefault'>;
+export type AgentOption = Pick<Agent, 'id' | 'name' | 'isDefault' | 'isPrebuilt'>;
 
 export type AgentToolOption = {
 	name: string;

@@ -15,6 +15,7 @@ import {
 	getChatSession,
 	listChatMessages
 } from '$lib/server/repositories/chat';
+import { agentIdForClient } from '$lib/shared/prebuilt-general-agent';
 
 export const GET: RequestHandler = async ({ locals, params }) => {
 	const user = requireUser(locals);
@@ -23,7 +24,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
 	const messages = await listChatMessages(session.id);
 	const runState = await resolveActiveChatRun(session.id);
 	return json({
-		session,
+		session: { ...session, agentId: agentIdForClient(session.agentId) },
 		messages: serializeChatMessages(messages),
 		activeRun: runState.activeRun,
 		interruptedRun: runState.interruptedRun
@@ -44,7 +45,7 @@ export const PATCH: RequestHandler = async ({ locals, params, request }) => {
 		const updatedSession = await updateChatSessionSettings(user.id, session, body);
 
 		return json({
-			session: updatedSession
+			session: { ...updatedSession, agentId: agentIdForClient(updatedSession.agentId) }
 		});
 	} catch (cause) {
 		if (cause instanceof ChatSessionSettingsValidationError) error(400, cause.message);

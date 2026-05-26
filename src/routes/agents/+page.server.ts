@@ -4,6 +4,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { requireUser } from '$lib/server/auth/guards';
 import { booleanFromForm, stringFromForm } from '$lib/server/forms';
 import {
+	clonePrebuiltGeneralAgent,
 	createAgent,
 	deleteAgent,
 	listAgents,
@@ -55,7 +56,7 @@ export const actions: Actions = {
 			const agent = id
 				? await updateAgent(user.id, id, agentInputFromForm(form))
 				: await createAgent(user.id, agentInputFromForm(form));
-			return { ok: true, message: `${agent.name} saved` };
+			return { ok: true, message: `${agent.name} saved`, agentId: agent.id };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to save agent' });
 		}
@@ -67,7 +68,7 @@ export const actions: Actions = {
 			const id = stringFromForm(form, 'id');
 			if (!id) throw new Error('Agent ID is required');
 			const agent = await updateAgentDefault(user.id, id, { isDefault: true });
-			return { ok: true, message: `${agent.name} set as default` };
+			return { ok: true, message: `${agent.name} set as default`, agentId: agent.id };
 		} catch (error) {
 			return fail(400, {
 				error: error instanceof Error ? error.message : 'Unable to update default agent'
@@ -84,6 +85,17 @@ export const actions: Actions = {
 			return { ok: true, message: 'Agent deleted' };
 		} catch (error) {
 			return fail(400, { error: error instanceof Error ? error.message : 'Unable to delete agent' });
+		}
+	},
+	clonePrebuiltAgent: async ({ locals }) => {
+		const user = requireUser(locals);
+		try {
+			const agent = await clonePrebuiltGeneralAgent(user.id);
+			return { ok: true, message: `${agent.name} created`, agentId: agent.id };
+		} catch (error) {
+			return fail(400, {
+				error: error instanceof Error ? error.message : 'Unable to copy Prebuilt General Agent'
+			});
 		}
 	}
 };

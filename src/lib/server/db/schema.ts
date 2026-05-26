@@ -208,6 +208,24 @@ export const mcpServers = pgTable(
 	})
 );
 
+export const systemAgents = pgTable(
+	'system_agents',
+	{
+		id: uuid('id').primaryKey(),
+		slug: text('slug').notNull(),
+		name: text('name').notNull(),
+		systemPrompt: text('system_prompt').notNull(),
+		isActive: boolean('is_active').notNull().default(true),
+		isReadonly: boolean('is_readonly').notNull().default(true),
+		createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+		updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+	},
+	(table) => ({
+		slugIdx: uniqueIndex('system_agents_slug_idx').on(table.slug),
+		activeIdx: index('system_agents_active_idx').on(table.isActive)
+	})
+);
+
 export const agents = pgTable(
 	'agents',
 	{

@@ -240,6 +240,11 @@ const fakeDb = vi.hoisted(() => {
 	};
 });
 
+const systemAgentMocks = vi.hoisted(() => ({
+	getPrebuiltGeneralAgentRow: vi.fn(),
+	getSystemAgentByName: vi.fn()
+}));
+
 vi.mock('$lib/server/db', () => ({
 	db: fakeDb.db
 }));
@@ -248,16 +253,45 @@ vi.mock('./mcp', () => ({
 	listEnabledMcpServerOptions: vi.fn(async () => [])
 }));
 
+vi.mock('./system-agents', () => ({
+	getPrebuiltGeneralAgentRow: systemAgentMocks.getPrebuiltGeneralAgentRow,
+	getSystemAgentByName: systemAgentMocks.getSystemAgentByName
+}));
+
 import {
+	clonePrebuiltGeneralAgent,
 	createAgent,
 	deleteAgent,
+	getAgent,
+	getDefaultAgent,
+	listAgentOptions,
+	listAgents,
 	updateAgent,
 	updateAgentDefault
 } from './agents';
+import { PREBUILT_GENERAL_AGENT_ID } from '$lib/shared/prebuilt-general-agent';
+import { listEnabledMcpServerOptions } from './mcp';
 
 const firstId = '00000000-0000-4000-8000-000000000001';
 const secondId = '00000000-0000-4000-8000-000000000002';
+const mcpServerId = '00000000-0000-4000-8000-000000000010';
 const userId = 'user-1';
+const listEnabledMcpServerOptionsMock = vi.mocked(listEnabledMcpServerOptions);
+
+function systemAgentRow(overrides: Record<string, unknown> = {}) {
+	const timestamp = new Date('2026-05-26T00:00:00.000Z');
+	return {
+		id: PREBUILT_GENERAL_AGENT_ID,
+		slug: 'general-agent-alfred',
+		name: 'General Agent Alfred',
+		systemPrompt: 'You are General Agent Alfred.',
+		isActive: true,
+		isReadonly: true,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+		...overrides
+	};
+}
 
 function agentRow(overrides: Partial<AgentRecord> & Pick<AgentRecord, 'id' | 'name'>): AgentRecord {
 	const createdAt = overrides.createdAt ?? new Date('2026-05-25T00:00:00.000Z');
@@ -276,9 +310,43 @@ function agentRow(overrides: Partial<AgentRecord> & Pick<AgentRecord, 'id' | 'na
 describe('agent repository default invariant', () => {
 	beforeEach(() => {
 		fakeDb.reset();
+		const prebuilt = systemAgentRow();
+		systemAgentMocks.getPrebuiltGeneralAgentRow.mockResolvedValue(prebuilt);
+		systemAgentMocks.getSystemAgentByName.mockImplementation(async (name: string) =>
+			name === prebuilt.name ? prebuilt : undefined
+		);
+		listEnabledMcpServerOptionsMock.mockResolvedValue([]);
 	});
 
-	it('promotes the first created agent even when the input opts out of default', async () => {
+	it('lists the Prebuilt General Agent as the fallback default', async () => {
+		const agents = await listAgents(userId);
+		const options = await listAgentOptions(userId);
+
+		expect(agents).toHaveLength(1);
+		expect(agents[0]).toMatchObject({
+			id: PREBUILT_GENERAL_AGENT_ID,
+			name: 'General Agent Alfred',
+			toolNames: [],
+			mcpServerIds: [],
+			toolAccess: 'all',
+			mcpServerAccess: 'all',
+			isDefault: true,
+			isPrebuilt: true,
+			toolsLocked: true,
+			mcpServersLocked: true
+		});
+		expect(listEnabledMcpServerOptionsMock).not.toHaveBeenCalled();
+		expect(options).toEqual([
+			{
+				id: PREBUILT_GENERAL_AGENT_ID,
+				name: 'General Agent Alfred',
+				isDefault: true,
+				isPrebuilt: true
+			}
+		]);
+	});
+
+	it('does not promote the first created agent when the input opts out of default', async () => {
 		const created = await createAgent(userId, {
 			name: 'First',
 			systemPrompt: '',
@@ -287,8 +355,25 @@ describe('agent repository default invariant', () => {
 			isDefault: false
 		});
 
-		expect(created).toMatchObject({ name: 'First', isDefault: true });
-		expect(fakeDb.defaultRows().map((agent) => agent.name)).toEqual(['First']);
+		expect(created).toMatchObject({ name: 'First', isDefault: false });
+		expect(fakeDb.defaultRows()).toEqual([]);
+		await expect(getDefaultAgent(userId)).resolves.toMatchObject({
+			id: PREBUILT_GENERAL_AGENT_ID,
+			isDefault: true
+		});
+	});
+
+	it('rejects a user-owned agent with the system agent name', async () => {
+		await expect(
+			createAgent(userId, {
+				name: 'General Agent Alfred',
+				systemPrompt: '',
+				toolNames: [],
+				mcpServerIds: [],
+				isDefault: false
+			})
+		).rejects.toThrow('An agent named "General Agent Alfred" already exists');
+		expect(fakeDb.rows()).toEqual([]);
 	});
 
 	it('creates a second default without violating the unique default invariant', async () => {
@@ -313,7 +398,7 @@ describe('agent repository default invariant', () => {
 		expect(fakeDb.defaultRows().map((agent) => agent.name)).toEqual(['Second']);
 	});
 
-	it('keeps the current default when a full save submits isDefault false', async () => {
+	it('allows clearing the current default when a full save submits isDefault false', async () => {
 		fakeDb.setRows([
 			agentRow({ id: firstId, name: 'First', isDefault: true }),
 			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
@@ -327,8 +412,8 @@ describe('agent repository default invariant', () => {
 			isDefault: false
 		});
 
-		expect(updated).toMatchObject({ name: 'First renamed', isDefault: true });
-		expect(fakeDb.defaultRows().map((agent) => agent.id)).toEqual([firstId]);
+		expect(updated).toMatchObject({ name: 'First renamed', isDefault: false });
+		expect(fakeDb.defaultRows()).toEqual([]);
 	});
 
 	it('sets a non-default agent as default and clears the previous default first', async () => {
@@ -343,7 +428,7 @@ describe('agent repository default invariant', () => {
 		expect(fakeDb.defaultRows().map((agent) => agent.id)).toEqual([secondId]);
 	});
 
-	it('promotes a fallback when explicitly clearing the default', async () => {
+	it('falls back to the Prebuilt General Agent when explicitly clearing the default', async () => {
 		fakeDb.setRows([
 			agentRow({ id: firstId, name: 'First', isDefault: true }),
 			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
@@ -352,10 +437,14 @@ describe('agent repository default invariant', () => {
 		const updated = await updateAgentDefault(userId, firstId, { isDefault: false });
 
 		expect(updated).toMatchObject({ id: firstId, isDefault: false });
-		expect(fakeDb.defaultRows().map((agent) => agent.id)).toEqual([secondId]);
+		expect(fakeDb.defaultRows()).toEqual([]);
+		await expect(getDefaultAgent(userId)).resolves.toMatchObject({
+			id: PREBUILT_GENERAL_AGENT_ID,
+			isDefault: true
+		});
 	});
 
-	it('promotes a fallback after deleting the default', async () => {
+	it('falls back to the Prebuilt General Agent after deleting the default', async () => {
 		fakeDb.setRows([
 			agentRow({ id: firstId, name: 'First', isDefault: true }),
 			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
@@ -364,7 +453,81 @@ describe('agent repository default invariant', () => {
 		await deleteAgent(userId, firstId);
 
 		expect(fakeDb.rows().map((agent) => agent.id)).toEqual([secondId]);
-		expect(fakeDb.defaultRows().map((agent) => agent.id)).toEqual([secondId]);
+		expect(fakeDb.defaultRows()).toEqual([]);
+	});
+
+	it('clears user defaults when setting the Prebuilt General Agent as default', async () => {
+		fakeDb.setRows([
+			agentRow({ id: firstId, name: 'First', isDefault: true }),
+			agentRow({ id: secondId, name: 'Second', createdAt: new Date('2026-05-25T00:01:00.000Z') })
+		]);
+
+		const updated = await updateAgentDefault(userId, PREBUILT_GENERAL_AGENT_ID, {
+			isDefault: true
+		});
+
+		expect(updated).toMatchObject({
+			id: PREBUILT_GENERAL_AGENT_ID,
+			isDefault: true,
+			isPrebuilt: true
+		});
+		expect(fakeDb.defaultRows()).toEqual([]);
+	});
+
+	it('rejects deleting or editing the Prebuilt General Agent', async () => {
+		await expect(deleteAgent(userId, PREBUILT_GENERAL_AGENT_ID)).rejects.toThrow(
+			'Prebuilt General Agent cannot be deleted'
+		);
+		await expect(
+			updateAgent(userId, PREBUILT_GENERAL_AGENT_ID, {
+				name: 'Alfred',
+				systemPrompt: '',
+				toolNames: [],
+				mcpServerIds: [],
+				isDefault: false
+			})
+		).rejects.toThrow('Prebuilt General Agent cannot be edited');
+	});
+
+	it('clones the Prebuilt General Agent into an editable database agent', async () => {
+		listEnabledMcpServerOptionsMock.mockResolvedValue([
+			{
+				id: mcpServerId,
+				name: 'Filesystem',
+				slug: 'filesystem',
+				transport: 'stdio',
+				enabled: true,
+				status: 'ok',
+				lastError: null
+			}
+		]);
+
+		const clone = await clonePrebuiltGeneralAgent(userId);
+
+		expect(clone).toMatchObject({
+			name: 'General Agent Alfred Copy',
+			toolNames: ['current_datetime'],
+			mcpServerIds: [mcpServerId],
+			toolAccess: 'selected',
+			mcpServerAccess: 'selected',
+			isDefault: false,
+			isPrebuilt: false,
+			toolsLocked: false,
+			mcpServersLocked: false
+		});
+		expect(clone.systemPrompt).toContain('You are General Agent Alfred');
+		expect(listEnabledMcpServerOptionsMock).toHaveBeenCalledTimes(1);
+		expect(fakeDb.rows().map((agent) => agent.name)).toEqual(['General Agent Alfred Copy']);
+	});
+
+	it('resolves the Prebuilt General Agent by sentinel id', async () => {
+		const agent = await getAgent(userId, PREBUILT_GENERAL_AGENT_ID);
+
+		expect(agent).toMatchObject({
+			id: PREBUILT_GENERAL_AGENT_ID,
+			name: 'General Agent Alfred',
+			isPrebuilt: true
+		});
 	});
 
 	it('keeps default agents isolated per user', async () => {

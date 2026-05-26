@@ -1,8 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { BLANK_SYSTEM_PROMPT_SENTINEL } from '$lib/server/chat/settings';
+import type { Agent } from '$lib/server/agents';
 
 import { wrapStreamFnWithSessionSettings } from './session-settings';
+
+type RuntimeTestAgent = Pick<
+	Agent,
+	'systemPrompt' | 'toolNames' | 'mcpServerIds' | 'toolAccess' | 'mcpServerAccess'
+>;
+
+function runtimeAgent(overrides: Partial<RuntimeTestAgent> = {}): RuntimeTestAgent {
+	return {
+		systemPrompt: 'General prompt.',
+		toolNames: [],
+		mcpServerIds: [],
+		toolAccess: 'all',
+		mcpServerAccess: 'all',
+		...overrides
+	};
+}
 
 describe('agent runtime session settings', () => {
 	it('strips the blank prompt sentinel before calling PI providers', () => {
@@ -95,6 +112,7 @@ describe('agent runtime session settings', () => {
 
 		const { createServerAgentSession } = await import('./runtime');
 		const runtime = await createServerAgentSession({
+			agent: runtimeAgent(),
 			history: [{ role: 'assistant', content: [{ type: 'text', text: 'Earlier answer.' }] }]
 		});
 
@@ -108,7 +126,7 @@ describe('agent runtime session settings', () => {
 		vi.doUnmock('$lib/server/repositories/mcp');
 	});
 
-	it('starts chat with stable progressive MCP meta-tools only', async () => {
+	it('starts an all-access agent with stable progressive MCP meta-tools only', async () => {
 		vi.resetModules();
 		const listEnabledMcpServers = vi.fn(async () => {
 			throw new Error('MCP servers should not be connected or listed at startup');
@@ -152,7 +170,7 @@ describe('agent runtime session settings', () => {
 		}));
 
 		const { createServerAgentSession } = await import('./runtime');
-		const runtime = await createServerAgentSession();
+		const runtime = await createServerAgentSession({ agent: runtimeAgent() });
 		const options = createAgentSession.mock.calls[0][0] as {
 			tools: string[];
 			customTools: Array<{ name: string }>;
@@ -203,10 +221,32 @@ describe('agent runtime session settings', () => {
 				modelRegistry: {}
 			}))
 		}));
+		const allowedMcpServer = {
+			id: '00000000-0000-4000-8000-000000000010',
+			name: 'Allowed',
+			slug: 'allowed',
+			transport: 'stdio',
+			status: 'ok',
+			lastError: null,
+			lastCheckedAt: null,
+			updatedAt: new Date('2026-05-25T00:00:00.000Z'),
+			command: 'node',
+			url: null
+		};
+		const blockedMcpServer = {
+			...allowedMcpServer,
+			id: '00000000-0000-4000-8000-000000000011',
+			name: 'Blocked',
+			slug: 'blocked'
+		};
+		const getEnabledMcpServerBySlug = vi.fn(async (slug: string) =>
+			[allowedMcpServer, blockedMcpServer].find((server) => server.slug === slug)
+		);
+		const listEnabledMcpServers = vi.fn(async () => [allowedMcpServer, blockedMcpServer]);
 		vi.doMock('$lib/server/repositories/mcp', () => ({
-			getEnabledMcpServerBySlug: vi.fn(),
+			getEnabledMcpServerBySlug,
 			getMcpSecrets: vi.fn(() => ({})),
-			listEnabledMcpServers: vi.fn(),
+			listEnabledMcpServers,
 			markMcpServerStatus: vi.fn()
 		}));
 
@@ -215,7 +255,9 @@ describe('agent runtime session settings', () => {
 			agent: {
 				systemPrompt: 'Agent prompt.',
 				toolNames: ['current_datetime'],
-				mcpServerIds: ['00000000-0000-4000-8000-000000000010']
+				mcpServerIds: ['00000000-0000-4000-8000-000000000010'],
+				toolAccess: 'selected',
+				mcpServerAccess: 'selected'
 			}
 		});
 		const options = createAgentSession.mock.calls[0][0] as {
@@ -229,6 +271,18 @@ describe('agent runtime session settings', () => {
 			'mcp_list_tools',
 			'mcp_call_tool'
 		]);
+		const listServersTool = options.customTools.find((tool) => tool.name === 'mcp_list_servers') as unknown as {
+			execute: (...args: unknown[]) => Promise<{ details: { servers: Array<{ slug: string }> } }>;
+		};
+		const listToolsTool = options.customTools.find((tool) => tool.name === 'mcp_list_tools') as unknown as {
+			execute: (...args: unknown[]) => Promise<unknown>;
+		};
+		const listResult = await listServersTool.execute('call-1', {});
+		expect(listResult.details.servers.map((server) => server.slug)).toEqual(['allowed']);
+		await expect(listToolsTool.execute('call-2', { server: 'blocked' })).rejects.toThrow(
+			'Enabled MCP server not found: blocked'
+		);
+		expect(getEnabledMcpServerBySlug).toHaveBeenCalledWith('blocked');
 		expect(runtime.allowedToolNames).toEqual(options.tools);
 		vi.doUnmock('@earendil-works/pi-coding-agent');
 		vi.doUnmock('$lib/server/providers/runtime');
@@ -280,7 +334,9 @@ describe('agent runtime session settings', () => {
 			agent: {
 				systemPrompt: '',
 				toolNames: [],
-				mcpServerIds: []
+				mcpServerIds: [],
+				toolAccess: 'selected',
+				mcpServerAccess: 'selected'
 			}
 		});
 		const options = createAgentSession.mock.calls[0][0] as {
@@ -291,6 +347,73 @@ describe('agent runtime session settings', () => {
 		expect(options.tools).toEqual([]);
 		expect(options.customTools).toEqual([]);
 		expect(runtime.allowedToolNames).toEqual([]);
+		vi.doUnmock('@earendil-works/pi-coding-agent');
+		vi.doUnmock('$lib/server/providers/runtime');
+		vi.doUnmock('$lib/server/repositories/mcp');
+	});
+
+	it('keeps unrestricted tools for an all-access agent', async () => {
+		vi.resetModules();
+		const createAgentSession = vi.fn(async (options: Record<string, unknown>) => ({
+			session: {
+				agent: {
+					state: { systemPrompt: '' },
+					streamFn: vi.fn()
+				},
+				dispose: vi.fn()
+			},
+			extensionsResult: { extensions: [], errors: [], runtime: {} },
+			options
+		}));
+
+		vi.doMock('@earendil-works/pi-coding-agent', () => ({
+			createAgentSession,
+			defineTool: (tool: unknown) => tool,
+			SessionManager: {
+				inMemory: () => ({ appendMessage: vi.fn() })
+			},
+			SettingsManager: {
+				inMemory: (settings: unknown) => ({ settings })
+			}
+		}));
+		vi.doMock('$lib/server/providers/runtime', () => ({
+			createProviderRuntime: vi.fn(async () => ({
+				row: { providerId: 'mock-provider' },
+				model: { id: 'mock-model' },
+				thinkingLevel: undefined,
+				authStorage: {},
+				modelRegistry: {}
+			}))
+		}));
+		vi.doMock('$lib/server/repositories/mcp', () => ({
+			getEnabledMcpServerBySlug: vi.fn(),
+			getMcpSecrets: vi.fn(() => ({})),
+			listEnabledMcpServers: vi.fn(),
+			markMcpServerStatus: vi.fn()
+		}));
+
+		const { createServerAgentSession } = await import('./runtime');
+		const runtime = await createServerAgentSession({
+			agent: {
+				systemPrompt: 'General prompt.',
+				toolNames: [],
+				mcpServerIds: [],
+				toolAccess: 'all',
+				mcpServerAccess: 'all'
+			}
+		});
+		const options = createAgentSession.mock.calls[0][0] as {
+			tools: string[];
+			customTools: Array<{ name: string }>;
+		};
+
+		expect(options.customTools.map((tool) => tool.name)).toEqual([
+			'current_datetime',
+			'mcp_list_servers',
+			'mcp_list_tools',
+			'mcp_call_tool'
+		]);
+		expect(runtime.allowedToolNames).toEqual(options.tools);
 		vi.doUnmock('@earendil-works/pi-coding-agent');
 		vi.doUnmock('$lib/server/providers/runtime');
 		vi.doUnmock('$lib/server/repositories/mcp');
@@ -337,7 +460,7 @@ describe('agent runtime session settings', () => {
 		}));
 
 		const { createServerAgentSession } = await import('./runtime');
-		await createServerAgentSession({ thinkingLevel: null });
+		await createServerAgentSession({ agent: runtimeAgent(), thinkingLevel: null });
 		const options = createAgentSession.mock.calls[0][0] as {
 			thinkingLevel?: string;
 			settingsManager: { settings: Record<string, unknown> };
@@ -391,7 +514,7 @@ describe('agent runtime session settings', () => {
 		}));
 
 		const { createServerAgentSession } = await import('./runtime');
-		await createServerAgentSession({ thinkingLevel: 'high' });
+		await createServerAgentSession({ agent: runtimeAgent(), thinkingLevel: 'high' });
 		const options = createAgentSession.mock.calls[0][0] as {
 			thinkingLevel?: string;
 			settingsManager: { settings: Record<string, unknown> };

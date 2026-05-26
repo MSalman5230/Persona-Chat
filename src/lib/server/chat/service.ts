@@ -7,7 +7,11 @@ import {
 	upsertChatMessages,
 	type ChatMessageRow
 } from '$lib/server/repositories/chat';
-import { getAgent } from '$lib/server/repositories/agents';
+import {
+	getDefaultAgent,
+	normalizeAgentIdForStorage,
+	resolveAgentSelection
+} from '$lib/server/repositories/agents';
 import { getEffectiveUserSettings } from '$lib/server/repositories/user-settings';
 import {
 	hydrateChatMessageDisplay,
@@ -26,7 +30,7 @@ export async function prepareChatTurn(input: {
 	userId: string;
 	sessionId?: string | null;
 	message: string;
-	agentId?: string | null;
+	agentId?: string;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
@@ -36,9 +40,12 @@ export async function prepareChatTurn(input: {
 	if (input.sessionId && !existing) throw new Error('Chat session not found');
 	const historyRows = existing ? await listChatMessages(existing.id) : [];
 	const history = historyRows.map((row) => row.piMessage);
-	const agentId = input.agentId !== undefined ? input.agentId : (existing?.agentId ?? null);
-	const agent = agentId ? await getAgent(input.userId, agentId) : null;
-	if (agentId && !agent) throw new Error('Agent not found');
+	const defaultAgent = !existing && input.agentId === undefined ? await getDefaultAgent(input.userId) : null;
+	const requestedAgentId =
+		input.agentId !== undefined ? input.agentId : (existing ? existing.agentId : defaultAgent?.id);
+	const agent = await resolveAgentSelection(input.userId, requestedAgentId);
+	if (!agent) throw new Error('Agent not found');
+	const agentId = normalizeAgentIdForStorage(agent.id);
 	const defaults = existing ? null : await getEffectiveUserSettings(input.userId);
 	const temperature = input.temperature !== undefined ? input.temperature : (existing?.temperature ?? null);
 	const thinkingLevel =

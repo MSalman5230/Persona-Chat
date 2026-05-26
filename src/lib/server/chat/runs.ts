@@ -21,12 +21,13 @@ import {
 } from '$lib/server/repositories/chat';
 import type { PersistedAgentMessage } from '$lib/server/agent/runtime';
 import type { ThoughtTimingsByAssistant } from '$lib/server/chat/display';
+import { agentIdForClient } from '$lib/shared/prebuilt-general-agent';
 
 export type ChatRunInput = {
 	userId: string;
 	sessionId?: string | null;
 	message: string;
-	agentId?: string | null;
+	agentId?: string;
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
@@ -307,7 +308,7 @@ async function executeChatRun(
 			providerId: turn.runtime.provider.providerId,
 			modelId: turn.runtime.model.id,
 			thinkingLevel: turn.chatSession.thinkingLevel,
-			agentId: turn.chatSession.agentId,
+			agentId: agentIdForClient(turn.chatSession.agentId),
 			temperature: turn.chatSession.temperature,
 			tools: turn.runtime.allowedToolNames
 		});
@@ -442,7 +443,7 @@ export async function startChatRun(input: ChatRunInput) {
 
 	return {
 		run: serializeChatRun(run),
-		session: turn.chatSession
+		session: { ...turn.chatSession, agentId: agentIdForClient(turn.chatSession.agentId) }
 	};
 }
 

@@ -14,8 +14,10 @@ export type AgentRuntimeInput = {
 	providerConnectionId?: string | null;
 	modelId?: string | null;
 	thinkingLevel?: string | null;
-	agent?: Pick<Agent, 'systemPrompt' | 'toolNames' | 'mcpServerIds'> | null;
-	systemPrompt?: string;
+	agent: Pick<
+		Agent,
+		'systemPrompt' | 'toolNames' | 'mcpServerIds' | 'toolAccess' | 'mcpServerAccess'
+	>;
 	temperature?: number | null;
 	history?: PersistedAgentMessage[];
 };
@@ -27,13 +29,13 @@ export type PersistedAgentMessage = {
 };
 
 function appToolsForAgent(agent: AgentRuntimeInput['agent']) {
-	if (!agent) return appTools;
+	if (agent.toolAccess === 'all') return appTools;
 	const allowed = new Set(agent.toolNames);
 	return appTools.filter((tool) => allowed.has(tool.name));
 }
 
 function mcpToolsForAgent(agent: AgentRuntimeInput['agent']) {
-	if (!agent) return buildProgressiveMcpToolDefinitions();
+	if (agent.mcpServerAccess === 'all') return buildProgressiveMcpToolDefinitions();
 	if (agent.mcpServerIds.length === 0) return [];
 
 	const allowedServerIds = new Set(agent.mcpServerIds);
@@ -47,7 +49,7 @@ function mcpToolsForAgent(agent: AgentRuntimeInput['agent']) {
 	});
 }
 
-export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
+export async function createServerAgentSession(input: AgentRuntimeInput) {
 	const provider = await createProviderRuntime(input);
 	const sessionManager = SessionManager.inMemory(process.cwd());
 
@@ -80,7 +82,7 @@ export async function createServerAgentSession(input: AgentRuntimeInput = {}) {
 		settingsManager,
 		sessionStartEvent: { type: 'session_start', reason: 'startup' }
 	});
-	applySessionSystemPrompt(result.session, input.agent?.systemPrompt ?? input.systemPrompt ?? '');
+	applySessionSystemPrompt(result.session, input.agent.systemPrompt);
 	applySessionStreamSettings(result.session, input.temperature ?? null);
 
 	return {

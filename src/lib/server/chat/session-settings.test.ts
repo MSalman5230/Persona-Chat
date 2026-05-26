@@ -6,7 +6,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/server/repositories/agents', () => ({
-	getAgent: mocks.getAgent
+	getAgent: mocks.getAgent,
+	normalizeAgentIdForStorage: (id: string | null | undefined) =>
+		id && id !== '00000000-0000-4000-8000-000000000000' ? id : null
 }));
 
 vi.mock('$lib/server/repositories/chat', () => ({
@@ -18,6 +20,7 @@ import {
 	updateChatSessionSettings
 } from './session-settings';
 import type { ChatSessionRow } from '$lib/server/repositories/chat';
+import { PREBUILT_GENERAL_AGENT_ID } from '$lib/shared/prebuilt-general-agent';
 
 const session: ChatSessionRow = {
 	id: '00000000-0000-4000-8000-000000000001',
@@ -67,13 +70,13 @@ describe('chat session settings service', () => {
 		expect(updated.updatedAt).toBeInstanceOf(Date);
 	});
 
-	it('allows clearing the agent without an agent lookup', async () => {
-		const patch = { agentId: null };
+	it('stores the Prebuilt General Agent selection as null', async () => {
+		const patch = { agentId: PREBUILT_GENERAL_AGENT_ID };
 
 		const updated = await updateChatSessionSettings('user-1', session, patch);
 
 		expect(mocks.getAgent).not.toHaveBeenCalled();
-		expect(mocks.updateChatSession).toHaveBeenCalledWith('user-1', session.id, patch);
+		expect(mocks.updateChatSession).toHaveBeenCalledWith('user-1', session.id, { agentId: null });
 		expect(updated.agentId).toBeNull();
 	});
 
