@@ -193,6 +193,40 @@ describe('sandbox_run_code tool helpers', () => {
 		expect(manager.reset).toHaveBeenCalledTimes(1);
 	});
 
+	it('reports cleanup warnings without overriding successful execution results', async () => {
+		const removeWorkDir = vi.fn(async () => {
+			throw new Error('directory busy');
+		});
+
+		const result = await executeSandboxRunCode(
+			{
+				language: 'javascript',
+				code: 'console.log(42)'
+			},
+			{
+				platform: 'linux',
+				sandboxManager: sandboxManagerMock(),
+				spawn: spawnMock({ stdout: '42\n', exitCode: 0 }) as never,
+				removeWorkDir
+			}
+		);
+
+		expect(result).toMatchObject({
+			ok: true,
+			exitCode: 0,
+			stdout: '42\n',
+			stderr: ''
+		});
+		expect(result.error).toBeUndefined();
+		expect(result.cleanupWarnings).toEqual([
+			expect.stringContaining('Sandbox temp directory cleanup failed: directory busy')
+		]);
+		expect(removeWorkDir).toHaveBeenCalledWith(expect.stringContaining('personachat-sandbox-'), {
+			recursive: true,
+			force: true
+		});
+	});
+
 	it('returns non-zero exits to the agent without throwing', async () => {
 		const result = await executeSandboxRunCode(
 			{ language: 'python', code: 'raise SystemExit(7)' },

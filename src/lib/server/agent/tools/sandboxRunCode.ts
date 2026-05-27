@@ -42,6 +42,7 @@ export type SandboxRunCodeDetails = {
 	stderrTruncated: boolean;
 	packages: string[];
 	error?: string;
+	cleanupWarnings?: string[];
 	hostPlatform: NodeJS.Platform;
 };
 
@@ -51,11 +52,13 @@ type SandboxManagerLike = Pick<
 >;
 
 type SpawnFn = typeof spawn;
+type RemoveWorkDirFn = (path: string, options: { recursive: true; force: true }) => Promise<void>;
 
 type SandboxRunCodeDependencies = {
 	platform?: NodeJS.Platform;
 	sandboxManager?: SandboxManagerLike;
 	spawn?: SpawnFn;
+	removeWorkDir?: RemoveWorkDirFn;
 	now?: () => number;
 };
 
@@ -190,6 +193,15 @@ function sandboxUnavailableDetails(
 		error,
 		hostPlatform
 	};
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+	return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function addCleanupWarning(details: SandboxRunCodeDetails | undefined, warning: string) {
+	if (!details) return;
+	details.cleanupWarnings = [...(details.cleanupWarnings ?? []), warning];
 }
 
 function shellQuote(value: string): string {
@@ -457,6 +469,7 @@ async function runSandboxedCode(
 	const hostPlatform = dependencies.platform ?? process.platform;
 	const sandboxManager = dependencies.sandboxManager ?? SandboxManager;
 	const spawnFn = dependencies.spawn ?? spawn;
+	const removeWorkDir = dependencies.removeWorkDir ?? rm;
 	const now = dependencies.now ?? Date.now;
 
 	if (!isSupportedSandboxHost(hostPlatform)) {
@@ -481,6 +494,7 @@ async function runSandboxedCode(
 
 	let workDir: string | undefined;
 	let initialized = false;
+	let details: SandboxRunCodeDetails | undefined;
 	const start = now();
 
 	try {
@@ -508,7 +522,7 @@ async function runSandboxedCode(
 					? 'Code execution aborted'
 					: undefined);
 
-		return {
+		details = {
 			ok: result.exitCode === 0 && !result.timedOut && !result.aborted && !result.error,
 			language: input.language,
 			exitCode: result.exitCode,
@@ -524,13 +538,15 @@ async function runSandboxedCode(
 			...(error ? { error } : {}),
 			hostPlatform
 		};
+		return details;
 	} catch (error) {
-		return sandboxUnavailableDetails(
+		details = sandboxUnavailableDetails(
 			input.language,
 			input.packages ?? [],
 			hostPlatform,
-			error instanceof Error ? error.message : 'Sandboxed code execution failed'
+			errorMessage(error, 'Sandboxed code execution failed')
 		);
+		return details;
 	} finally {
 		if (initialized) {
 			try {
@@ -540,7 +556,14 @@ async function runSandboxedCode(
 			}
 		}
 		if (workDir) {
-			await rm(workDir, { recursive: true, force: true });
+			try {
+				await removeWorkDir(workDir, { recursive: true, force: true });
+			} catch (error) {
+				addCleanupWarning(
+					details,
+					`Sandbox temp directory cleanup failed: ${errorMessage(error, 'unable to remove work directory')}`
+				);
+			}
 		}
 	}
 }
