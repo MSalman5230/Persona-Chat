@@ -409,6 +409,7 @@ describe('agent runtime session settings', () => {
 
 		expect(options.customTools.map((tool) => tool.name)).toEqual([
 			'current_datetime',
+			'sandbox_run_code',
 			'mcp_list_servers',
 			'mcp_list_tools',
 			'mcp_call_tool'
