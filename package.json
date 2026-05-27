@@ -33,6 +33,7 @@
 		"vitest": "^4.1.7"
 	},
 	"dependencies": {
+		"@anthropic-ai/sandbox-runtime": "0.0.26",
 		"@better-auth/drizzle-adapter": "^1.6.11",
 		"@earendil-works/pi-ai": "^0.75.4",
 		"@earendil-works/pi-coding-agent": "^0.75.4",

@@ -506,7 +506,7 @@ describe('agent repository default invariant', () => {
 
 		expect(clone).toMatchObject({
 			name: 'General Agent Alfred Copy',
-			toolNames: ['current_datetime'],
+			toolNames: ['current_datetime', 'sandbox_run_code'],
 			mcpServerIds: [mcpServerId],
 			toolAccess: 'selected',
 			mcpServerAccess: 'selected',
