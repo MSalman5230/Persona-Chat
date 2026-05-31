@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
+	import { getAppSidebarContext } from '$lib/components/chat/sidebar-context';
 	import '$lib/components/settings/settings.css';
 	import type { PageProps } from './$types';
 
 	let { data, form }: PageProps = $props();
+	const sidebar = getAppSidebarContext();
 
 	type Provider = (typeof data.providers)[number];
 
@@ -28,13 +29,14 @@
 	<div class="mx-auto flex min-h-full w-full max-w-5xl flex-col px-4 py-6 sm:px-6 lg:px-8">
 		<header class="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle pb-5">
 			<div class="flex items-center gap-3">
-				<a
-					href={resolve('/')}
-					class="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface-container-low text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary"
-					aria-label="Back to chat"
+				<button
+					type="button"
+					class="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface-container-low text-text-muted transition-colors hover:bg-surface-container-high hover:text-primary md:hidden"
+					aria-label="Open sidebar"
+					onclick={sidebar.openSidebar}
 				>
-					<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">arrow_back</span>
-				</a>
+					<span class="material-symbols-outlined !text-[20px]" aria-hidden="true">menu</span>
+				</button>
 				<div>
 					<h1 class="font-headline-md text-headline-md text-primary">Settings</h1>
 					<p class="font-body-sm text-body-sm text-text-muted">Personal defaults and models</p>

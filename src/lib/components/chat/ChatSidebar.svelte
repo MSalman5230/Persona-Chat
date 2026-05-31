@@ -17,6 +17,7 @@
 		open: boolean;
 		sessions: ChatSession[];
 		activeSessionId: string | null;
+		activePath?: string;
 		user: SidebarUser | null;
 		isAdmin: boolean;
 		onNewChat: () => void;
@@ -28,12 +29,23 @@
 		open,
 		sessions,
 		activeSessionId,
+		activePath = '',
 		user,
 		isAdmin,
 		onNewChat,
 		onDeleteChat,
 		onClose
 	}: Props = $props();
+
+	function navLinkClass(path: string) {
+		const active = activePath === path;
+		return [
+			'flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left transition-colors duration-200',
+			active
+				? 'bg-surface-container text-primary'
+				: 'text-text-muted hover:bg-surface-container-high hover:text-primary'
+		];
+	}
 
 	async function signOut() {
 		await authClient.signOut();
@@ -109,14 +121,18 @@
 	<div class="space-y-1 border-t border-border-subtle px-3 pt-4">
 		<a
 			href={resolve('/agents')}
-			class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+			class={navLinkClass('/agents')}
+			aria-current={activePath === '/agents' ? 'page' : undefined}
+			onclick={onClose}
 		>
 			<span class="material-symbols-outlined" aria-hidden="true">group</span>
 			<span class="font-body-sm text-body-sm">Agents</span>
 		</a>
 		<a
 			href={resolve('/settings')}
-			class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+			class={navLinkClass('/settings')}
+			aria-current={activePath === '/settings' ? 'page' : undefined}
+			onclick={onClose}
 		>
 			<span class="material-symbols-outlined" aria-hidden="true">settings</span>
 			<span class="font-body-sm text-body-sm">Settings</span>
@@ -124,7 +140,9 @@
 		{#if isAdmin}
 			<a
 				href={resolve('/admin-settings')}
-				class="flex w-full items-center gap-3 rounded-lg px-4 py-2.5 text-left text-text-muted transition-colors duration-200 hover:bg-surface-container-high hover:text-primary"
+				class={navLinkClass('/admin-settings')}
+				aria-current={activePath === '/admin-settings' ? 'page' : undefined}
+				onclick={onClose}
 			>
 				<span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span>
 				<span class="font-body-sm text-body-sm">Admin Settings</span>

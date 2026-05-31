@@ -23,19 +23,16 @@
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import ChatComposer from '$lib/components/chat/ChatComposer.svelte';
-	import ChatSidebar from '$lib/components/chat/ChatSidebar.svelte';
 	import DesktopHeader from '$lib/components/chat/DesktopHeader.svelte';
 	import MessageList from '$lib/components/chat/MessageList.svelte';
 	import MobileHeader from '$lib/components/chat/MobileHeader.svelte';
 	import SessionSettingsDrawer from '$lib/components/chat/SessionSettingsDrawer.svelte';
-	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import { getAppSidebarContext } from '$lib/components/chat/sidebar-context';
 	import { PREBUILT_GENERAL_AGENT_ID, agentIdForClient } from '$lib/shared/prebuilt-general-agent';
 	import { onMount, tick, untrack } from 'svelte';
 
 	let { data } = $props();
 
-	type ChatSessionSummary = { id: string; title: string };
-	type PendingConfirmation = { kind: 'chat'; chat: ChatSessionSummary };
 	type ChatSessionDetails = {
 		id: string;
 		title: string;
@@ -47,11 +44,10 @@
 	};
 	type ActiveRun = { id: string; sessionId: string; status: string; errorText: string | null };
 
+	const sidebar = getAppSidebarContext();
+
 	let message = $state('');
-	let sidebarOpen = $state(false);
 	let settingsOpen = $state(false);
-	let pendingConfirmation = $state<PendingConfirmation | null>(null);
-	let sessions = $state<ChatSessionSummary[]>(untrack(() => data.sessions));
 	let activeRun = $state<ActiveRun | null>(untrack(() => data.activeRun));
 	let isStreaming = $state(Boolean(untrack(() => data.activeRun)));
 	let activeSessionId = $state<string | null>(untrack(() => data.activeSession?.id ?? null));
@@ -124,23 +120,16 @@
 	const settingsDirty = $derived(
 		activeSessionId !== null && currentTemperature !== lastSavedTemperature
 	);
-	const confirmationDialog = $derived.by(() => {
-		if (!pendingConfirmation) return null;
-
-		return {
-			title: 'Delete chat?',
-			description: `Delete "${pendingConfirmation.chat.title}"? This cannot be undone.`,
-			confirmLabel: 'Delete chat'
-		};
-	});
 
 	onMount(() => {
+		const unregisterNewChat = sidebar.registerNewChatHandler(newChat);
 		const interval = window.setInterval(() => {
 			if (hasActiveThought || hasActiveTool) now = Date.now();
 		}, 250);
 		connectRunEvents();
 
 		return () => {
+			unregisterNewChat();
 			window.clearInterval(interval);
 			closeRunEvents();
 		};
@@ -160,7 +149,6 @@
 		activeSessionId = nextSessionId;
 		activeRun = data.activeRun;
 		isStreaming = Boolean(data.activeRun);
-		sessions = data.sessions;
 		selectedAgentIdOverride = session
 			? agentIdForClient(session.agentId)
 			: (data.defaultAgentId ?? PREBUILT_GENERAL_AGENT_ID);
@@ -194,7 +182,7 @@
 	}
 
 	function openSettingsSidebar() {
-		sidebarOpen = false;
+		sidebar.closeSidebar();
 		settingsOpen = true;
 	}
 
@@ -204,7 +192,7 @@
 		isStreaming = false;
 		messages = [];
 		errorText = '';
-		sidebarOpen = false;
+		sidebar.closeSidebar();
 		settingsOpen = false;
 		selectedAgentIdOverride = data.defaultAgentId ?? PREBUILT_GENERAL_AGENT_ID;
 		selectedThinking = chatThinkingSelectionFromServer(data.defaultThinkingLevel);
@@ -217,46 +205,6 @@
 			void goto(resolve('/'));
 		}
 		tick().then(() => focusChatInput?.());
-	}
-
-	function deleteChat(chat: ChatSessionSummary) {
-		pendingConfirmation = { kind: 'chat', chat };
-	}
-
-	async function confirmDeleteChat(chat: ChatSessionSummary) {
-		const wasActive = activeSessionId === chat.id;
-		errorText = '';
-
-		try {
-			const response = await fetch(`/api/chat-sessions/${chat.id}`, { method: 'DELETE' });
-			if (!response.ok) {
-				const fallback =
-					response.status === 409
-						? 'Wait for the response to finish before deleting this chat'
-						: 'Unable to delete chat';
-				throw new Error(await responseErrorMessage(response, fallback));
-			}
-
-			sessions = sessions.filter((item) => item.id !== chat.id);
-
-			if (wasActive) {
-				closeRunEvents();
-				resetChatView();
-				await goto(resolve('/'), { replaceState: true });
-				await tick();
-				focusChatInput?.();
-			}
-		} catch (error) {
-			errorText = error instanceof Error ? error.message : 'Unable to delete chat';
-		}
-	}
-
-	async function confirmPendingDeletion() {
-		const confirmation = pendingConfirmation;
-		if (!confirmation) return;
-
-		pendingConfirmation = null;
-		await confirmDeleteChat(confirmation.chat);
 	}
 
 	function updateTemperatureAuto(checked: boolean) {
@@ -381,10 +329,7 @@
 	}
 
 	function upsertSessionSummary(session: { id: string; title?: string }) {
-		sessions = [
-			{ id: session.id, title: session.title ?? 'New chat' },
-			...sessions.filter((item) => item.id !== session.id)
-		].slice(0, 30);
+		sidebar.upsertSession({ id: session.id, title: session.title ?? 'New chat' });
 	}
 
 	function applyRunEvent(eventName: string, payload: Record<string, unknown>) {
@@ -561,26 +506,15 @@
 
 <div class="min-h-dvh overflow-hidden bg-background text-text-primary selection:bg-primary-container selection:text-on-primary-container">
 	<MobileHeader
-		onOpenSidebar={() => (sidebarOpen = true)}
+		onOpenSidebar={sidebar.openSidebar}
 		onOpenSettings={openSettingsSidebar}
 		onNewChat={newChat}
 	/>
 
 	<div class="flex h-[calc(100dvh-4rem)] w-full overflow-hidden md:h-dvh">
-		<ChatSidebar
-			open={sidebarOpen}
-			{sessions}
-			{activeSessionId}
-			user={data.user}
-			isAdmin={data.isAdmin}
-			onNewChat={newChat}
-			onDeleteChat={deleteChat}
-			onClose={() => (sidebarOpen = false)}
-		/>
-
 		<main
 			class={[
-				'relative flex h-full flex-1 flex-col transition-[margin] duration-300 md:ml-sidebar-width',
+				'relative flex h-full flex-1 flex-col transition-[margin] duration-300',
 				settingsOpen ? 'md:mr-[320px]' : 'md:mr-0'
 			]}
 		>
@@ -639,14 +573,4 @@
 			onSaveSessionSettings={saveSessionSettings}
 		/>
 	</div>
-
-	<ConfirmDialog
-		open={confirmationDialog !== null}
-		title={confirmationDialog?.title ?? ''}
-		description={confirmationDialog?.description ?? ''}
-		confirmLabel={confirmationDialog?.confirmLabel ?? 'Delete'}
-		variant="danger"
-		onCancel={() => (pendingConfirmation = null)}
-		onConfirm={confirmPendingDeletion}
-	/>
 </div>
